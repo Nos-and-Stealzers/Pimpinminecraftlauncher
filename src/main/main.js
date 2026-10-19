@@ -10,6 +10,7 @@ const servers = require('./servers');
 const content = require('./content');
 const modrinth = require('./modrinth');
 const files = require('./files');
+const packs = require('./packs');
 const { getJson, request } = require('./net');
 
 let win;
@@ -84,6 +85,40 @@ async function getSkin(name) {
 
 // Only documents and images open in their default app — never programs or scripts.
 const OPENABLE = /\.(txt|log|json|json5|properties|toml|ya?ml|cfg|conf|ini|md|csv|mcmeta|png|jpe?g|gif|webp|zip|mrpack|pdf)$/i;
+
+const previewCache = new Map();
+
+async function packTarget(id) {
+  const inst = await instances.get(id);
+  return { inst, dir: instances.dirOf(id) };
+}
+
+/** Install a shader pack from the library and switch it on in Iris. */
+async function enableShader(holder, dir, slug, target) {
+  await content.install(holder, { projectId: slug, type: 'shader' }, progressFor(target));
+  const meta = await holder.load();
+  const project = await modrinth.getProject(slug);
+  const rec = (meta.content || []).find((c) => c.type === 'shader' && c.projectId === project.id);
+  if (!rec) return;
+  const file = path.join(dir, 'config', 'iris.properties');
+  let text = '';
+  try {
+    text = await require('fs/promises').readFile(file, 'utf8');
+  } catch {
+    /* Iris hasn't run yet */
+  }
+  for (const [k, v] of [['shaderPack', rec.file], ['enableShaders', 'true']]) {
+    const re = new RegExp(`^${k}=.*$`, 'm');
+    text = re.test(text) ? text.replace(re, () => `${k}=${v}`) : `${text}${k}=${v}\n`;
+  }
+  await require('fs/promises').mkdir(path.dirname(file), { recursive: true });
+  await require('fs/promises').writeFile(file, text);
+}
+
+async function notRunning(id) {
+  const { inst } = await packTarget(id);
+  if (inst.running) throw new Error('Close the game first — Minecraft saves its options when it quits.');
+}
 
 const progressFor = (target) => (p) => send('task:progress', { id: target?.id, ...p });
 
@@ -183,6 +218,72 @@ const handlers = {
     if (!OPENABLE.test(name || '')) throw new Error('This kind of file is not opened from the launcher. Use "Show in folder" instead.');
     const err = await shell.openPath(files.resolve((await holderFor(target)).dir, sub, name));
     if (err) throw new Error(err);
+  },
+
+  'packs:status': async (id) => {
+    const { inst, dir } = await packTarget(id);
+    return packs.status(dir, inst.mcVersion);
+  },
+  'packs:preview': (packId) => {
+    if (!previewCache.has(packId)) previewCache.set(packId, packs.preview(packId));
+    return previewCache.get(packId);
+  },
+  'packs:install': async (id, packId) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    return packs.install(dir, packId, inst.mcVersion);
+  },
+  'packs:toggle': async (id, packId, on) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    await packs.setActive(dir, packs.PACKS[packId].file, inst.mcVersion, on);
+    return packs.status(dir, inst.mcVersion);
+  },
+  'packs:remove': async (id, packId) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    return packs.remove(dir, packId, inst.mcVersion);
+  },
+  'packs:export': async (packId, mcVersion) => {
+    const pack = packs.PACKS[packId];
+    const res = await dialog.showSaveDialog(win, { title: `Save ${pack.name}`, defaultPath: pack.file, filters: [{ name: 'Resource pack', extensions: ['zip'] }] });
+    if (res.canceled || !res.filePath) return null;
+    await require('fs/promises').writeFile(res.filePath, packs.build(packId, mcVersion));
+    shell.showItemInFolder(res.filePath);
+    return res.filePath;
+  },
+  'game:presets': () => packs.presetInfo(),
+  'game:applyPreset': async (id, presetId) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    return packs.applyPreset(dir, presetId, inst.mcVersion);
+  },
+  'packs:combo': async (id, mode) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    const pack = mode === 'pretty' ? 'pretty' : 'performance';
+    const other = pack === 'pretty' ? 'performance' : 'pretty';
+    await packs.setActive(dir, packs.PACKS[other].file, inst.mcVersion, false);
+    await packs.install(dir, pack, inst.mcVersion);
+    await packs.applyPreset(dir, mode === 'pretty' ? 'pretty' : 'fps', inst.mcVersion);
+    const failed = [];
+    if (inst.loader !== 'vanilla') {
+      const target = { kind: 'instance', id };
+      const holder = await holderFor(target);
+      for (const f of mode === 'pretty' ? ['fps', 'shaders', 'skinlayers', 'animations', 'ctm', 'dynamiclights'] : ['fps', 'dynamicfps']) {
+        const res = await content.setFeature(holder, f, true, progressFor(target)).catch((err) => ({ failed: [err.message] }));
+        failed.push(...(res.failed || []));
+      }
+      if (mode === 'pretty') {
+        try {
+          await enableShader(holder, dir, 'complementary-reimagined', target);
+        } catch (err) {
+          failed.push(`Shaders: ${err.message}`);
+        }
+      }
+      send('instances:changed');
+    }
+    return { failed, status: await packs.status(dir, inst.mcVersion) };
   },
 
   'servers:software': () => servers.SOFTWARE,

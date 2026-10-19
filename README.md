@@ -24,6 +24,11 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
   - **Players tab** shows who's online, operators, the whitelist and bans, with OP / kick / ban / pardon buttons.
   - **World backups.** Zip the world (even while the server runs) and restore it later.
   - Quick console buttons (save, day, clear weather, TPS, broadcast), command history, your **LAN address** to share with friends, uptime, plugin updates, auto-restart after a crash and custom JVM arguments.
+- **Pimpin Specials: our own resource packs.** Two original packs drawn by the launcher itself (procedural textures, no Mojang art), built for each instance's Minecraft version (1.8.9 up to the newest) and switched on for you:
+  - **Pimpin Performance** (16×): every animated texture made static, low fire, clear pumpkin/vignette/underwater overlays, clean low-noise blocks with easy-to-spot ores, minimal crosshair.
+  - **Pimpin Pretty** (32×): rich stone, dirt, grass, sand, gravel, wood, leaves, bricks and snow, shiny gem ores, smooth animated water and lava, clear glass, plus a Pimpin sun, moon phases, crosshair and splash texts.
+  - **Max FPS / Max Pretty** combos set everything up in one click (pack + game settings + matching mods; Max Pretty also installs and turns on the Complementary shaders).
+  - **Game-settings presets** (FPS, Balanced, Pretty) write `options.txt` for you. Export either pack as a `.zip` to share, or run `npm run packs -- <version>`.
 - **File browser.** Every instance and server has a Files tab: browse its folders, edit configs and `server.properties` in the launcher, rename, delete, make folders, and drag files in from your PC.
 - **Accounts.** Sign in with Microsoft (the official Microsoft login window) to play online, or add offline accounts. Login tokens are encrypted with your OS keychain.
 - **Worlds & screenshots.** Each instance lists its worlds. Press Play on one to load straight into it (1.20+), or use "Jump back in" on Home. Screenshots appear in a gallery.
@@ -52,6 +57,7 @@ Requires [Node.js](https://nodejs.org) 20 or newer.
 npm install
 npm start          # run the launcher
 npm run check      # syntax-check all sources
+npm run packs      # write the Pimpin resource packs to dist/packs
 npm run dist:win   # build Windows installer + portable exe (run on Windows)
 npm run dist:linux # build AppImage + deb
 ```
@@ -78,6 +84,8 @@ src/main/        Electron main process (Node)
   instances.js   instances, game process, modpacks
   servers.js     Paper/Purpur/Vanilla servers, properties, players, backups, console
   files.js       file browser for instance & server folders
+  packs.js       Pimpin resource packs, options.txt presets
+  pack-art.js    procedural textures for the packs (png.js encodes them)
   main.js        window + RPC bridge
 src/renderer/    the UI (plain HTML/CSS/JS modules, no framework)
   js/fx3d.js     CSS-3D player model, blocks and card tilt (no WebGL needed)

@@ -161,7 +161,7 @@ function renderHero(root, navigate, topic) {
 
 async function renderFeatures(root, sel, navigate) {
   if (!sel) return root.replaceChildren();
-  const head = el('h2', { class: 'section' }, icon('wand'), 'Client features', el('small', {}, `One-click mods for ${sel.name}`), el('span', { class: 'grow' }), el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod' }) }, 'Browse all mods', icon('external')));
+  const head = el('h2', { class: 'section' }, icon('wand'), 'Client features', el('small', {}, `One-click mods for ${sel.name}`), el('span', { class: 'grow' }), el('button', { class: 'btn sm', onclick: () => navigate('instances', { id: sel.id, tab: 'pimpin' }) }, icon('sparkle'), 'Pimpin packs'), el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod' }) }, 'Browse all mods', icon('external')));
   if (sel.loader === 'vanilla') {
     clear(
       root,
