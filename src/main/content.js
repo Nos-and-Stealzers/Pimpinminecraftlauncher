@@ -62,6 +62,7 @@ function loadersFor(type, holder) {
 
 function checkTarget(type, holder) {
   if (holder.kind === 'server' && type !== 'plugin') throw new Error('Servers can only install plugins.');
+  if (holder.kind === 'server' && holder.loader === 'vanilla') throw new Error('Vanilla servers cannot run plugins. Switch the server to Paper or Purpur in its Settings tab.');
   if (holder.kind !== 'server' && type === 'plugin') throw new Error('Plugins go on a server — open the Servers tab.');
   if (type === 'shader' && (!holder.loader || holder.loader === 'vanilla')) {
     throw new Error('Shaders need a Fabric or Quilt instance (Iris is installed for you automatically).');

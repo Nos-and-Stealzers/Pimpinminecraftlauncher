@@ -18,12 +18,19 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
   - **Modpacks.** Install `.mrpack` modpacks (Fabric/Quilt) as a new ready-to-play instance.
   - **Plugins.** Install them onto a local Paper server.
 - **Content manager.** Turn installed mods, shaders and packs on or off, remove them, or check for updates and update them all. Mods you drop into the folder by hand are identified automatically.
-- **Local servers.** Create a [Paper](https://papermc.io) server, install plugins from the library, start and stop it, type console commands, and **Join** with one click (it launches a matching instance and connects to `localhost`).
+- **Local servers.** Create a [Paper](https://papermc.io), [Purpur](https://purpurmc.org) or Vanilla server, install plugins from the library, start/stop/restart it, type console commands, and **Join** with one click (it launches a matching instance and connects to `localhost`).
+  - **Starter plugins** when you create a server: EssentialsX, LuckPerms, WorldEdit, Chunky, ViaVersion and Geyser + Floodgate (Bedrock players).
+  - **Properties editor** for game mode, difficulty, max players, MOTD, PvP, whitelist, hardcore, view distance, seed and more. Offline accounts get a one-click fix if the server only allows Microsoft accounts.
+  - **Players tab** shows who's online, operators, the whitelist and bans, with OP / kick / ban / pardon buttons.
+  - **World backups.** Zip the world (even while the server runs) and restore it later.
+  - Quick console buttons (save, day, clear weather, TPS, broadcast), command history, your **LAN address** to share with friends, uptime, plugin updates, auto-restart after a crash and custom JVM arguments.
+- **File browser.** Every instance and server has a Files tab: browse its folders, edit configs and `server.properties` in the launcher, rename, delete, make folders, and drag files in from your PC.
 - **Accounts.** Sign in with Microsoft (the official Microsoft login window) to play online, or add offline accounts. Login tokens are encrypted with your OS keychain.
 - **Worlds & screenshots.** Each instance lists its worlds. Press Play on one to load straight into it (1.20+), or use "Jump back in" on Home. Screenshots appear in a gallery.
 - **Crash helper.** If the game crashes, a dialog shows the end of the log, the crash report and plain-English hints (incompatible mods, out of memory, wrong Java, graphics drivers).
 - **Auto-update.** The Windows installer and the AppImage update themselves from GitHub Releases. A "Restart to update" button appears when a new build is ready.
-- **Custom UI.** Frameless window, five accent themes, your 3D skin on the home screen, live game console with readable logs, Minecraft news, play-time tracking, and you can duplicate instances.
+- **3D.** Your real skin is drawn as a 3D player on the home screen: drag to spin it, click to wave, and its head follows your mouse. Floating 3D blocks, server block icons and cards that tilt towards the cursor. Turn it off in Settings.
+- **Custom UI.** Frameless window, five accent themes, live game console with readable logs, Minecraft news, play-time tracking, and you can duplicate instances.
 
 ## Download
 
@@ -68,9 +75,12 @@ src/main/        Electron main process (Node)
   modrinth.js    Modrinth API client
   content.js     install/remove/update mods, shaders, packs & plugins, dependency resolution, client features
   instances.js   instances, game process, modpacks
-  servers.js     Paper servers, plugins, console
+  servers.js     Paper/Purpur/Vanilla servers, properties, players, backups, console
+  files.js       file browser for instance & server folders
   main.js        window + RPC bridge
 src/renderer/    the UI (plain HTML/CSS/JS modules, no framework)
+  js/fx3d.js     CSS-3D player model, blocks and card tilt (no WebGL needed)
+  js/files.js    file browser UI
 ```
 
 ## Not supported yet

@@ -42,7 +42,8 @@ export function render(page) {
     el('div', { class: 'page-head' }, el('div', {}, el('h1', { class: 'page-title' }, 'Settings'), el('p', { class: 'page-sub' }, 'Defaults for every instance. Instances can override memory, Java and resolution.'))),
     el('div', { class: 'card settings-card' },
       el('h3', {}, icon('palette'), 'Appearance'),
-      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Accent colour'), el('span', {}, 'Pick the vibe for the whole launcher.')), accentRow)),
+      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Accent colour'), el('span', {}, 'Pick the vibe for the whole launcher.')), accentRow),
+      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, '3D effects'), el('span', {}, 'Your 3D skin on Home (drag to spin), floating blocks and cards that tilt towards the mouse.')), switchEl(s.effects3d !== false, (v) => save({ effects3d: v })))),
     el('div', { class: 'card settings-card' },
       el('h3', {}, icon('cpu'), 'Java & memory'),
       el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Maximum memory'), el('span', {}, `Your PC has ${(total / 1024).toFixed(1)} GB. 4–6 GB is plenty for most modded play.`))),
@@ -62,6 +63,6 @@ export function render(page) {
       el('h3', {}, icon('info'), 'About'),
       el('div', { class: 'muted', style: { lineHeight: 1.6 } },
         `Pimpin Launcher ${state.info?.version || ''} · ${state.info?.platform} ${state.info?.arch}`, el('br'),
-        'Content library powered by Modrinth. Paper servers by PaperMC. Not affiliated with Mojang or Microsoft.')),
+        'Content library powered by Modrinth. Paper servers by PaperMC, Purpur by PurpurMC. Not affiliated with Mojang or Microsoft.')),
   );
 }

@@ -2,6 +2,7 @@
 import { el, icon, clear, errorToast, toast, fmtDuration, timeAgo, switchEl } from '../dom.js';
 import { api, state, subscribe, selectedInstance, activeAccount, refreshInstances, LOADER_LABEL } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, openInstancePicker, newInstanceModal } from '../components.js';
+import { mountSkin, blockScene, effectsOn } from '../fx3d.js';
 
 let newsCache = null;
 
@@ -31,15 +32,19 @@ export function render(page, _params, navigate) {
 function heroArt(acc) {
   const art = el('div', { class: 'hero-art' }, el('div', { class: 'grid' }));
   if (!acc) {
-    art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
+    if (effectsOn()) art.append(blockScene());
+    else art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
     return art;
   }
   const id = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
-  art.append(
-    el('div', { class: 'skin' },
-      el('div', { class: 'pedestal' }),
-      el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() })),
-  );
+  const skin = el('div', { class: 'skin' }, el('div', { class: 'pedestal' }));
+  art.append(skin);
+  if (effectsOn()) {
+    skin.classList.add('live');
+    mountSkin(skin, id);
+  } else {
+    skin.append(el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() }));
+  }
   return art;
 }
 
@@ -70,7 +75,7 @@ function renderHero(root, navigate, topic) {
   const sel = selectedInstance();
   const acc = activeAccount();
   const g = sel ? state.game[sel.id] : null;
-  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state]);
+  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state, effectsOn()]);
   // Progress ticks only touch the button; rebuilding would restart animations.
   if (key === heroKey && root.childElementCount) {
     updateProgress(g);

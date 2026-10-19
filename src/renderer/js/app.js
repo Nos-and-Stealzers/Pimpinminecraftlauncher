@@ -2,6 +2,7 @@
 import { el, icon, clear, fmtBytes, toast, modal } from './dom.js';
 import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refreshInstances, refreshServers, selectedInstance } from './state.js';
 import { accountButton, playInstance, stopInstance } from './components.js';
+import { installTilt } from './fx3d.js';
 import * as home from './pages/home.js';
 import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
@@ -103,9 +104,14 @@ function wireEvents() {
     notify('game');
   });
   api.on('server:state', async (s) => {
-    state.server[s.id] = { state: s.state };
+    state.server[s.id] = { state: s.state, ready: s.ready };
     if (s.error) toast(s.error, 'err');
     await refreshServers();
+  });
+  api.on('server:players', (p) => {
+    const s = state.servers.find((x) => x.id === p.id);
+    if (s) s.online = p.online;
+    notify('server-players');
   });
   api.on('instances:changed', async () => {
     await refreshInstances();
@@ -163,9 +169,12 @@ async function showCrash(id) {
 
 async function boot() {
   wireEvents();
+  installTilt();
   state.info = await api.call('app:info');
   document.body.classList.add(`os-${state.info.platform}`);
+  subscribe((t) => t === 'settings' && document.body.classList.toggle('no3d', state.settings.effects3d === false));
   await Promise.all([refreshSettings(), refreshAccounts(), refreshInstances(), refreshServers()]);
+  document.body.classList.toggle('no3d', state.settings.effects3d === false);
   for (const i of state.instances) if (i.running) state.game[i.id] = { state: 'running' };
   renderAccount();
   render();

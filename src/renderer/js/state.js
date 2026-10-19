@@ -81,4 +81,5 @@ export function headUrl(account, size = 64) {
 }
 
 export const LOADER_LABEL = { vanilla: 'Vanilla', fabric: 'Fabric', quilt: 'Quilt' };
+export const SERVER_LABEL = { paper: 'Paper', purpur: 'Purpur', vanilla: 'Vanilla' };
 export const ICON_KEYS = ['violet', 'crimson', 'emerald', 'ocean', 'gold', 'grass', 'night'];

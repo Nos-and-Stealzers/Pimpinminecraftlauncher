@@ -68,6 +68,7 @@ const DEFAULT_SETTINGS = {
   closeOnLaunch: false,
   showConsoleOnLaunch: false,
   accent: 'violet',
+  effects3d: true,
   lastInstance: null,
   activeAccount: null,
 };

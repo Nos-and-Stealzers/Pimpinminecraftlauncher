@@ -9,7 +9,8 @@ const instances = require('./instances');
 const servers = require('./servers');
 const content = require('./content');
 const modrinth = require('./modrinth');
-const { getJson } = require('./net');
+const files = require('./files');
+const { getJson, request } = require('./net');
 
 let win;
 let updateState = { state: 'idle' };
@@ -66,6 +67,23 @@ async function holderFor(target) {
   if (!target || !target.id) throw new Error('Select an instance first');
   return target.kind === 'server' ? servers.holder(target.id) : instances.holder(target.id);
 }
+
+const skinCache = new Map();
+
+/** Fetch a player's skin as a data URL so the UI can draw it in 3D. */
+async function getSkin(name) {
+  if (!/^[A-Za-z0-9_-]{1,36}$/.test(name || '')) throw new Error('Invalid player');
+  if (!skinCache.has(name)) {
+    const res = await request(`https://mc-heads.net/skin/${encodeURIComponent(name)}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 512 * 1024) throw new Error('Skin too large');
+    skinCache.set(name, `data:image/png;base64,${buf.toString('base64')}`);
+  }
+  return skinCache.get(name);
+}
+
+// Only documents and images open in their default app — never programs or scripts.
+const OPENABLE = /\.(txt|log|json|json5|properties|toml|ya?ml|cfg|conf|ini|md|csv|mcmeta|png|jpe?g|gif|webp|zip|mrpack|pdf)$/i;
 
 const progressFor = (target) => (p) => send('task:progress', { id: target?.id, ...p });
 
@@ -140,7 +158,34 @@ const handlers = {
   'library:categories': () => modrinth.getCategories(),
   'modpack:install': (opts) => instances.installModpack(opts),
 
-  'servers:versions': () => servers.paperVersions(),
+  'skin:get': (name) => getSkin(name),
+
+  'files:list': async (target, sub) => files.list((await holderFor(target)).dir, sub),
+  'files:size': async (target, sub) => files.folderSize((await holderFor(target)).dir, sub),
+  'files:read': async (target, sub, name) => files.read((await holderFor(target)).dir, sub, name),
+  'files:write': async (target, sub, name, text) => files.write((await holderFor(target)).dir, sub, name, text),
+  'files:delete': async (target, sub, name) => files.remove((await holderFor(target)).dir, sub, name),
+  'files:rename': async (target, sub, from, to) => files.rename((await holderFor(target)).dir, sub, from, to),
+  'files:mkdir': async (target, sub, name) => files.mkdir((await holderFor(target)).dir, sub, name),
+  'files:import': async (target, sub, paths) => files.importPaths((await holderFor(target)).dir, sub, paths),
+  'files:pickImport': async (target, sub) => {
+    const res = await dialog.showOpenDialog(win, { title: 'Add files', properties: ['openFile', 'multiSelections'] });
+    if (res.canceled) return [];
+    return files.importPaths((await holderFor(target)).dir, sub, res.filePaths);
+  },
+  'files:reveal': async (target, sub, name) => {
+    const dir = (await holderFor(target)).dir;
+    if (name) shell.showItemInFolder(files.resolve(dir, sub, name));
+    else shell.openPath(files.resolve(dir, sub));
+  },
+  'files:open': async (target, sub, name) => {
+    if (!OPENABLE.test(name || '')) throw new Error('This kind of file is not opened from the launcher. Use "Show in folder" instead.');
+    const err = await shell.openPath(files.resolve((await holderFor(target)).dir, sub, name));
+    if (err) throw new Error(err);
+  },
+
+  'servers:software': () => servers.SOFTWARE,
+  'servers:versions': (software) => servers.versions(software),
   'servers:list': () => servers.list(),
   'servers:get': (id) => servers.get(id),
   'servers:create': (opts) => servers.create(opts),
@@ -148,6 +193,16 @@ const handlers = {
   'servers:delete': (id) => servers.remove(id),
   'servers:start': (id) => servers.start(id),
   'servers:stop': (id) => servers.stop(id),
+  'servers:restart': (id) => servers.restart(id),
+  'servers:properties': (id) => servers.readProperties(id),
+  'servers:setProperties': (id, patch) => servers.setProperties(id, patch),
+  'servers:players': (id) => servers.playerInfo(id),
+  'servers:playerAction': (id, action, name) => servers.playerAction(id, action, name),
+  'servers:backups': (id) => servers.backups(id),
+  'servers:backup': (id) => servers.backup(id),
+  'servers:restoreBackup': (id, name) => servers.restoreBackup(id, name),
+  'servers:deleteBackup': (id, name) => servers.deleteBackup(id, name),
+  'servers:network': () => ({ lan: servers.lanAddresses() }),
   'servers:command': (id, cmd) => servers.command(id, cmd),
   'servers:logs': (id) => servers.getLogs(id),
   'servers:open': (id) => shell.openPath(servers.dirOf(id)),

@@ -5,6 +5,7 @@ import { api, state, subscribe, refreshInstances, selectInstance, getVersions, L
 import { instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from '../components.js';
 import { featureGrid } from './home.js';
 import { lightbox } from './library.js';
+import { fileBrowser } from '../files.js';
 
 const tabMem = {};
 
@@ -128,6 +129,7 @@ function renderDetail(page, id, navigate, initialTab) {
       ['content', 'Content', 'puzzle'],
       ['worlds', 'Worlds', 'globe'],
       ['screenshots', 'Screenshots', 'monitor'],
+      ['files', 'Files', 'folder'],
       ['console', 'Console', 'terminal'],
       ['settings', 'Settings', 'settings'],
     ];
@@ -142,6 +144,7 @@ function renderDetail(page, id, navigate, initialTab) {
     if (tab === 'content') drawContent(body, inst, navigate);
     if (tab === 'worlds') drawWorlds(body, inst);
     if (tab === 'screenshots') drawScreenshots(body, inst);
+    if (tab === 'files') fileBrowser(body, { kind: 'instance', id: inst.id }, { rootLabel: inst.name });
     if (tab === 'console') offLog = drawConsole(body, inst);
     if (tab === 'settings') drawSettings(body, inst, () => { drawHead(); });
   };
