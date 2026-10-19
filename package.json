@@ -1,0 +1,84 @@
+{
+  "name": "pimpin-launcher",
+  "productName": "Pimpin Launcher",
+  "version": "0.1.0",
+  "description": "A custom Minecraft launcher with a built-in mod, shader, resource pack and plugin library.",
+  "main": "src/main/main.js",
+  "author": "Nos and Stealzers",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "check": "node scripts/check.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "msmc": "^5.0.5",
+    "tar": "^7.5.22"
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
+  },
+  "homepage": "https://github.com/nos-and-stealzers/pimpinminecraftlauncher",
+  "build": {
+    "appId": "com.nosandstealzers.pimpinlauncher",
+    "productName": "Pimpin Launcher",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "artifactName": "PimpinLauncher-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "PimpinLauncher-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "PimpinLauncher-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png",
+      "maintainer": "Nos and Stealzers",
+      "synopsis": "Custom Minecraft launcher with mods, shaders and plugins",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.games",
+      "icon": "build/icon.png"
+    }
+  },
+  "desktopName": "pimpin-launcher.desktop"
+}

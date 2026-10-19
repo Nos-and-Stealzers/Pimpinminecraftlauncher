@@ -1,0 +1,282 @@
+// Library: browse and install mods, shaders, resource packs, modpacks and
+// server plugins from the public Modrinth library.
+import { el, icon, clear, modal, errorToast, toast, fmtNum, seg, safeUrl, markdown, switchEl } from '../dom.js';
+import { api, state, refreshInstances, selectedInstance, LOADER_LABEL } from '../state.js';
+
+const TYPES = [
+  { value: 'mod', label: 'Mods', icon: 'puzzle' },
+  { value: 'shader', label: 'Shaders', icon: 'sun' },
+  { value: 'resourcepack', label: 'Resource Packs', icon: 'palette' },
+  { value: 'modpack', label: 'Modpacks', icon: 'library' },
+  { value: 'plugin', label: 'Plugins', icon: 'server' },
+];
+const SORTS = [
+  ['relevance', 'Relevance'],
+  ['downloads', 'Most downloaded'],
+  ['follows', 'Most followed'],
+  ['newest', 'Newest'],
+  ['updated', 'Recently updated'],
+];
+const PAGE = 24;
+
+// Remember the browsing state between visits.
+const mem = { type: 'mod', query: '', sort: 'relevance', offset: 0, compatible: true, instanceId: null, serverId: null };
+
+export function render(page, params, navigate) {
+  if (params.type) mem.type = params.type;
+  if (params.instanceId) mem.instanceId = params.instanceId;
+  if (params.serverId) mem.serverId = params.serverId;
+  if (params.type || params.instanceId || params.serverId) mem.offset = 0;
+
+  const results = el('div');
+  const targetBar = el('div');
+  const search = el('input', { class: 'input', placeholder: 'Search the library…', value: mem.query });
+  const sortSel = el('select', { class: 'select', style: { width: '190px' } }, SORTS.map(([v, l]) => el('option', { value: v }, l)));
+  sortSel.value = mem.sort;
+  let installed = new Set();
+  let seq = 0;
+
+  const target = () => {
+    if (mem.type === 'plugin') return state.servers.find((s) => s.id === mem.serverId) || state.servers[0] || null;
+    if (mem.type === 'modpack') return null;
+    return state.instances.find((i) => i.id === mem.instanceId) || selectedInstance();
+  };
+  const targetRef = () => {
+    const t = target();
+    if (!t) return null;
+    return { kind: mem.type === 'plugin' ? 'server' : 'instance', id: t.id };
+  };
+
+  const loadInstalled = async () => {
+    const ref = targetRef();
+    installed = new Set();
+    if (!ref) return;
+    try {
+      const items = await api.call('content:list', ref);
+      installed = new Set(items.map((i) => i.projectId).filter(Boolean));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const drawTarget = () => {
+    const t = target();
+    if (mem.type === 'modpack') {
+      clear(targetBar, el('div', { class: 'target-bar' }, icon('info'), el('span', { class: 'grow' }, 'Modpacks install as a brand-new instance with everything set up. Fabric & Quilt packs are supported.')));
+      return;
+    }
+    const isPlugin = mem.type === 'plugin';
+    const list = isPlugin ? state.servers : state.instances;
+    if (!list.length) {
+      clear(
+        targetBar,
+        el('div', { class: 'target-bar' }, icon('info'),
+          el('span', { class: 'grow' }, isPlugin ? 'Plugins install onto a local server. Create one in the Servers tab first.' : 'Create an instance first to install content.'),
+          el('button', { class: 'btn sm primary', onclick: () => navigate(isPlugin ? 'servers' : 'instances', { create: true }) }, icon('plus'), isPlugin ? 'New server' : 'New instance')),
+      );
+      return;
+    }
+    const sel = el('select', { class: 'select' }, list.map((x) => el('option', { value: x.id }, `${x.name} — ${x.mcVersion}${isPlugin ? ' Paper' : ` ${LOADER_LABEL[x.loader] || ''}`}`)));
+    sel.value = t?.id;
+    sel.addEventListener('change', async () => {
+      if (isPlugin) mem.serverId = sel.value;
+      else mem.instanceId = sel.value;
+      mem.offset = 0;
+      await runSearch();
+    });
+    const warn = !isPlugin && t && t.loader === 'vanilla' && (mem.type === 'mod' || mem.type === 'shader')
+      ? el('span', { class: 'chip', style: { color: 'var(--warn)' } }, icon('alert'), 'Vanilla instance — switch to Fabric to use this')
+      : null;
+    clear(
+      targetBar,
+      el('div', { class: 'target-bar' },
+        el('span', { class: 'muted' }, 'Installing into'),
+        sel,
+        warn,
+        el('span', { class: 'grow' }),
+        el('label', { class: 'row muted', style: { gap: '8px', fontSize: '12.5px' } }, 'Only compatible', switchEl(mem.compatible, (v) => { mem.compatible = v; mem.offset = 0; runSearch(); })),
+      ),
+    );
+  };
+
+  const runSearch = async () => {
+    const my = ++seq;
+    drawTarget();
+    clear(results, el('div', { class: 'row muted', style: { padding: '30px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Searching the library…'));
+    const t = target();
+    const opts = { type: mem.type, query: mem.query, sort: mem.sort, offset: mem.offset, limit: PAGE };
+    if (mem.compatible && t) {
+      opts.mcVersion = t.mcVersion;
+      if (mem.type === 'mod') opts.loader = t.loader === 'vanilla' ? 'fabric' : t.loader;
+    }
+    try {
+      const [res] = await Promise.all([api.call('library:search', opts), loadInstalled()]);
+      if (my !== seq) return;
+      drawResults(res);
+    } catch (err) {
+      if (my !== seq) return;
+      clear(results, el('div', { class: 'card empty' }, icon('alert'), el('h3', {}, 'Library unavailable'), el('div', {}, err.message)));
+    }
+  };
+
+  const drawResults = (res) => {
+    if (!res.hits.length) {
+      clear(results, el('div', { class: 'card empty' }, icon('search'), el('h3', {}, 'Nothing found'), el('div', {}, 'Try another search or turn off "Only compatible".')));
+      return;
+    }
+    const pages = Math.ceil(res.total_hits / PAGE);
+    const cur = Math.floor(mem.offset / PAGE) + 1;
+    clear(
+      results,
+      el('div', { class: 'lib-grid' }, res.hits.map((h) => projectCard(h))),
+      el('div', { class: 'pager' },
+        el('button', { class: 'btn sm', disabled: cur <= 1, onclick: () => { mem.offset -= PAGE; runSearch(); page.scrollTop = 0; } }, 'Previous'),
+        el('span', {}, `Page ${cur} of ${fmtNum(pages)}`),
+        el('button', { class: 'btn sm', disabled: cur >= pages, onclick: () => { mem.offset += PAGE; runSearch(); page.scrollTop = 0; } }, 'Next'),
+      ),
+    );
+  };
+
+  const install = async (projectId, btn, versionId) => {
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.replaceChildren(el('span', { class: 'spin', style: { width: '14px', height: '14px' } }), 'Installing');
+    try {
+      if (mem.type === 'modpack') {
+        const inst = await api.call('modpack:install', { projectId, versionId });
+        await refreshInstances();
+        toast(`${inst.name} is ready to play!`);
+        btn.replaceChildren(icon('check'), 'Installed');
+        btn.classList.add('ok');
+        return true;
+      }
+      const ref = targetRef();
+      if (!ref) throw new Error(mem.type === 'plugin' ? 'Create a server first.' : 'Create an instance first.');
+      const res = await api.call('content:install', ref, { projectId, type: mem.type, versionId });
+      installed.add(projectId);
+      btn.replaceChildren(icon('check'), 'Installed');
+      btn.classList.add('ok');
+      const extra = res.installed.length > 1 ? ` (+ ${res.installed.slice(1).join(', ')})` : '';
+      toast(`Installed ${res.installed[0] || 'it'}${extra}`);
+      return true;
+    } catch (err) {
+      btn.disabled = false;
+      btn.replaceChildren(icon('download'), label || 'Install');
+      errorToast(err);
+      return false;
+    }
+  };
+
+  const installBtn = (projectId, size = 'sm') => {
+    const done = installed.has(projectId);
+    const b = el('button', { class: `btn ${size} ${done ? 'ok' : 'primary'}`, disabled: done }, icon(done ? 'check' : 'download'), done ? 'Installed' : mem.type === 'modpack' ? 'Install pack' : 'Install');
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      install(projectId, b);
+    });
+    return b;
+  };
+
+  const projectCard = (h) =>
+    el(
+      'div',
+      { class: `card proj ${mem.type}`, onclick: () => openProject(h.project_id) },
+      safeUrl(h.icon_url) ? el('img', { class: 'proj-icon', src: h.icon_url, alt: '', loading: 'lazy' }) : el('div', { class: 'proj-icon ph' }, icon('box')),
+      el(
+        'div',
+        { class: 'body' },
+        el('div', { class: 'title' }, h.title),
+        el('div', { class: 'author' }, `by ${h.author}`),
+        el('div', { class: 'desc' }, h.description),
+        el('div', { class: 'foot' }, el('span', {}, icon('download'), fmtNum(h.downloads)), el('span', {}, icon('heart'), fmtNum(h.follows)), installBtn(h.project_id)),
+      ),
+    );
+
+  const openProject = async (id) => {
+    const body = el('div', { class: 'row muted', style: { padding: '40px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading…');
+    const m = modal({ wide: true, title: '', body, header: el('div') });
+    try {
+      const p = await api.call('library:project', id);
+      const t = target();
+      const verSel = el('select', { class: 'select', style: { width: '260px' } }, el('option', { value: '' }, 'Best match (recommended)'));
+      const versionsOpts = {};
+      if (t && mem.type !== 'modpack') {
+        versionsOpts.gameVersions = mem.compatible ? [t.mcVersion] : undefined;
+        if (mem.type === 'mod') versionsOpts.loaders = t.loader === 'quilt' ? ['quilt', 'fabric'] : [t.loader];
+      }
+      if (mem.type === 'modpack') versionsOpts.loaders = ['fabric', 'quilt'];
+      api.call('library:versions', id, versionsOpts).then((vs) => {
+        for (const v of vs.slice(0, 50)) verSel.append(el('option', { value: v.id }, `${v.version_number} · ${v.game_versions.slice(-2).join(', ')}${v.version_type !== 'release' ? ` (${v.version_type})` : ''}`));
+      }).catch(() => {});
+      const done = installed.has(p.id);
+      const ib = el('button', { class: `btn ${done ? 'ok' : 'primary'}`, disabled: done }, icon(done ? 'check' : 'download'), done ? 'Installed' : 'Install');
+      ib.addEventListener('click', async () => {
+        if (await install(p.id, ib, verSel.value || undefined)) runSearch();
+      });
+      const header = el(
+        'div',
+        { class: 'proj-detail-head' },
+        safeUrl(p.icon_url) ? el('img', { class: 'proj-icon', src: p.icon_url, alt: '' }) : el('div', { class: 'proj-icon ph' }, icon('box')),
+        el(
+          'div',
+          { class: 'grow' },
+          el('h2', {}, p.title),
+          el('p', {}, p.description),
+          el('div', { class: 'row', style: { flexWrap: 'wrap' } },
+            el('span', { class: 'chip' }, icon('download'), fmtNum(p.downloads)),
+            el('span', { class: 'chip' }, icon('heart'), fmtNum(p.followers)),
+            p.categories.slice(0, 4).map((c) => el('span', { class: 'chip' }, c)),
+            el('span', { class: 'chip', style: { cursor: 'pointer' }, onclick: () => api.call('shell:openExternal', `https://modrinth.com/${p.project_type}/${p.slug}`) }, icon('external'), 'Modrinth'),
+          ),
+        ),
+        el('button', { class: 'btn ghost icon sm', onclick: () => m.close() }, icon('x')),
+      );
+      m.box.firstChild.replaceWith(header);
+      const openLink = (u) => api.call('shell:openExternal', u);
+      clear(
+        body,
+        el('div', { class: 'row', style: { justifyContent: 'flex-end' } }, mem.type !== 'modpack' && t ? el('span', { class: 'muted grow' }, `Into ${t.name} (${t.mcVersion})`) : el('span', { class: 'grow' }), verSel, ib),
+        p.gallery?.length
+          ? el('div', { class: 'gallery' }, p.gallery.filter((g) => safeUrl(g.url)).map((g) => el('img', { src: g.url, alt: g.title || '', loading: 'lazy', onclick: () => lightbox(g.url) })))
+          : null,
+        markdown(p.body, openLink),
+      );
+      body.className = '';
+      body.style.cssText = 'display:flex;flex-direction:column;gap:16px';
+    } catch (err) {
+      clear(body, el('div', { class: 'empty' }, err.message));
+    }
+  };
+
+  let timer;
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      mem.query = search.value.trim();
+      mem.offset = 0;
+      runSearch();
+    }, 300);
+  });
+  sortSel.addEventListener('change', () => {
+    mem.sort = sortSel.value;
+    mem.offset = 0;
+    runSearch();
+  });
+
+  page.append(
+    el('div', { class: 'page-head' }, el('div', {}, el('h1', { class: 'page-title' }, 'Library'), el('p', { class: 'page-sub' }, 'Thousands of mods, shaders, resource packs, modpacks and plugins — installed with one click.'))),
+    el('div', { class: 'lib-toolbar' },
+      seg(TYPES, mem.type, (v) => { mem.type = v; mem.offset = 0; runSearch(); }),
+      el('div', { class: 'search' }, icon('search'), search),
+      sortSel,
+    ),
+    targetBar,
+    results,
+  );
+  runSearch();
+}
+
+function lightbox(url) {
+  const box = el('div', { class: 'lightbox', onclick: () => box.remove() }, el('img', { src: url, alt: '' }));
+  document.body.append(box);
+}
