@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "pimpin",
+  "version": "${version}",
+  "name": "Pimpin Client",
+  "description": "The Pimpin Launcher's own client mod: HUD, keystrokes, minimap, zoom, FPS booster and a built-in mod menu.",
+  "authors": ["Nos and Stealzers"],
+  "contact": { "sources": "https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher" },
+  "license": "MIT",
+  "icon": "assets/pimpin/icon.png",
+  "environment": "client",
+  "entrypoints": { "client": ["dev.pimpin.client.PimpinClient"] },
+  "mixins": ["pimpin.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.4",
+    "java": ">=21"
+  }
+}

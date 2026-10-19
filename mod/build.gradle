@@ -1,0 +1,38 @@
+plugins {
+    id 'fabric-loom' version '1.11.8'
+}
+
+version = "${project.mod_version}+${project.minecraft_version}"
+group = 'dev.pimpin'
+base { archivesName = 'pimpin-client' }
+
+repositories {}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}
+
+tasks.withType(JavaCompile).configureEach { it.options.release = 21 }
+
+java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
+
+jar { from('LICENSE') { rename { "${it}_pimpin" } } }
+
+// `gradle runClient -PquickPlay=MyWorld` jumps straight into a world (used for testing).
+loom {
+    runs {
+        client {
+            if (project.hasProperty('quickPlay')) {
+                programArgs '--quickPlaySingleplayer', project.property('quickPlay'), '--width', '1280', '--height', '720'
+            }
+        }
+    }
+}
