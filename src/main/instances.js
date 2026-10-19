@@ -3,6 +3,7 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const AdmZip = require('adm-zip');
 const { dirs, readJson, writeJson, uniqueDir, safeJoin, getSettings, updateSettings } = require('./store');
 const minecraft = require('./minecraft');
@@ -15,6 +16,7 @@ const META = 'pimpin-instance.json';
 const LOADER_NAMES = { vanilla: 'Vanilla', fabric: 'Fabric', quilt: 'Quilt' };
 const running = new Map(); // id -> { child, started }
 const logs = new Map(); // id -> string[]
+const lastRun = new Map(); // id -> { started, code }
 let emit = () => {};
 
 function setEmitter(fn) {
@@ -51,7 +53,7 @@ async function list() {
   const out = [];
   for (const id of await fsp.readdir(dirs.instances).catch(() => [])) {
     const meta = await readJson(path.join(dirs.instances, id, META), null);
-    if (meta) out.push({ ...meta, id, running: running.has(id), content: undefined });
+    if (meta) out.push({ ...meta, id, running: running.has(id), content: undefined, contentCount: (meta.content || []).length });
   }
   return out.sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0));
 }
@@ -117,7 +119,7 @@ function pushLog(id, line) {
   emit('game:log', { id, line });
 }
 
-async function launch(id, { server } = {}) {
+async function launch(id, { server, world } = {}) {
   if (running.has(id)) throw new Error('This instance is already running.');
   const meta = await get(id);
   const settings = getSettings();
@@ -132,6 +134,7 @@ async function launch(id, { server } = {}) {
         settings,
         gameDir: dirOf(id),
         server,
+        world,
         javaPath: meta.javaPath || settings.javaPath || null,
       },
       {
@@ -141,12 +144,8 @@ async function launch(id, { server } = {}) {
     );
     const started = Date.now();
     running.set(id, { child, started });
-    meta.lastPlayed = started;
-    if (loaderVersion && !meta.loaderVersion) meta.loaderVersion = loaderVersion;
-    await save(id, meta);
-    await updateSettings({ lastInstance: id });
-    emit('game:state', { id, state: 'running' });
-
+    // Attach listeners before any await: a JVM that fails fast (bad flag,
+    // wrong Java) can exit within milliseconds.
     const parse = log4jParser((line) => pushLog(id, line));
     const onData = (chunk) => {
       for (const line of chunk.toString().split(/\r?\n/)) if (line.trim()) parse(line);
@@ -156,6 +155,7 @@ async function launch(id, { server } = {}) {
     child.on('error', (err) => pushLog(id, `[Pimpin] Failed to start java: ${err.message}`));
     child.on('close', async (code) => {
       running.delete(id);
+      lastRun.set(id, { started, code });
       pushLog(id, `[Pimpin] Game exited with code ${code}`);
       try {
         const m = await get(id);
@@ -166,6 +166,12 @@ async function launch(id, { server } = {}) {
       }
       emit('game:state', { id, state: 'stopped', code, crashed: code !== 0 && code !== null });
     });
+    emit('game:state', { id, state: 'running' });
+
+    meta.lastPlayed = started;
+    if (loaderVersion && !meta.loaderVersion) meta.loaderVersion = loaderVersion;
+    await save(id, meta);
+    await updateSettings({ lastInstance: id });
     return { ok: true };
   } catch (err) {
     pushLog(id, `[Pimpin] ${err.stack || err.message}`);
@@ -206,6 +212,89 @@ function log4jParser(push) {
 function kill(id) {
   const r = running.get(id);
   if (r) r.child.kill();
+}
+
+/** Copy an instance (worlds, mods and settings included) under a new name. */
+async function duplicate(id) {
+  if (running.has(id)) throw new Error('Close the game before duplicating this instance.');
+  const meta = await get(id);
+  const name = `${meta.name} (copy)`;
+  const newId = uniqueDir(dirs.instances, name);
+  await fsp.cp(dirOf(id), dirOf(newId), {
+    recursive: true,
+    filter: (src) => !/[\\/](logs|crash-reports)$/.test(src),
+  });
+  await save(newId, { ...meta, id: newId, name, created: Date.now(), lastPlayed: 0, playTime: 0 });
+  return get(newId);
+}
+
+async function worlds(id) {
+  const saves = path.join(dirOf(id), 'saves');
+  const out = [];
+  for (const folder of await fsp.readdir(saves).catch(() => [])) {
+    const dir = path.join(saves, folder);
+    const level = path.join(dir, 'level.dat');
+    const st = await fsp.stat(level).catch(() => null);
+    if (!st) continue;
+    const iconPath = path.join(dir, 'icon.png');
+    out.push({
+      folder,
+      lastPlayed: st.mtimeMs,
+      icon: fs.existsSync(iconPath) ? `${pathToFileURL(iconPath).href}?t=${Math.round(st.mtimeMs)}` : null,
+    });
+  }
+  return out.sort((a, b) => b.lastPlayed - a.lastPlayed);
+}
+
+async function screenshots(id) {
+  const dir = path.join(dirOf(id), 'screenshots');
+  const out = [];
+  for (const name of await fsp.readdir(dir).catch(() => [])) {
+    if (!/\.(png|jpe?g)$/i.test(name)) continue;
+    const st = await fsp.stat(path.join(dir, name)).catch(() => null);
+    if (st) out.push({ name, url: pathToFileURL(path.join(dir, name)).href, time: st.mtimeMs });
+  }
+  return out.sort((a, b) => b.time - a.time);
+}
+
+async function deleteScreenshot(id, name) {
+  await fsp.rm(safeJoin(path.join(dirOf(id), 'screenshots'), name), { force: true });
+}
+
+/** Explain why the last run crashed: log tail, crash report and known causes. */
+async function crashInfo(id) {
+  const run = lastRun.get(id) || { started: 0, code: null };
+  const lines = getLogs(id);
+  let report = null;
+  const crashDir = path.join(dirOf(id), 'crash-reports');
+  const files = await fsp.readdir(crashDir).catch(() => []);
+  let newest = null;
+  for (const f of files) {
+    const st = await fsp.stat(path.join(crashDir, f)).catch(() => null);
+    if (st && st.mtimeMs >= run.started - 1000 && (!newest || st.mtimeMs > newest.time)) newest = { file: f, time: st.mtimeMs };
+  }
+  if (newest) {
+    const text = await fsp.readFile(path.join(crashDir, newest.file), 'utf8').catch(() => '');
+    report = { file: newest.file, description: (text.match(/^Description: (.*)$/m) || [])[1] || null, head: text.split(/\r?\n/).slice(0, 40).join('\n') };
+  }
+  const all = lines.join('\n');
+  const hints = [];
+  if (/Incompatible mods? found|Mod resolution (failed|encountered)/i.test(all)) {
+    const m = all.match(/(?:Incompatible mods? found|Mod resolution encountered)[\s\S]{0,900}/i);
+    hints.push({ title: 'Some mods are incompatible', text: m ? m[0].split('\n').slice(0, 10).join('\n') : '' });
+  }
+  if (/Unrecognized VM option|Unrecognized option|Invalid maximum heap size/.test(all)) {
+    hints.push({ title: 'Invalid Java arguments', text: 'Clear the JVM arguments in this instance\'s settings (or reset them in Settings → Java & memory).' });
+  }
+  if (/Could not reserve enough space|Cannot allocate memory/.test(all)) {
+    hints.push({ title: 'Not enough free memory', text: 'Lower the memory slider — your PC could not give Minecraft that much RAM.' });
+  }
+  if (/OutOfMemoryError/.test(all)) hints.push({ title: 'Minecraft ran out of memory', text: 'Give it more RAM in Settings → Java & memory (or in this instance\'s settings).' });
+  if (/UnsupportedClassVersionError/.test(all)) hints.push({ title: 'Wrong Java version', text: 'Clear the custom Java path so the launcher can pick the right Java automatically.' });
+  if (/Failed to create backend|GLFW error|Pixel format not accelerated|No OpenGL context/i.test(all)) {
+    hints.push({ title: 'Graphics driver problem', text: 'Update your graphics drivers (NVIDIA / AMD / Intel). On laptops, make sure Minecraft uses the dedicated GPU.' });
+  }
+  return { code: run.code, tail: lines.slice(-60), report, hints };
 }
 
 function getLogs(id) {
@@ -284,4 +373,9 @@ module.exports = {
   holder: async (id) => holder(await get(id)),
   dirOf,
   installModpack,
+  duplicate,
+  worlds,
+  screenshots,
+  deleteScreenshot,
+  crashInfo,
 };

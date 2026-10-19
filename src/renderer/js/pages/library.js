@@ -18,9 +18,16 @@ const SORTS = [
   ['updated', 'Recently updated'],
 ];
 const PAGE = 24;
+const CATEGORIES = {
+  mod: ['optimization', 'utility', 'adventure', 'decoration', 'magic', 'technology', 'storage', 'worldgen', 'food', 'mobs'],
+  shader: ['realistic', 'semi-realistic', 'fantasy', 'cartoon', 'vanilla-like', 'potato', 'low', 'high'],
+  resourcepack: ['16x', '32x', 'realistic', 'simplistic', 'themed', 'vanilla-like', 'combat', 'gui'],
+  modpack: ['optimization', 'adventure', 'technology', 'magic', 'quests', 'lightweight', 'multiplayer', 'challenging'],
+  plugin: ['utility', 'economy', 'management', 'minigame', 'social', 'game-mechanics', 'adventure', 'worldgen'],
+};
 
 // Remember the browsing state between visits.
-const mem = { type: 'mod', query: '', sort: 'relevance', offset: 0, compatible: true, instanceId: null, serverId: null };
+const mem = { type: 'mod', query: '', sort: 'relevance', offset: 0, compatible: true, instanceId: null, serverId: null, category: null };
 
 export function render(page, params, navigate) {
   if (params.type) mem.type = params.type;
@@ -30,6 +37,14 @@ export function render(page, params, navigate) {
 
   const results = el('div');
   const targetBar = el('div');
+  const catRow = el('div', { class: 'cat-row' });
+  const drawCats = () =>
+    clear(
+      catRow,
+      el('button', { class: mem.category ? '' : 'on', onclick: () => { mem.category = null; mem.offset = 0; drawCats(); runSearch(); } }, 'All'),
+      (CATEGORIES[mem.type] || []).map((c) =>
+        el('button', { class: mem.category === c ? 'on' : '', onclick: () => { mem.category = mem.category === c ? null : c; mem.offset = 0; drawCats(); runSearch(); } }, c.replace(/-/g, ' '))),
+    );
   const search = el('input', { class: 'input', placeholder: 'Search the library…', value: mem.query });
   const sortSel = el('select', { class: 'select', style: { width: '190px' } }, SORTS.map(([v, l]) => el('option', { value: v }, l)));
   sortSel.value = mem.sort;
@@ -102,9 +117,9 @@ export function render(page, params, navigate) {
   const runSearch = async () => {
     const my = ++seq;
     drawTarget();
-    clear(results, el('div', { class: 'row muted', style: { padding: '30px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Searching the library…'));
+    clear(results, el('div', { class: 'lib-grid' }, Array.from({ length: 9 }, () => el('div', { class: 'sk-card skeleton' }))));
     const t = target();
-    const opts = { type: mem.type, query: mem.query, sort: mem.sort, offset: mem.offset, limit: PAGE };
+    const opts = { type: mem.type, query: mem.query, sort: mem.sort, offset: mem.offset, limit: PAGE, category: mem.category || undefined };
     if (mem.compatible && t) {
       opts.mcVersion = t.mcVersion;
       if (mem.type === 'mod') opts.loader = t.loader === 'vanilla' ? 'fabric' : t.loader;
@@ -266,17 +281,19 @@ export function render(page, params, navigate) {
   page.append(
     el('div', { class: 'page-head' }, el('div', {}, el('h1', { class: 'page-title' }, 'Library'), el('p', { class: 'page-sub' }, 'Thousands of mods, shaders, resource packs, modpacks and plugins — installed with one click.'))),
     el('div', { class: 'lib-toolbar' },
-      seg(TYPES, mem.type, (v) => { mem.type = v; mem.offset = 0; runSearch(); }),
-      el('div', { class: 'search' }, icon('search'), search),
-      sortSel,
+      seg(TYPES, mem.type, (v) => { mem.type = v; mem.offset = 0; mem.category = null; drawCats(); runSearch(); }),
+      el('div', { class: 'lib-search-row' }, el('div', { class: 'search' }, icon('search'), search), sortSel),
     ),
+    catRow,
     targetBar,
     results,
   );
+  drawCats();
   runSearch();
+  setTimeout(() => search.focus(), 50);
 }
 
-function lightbox(url) {
+export function lightbox(url) {
   const box = el('div', { class: 'lightbox', onclick: () => box.remove() }, el('img', { src: url, alt: '' }));
   document.body.append(box);
 }

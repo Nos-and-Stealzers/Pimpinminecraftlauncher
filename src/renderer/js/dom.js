@@ -95,10 +95,12 @@ export function toast(text, kind = 'ok', ms = 4200) {
   const root = document.getElementById('toasts');
   const t = el('div', { class: `toast ${kind}` }, icon(kind === 'err' ? 'alert' : kind === 'info' ? 'info' : 'check'), el('div', {}, text));
   root.append(t);
-  setTimeout(() => {
+  const dismiss = () => {
     t.classList.add('leaving');
     setTimeout(() => t.remove(), 300);
-  }, ms);
+  };
+  t.addEventListener('click', dismiss);
+  setTimeout(dismiss, ms);
 }
 
 export function errorToast(err) {

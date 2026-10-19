@@ -4,6 +4,7 @@ import { el, icon, clear, errorToast, toast, confirmModal, timeAgo, fmtDuration,
 import { api, state, subscribe, refreshInstances, selectInstance, getVersions, LOADER_LABEL, ICON_KEYS } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from '../components.js';
 import { featureGrid } from './home.js';
+import { lightbox } from './library.js';
 
 const tabMem = {};
 
@@ -22,8 +23,11 @@ function renderList(page, params, navigate) {
         const card = el(
           'div',
           { class: `card inst-card${running ? ' running' : ''}`, onclick: () => navigate('instances', { id: i.id }) },
+          el('div', { class: `glow ic-${i.icon || 'violet'}` }),
           el('div', { class: 'top' }, instIcon(i), el('div', { class: 'grow' }, el('b', {}, i.name), el('span', {}, instSubtitle(i)))),
-          el('div', { class: 'bottom' }, running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : el('span', { class: 'dim' }, icon('clock'), ` ${timeAgo(i.lastPlayed)} · ${fmtDuration(i.playTime)}`)),
+          el('div', { class: 'bottom' },
+            running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : el('span', { class: 'dim' }, icon('clock'), ` ${timeAgo(i.lastPlayed)} · ${fmtDuration(i.playTime)}`),
+            i.contentCount ? el('span', { class: 'chip' }, icon('puzzle'), String(i.contentCount)) : null),
         );
         const quick = el('button', { class: `btn sm ${running ? '' : 'primary'} quick` }, icon(running ? 'stop' : 'play'), running ? 'Stop' : 'Play');
         quick.addEventListener('click', (e) => {
@@ -83,6 +87,20 @@ function renderDetail(page, id, navigate, initialTab) {
         el('div', { class: 'row' },
           el('button', { class: 'btn icon', title: 'Open folder', onclick: () => api.call('instances:open', id) }, icon('folder')),
           el('button', {
+            class: 'btn icon',
+            title: 'Duplicate instance',
+            onclick: async () => {
+              try {
+                const copy = await api.call('instances:duplicate', id);
+                await refreshInstances();
+                toast(`Created ${copy.name}`);
+                navigate('instances', { id: copy.id });
+              } catch (err) {
+                errorToast(err);
+              }
+            },
+          }, icon('layers')),
+          el('button', {
             class: 'btn icon danger',
             title: 'Delete instance',
             onclick: async () => {
@@ -108,6 +126,8 @@ function renderDetail(page, id, navigate, initialTab) {
     const defs = [
       ['features', 'Client features', 'wand'],
       ['content', 'Content', 'puzzle'],
+      ['worlds', 'Worlds', 'globe'],
+      ['screenshots', 'Screenshots', 'monitor'],
       ['console', 'Console', 'terminal'],
       ['settings', 'Settings', 'settings'],
     ];
@@ -120,6 +140,8 @@ function renderDetail(page, id, navigate, initialTab) {
     clear(body);
     if (tab === 'features') drawFeatures(body, inst, navigate);
     if (tab === 'content') drawContent(body, inst, navigate);
+    if (tab === 'worlds') drawWorlds(body, inst);
+    if (tab === 'screenshots') drawScreenshots(body, inst);
     if (tab === 'console') offLog = drawConsole(body, inst);
     if (tab === 'settings') drawSettings(body, inst, () => { drawHead(); });
   };
@@ -260,6 +282,64 @@ async function drawContent(root, inst, navigate) {
   load().catch(errorToast);
 }
 
+async function drawWorlds(root, inst) {
+  const list = el('div', { class: 'world-list' }, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+  root.append(
+    el('div', { class: 'filter-row' },
+      el('span', { class: 'muted grow' }, 'Press play on a world to load straight into it (Minecraft 1.20 and newer).'),
+      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'saves') }, icon('folder'), 'Saves folder')),
+    list,
+  );
+  try {
+    const worlds = await api.call('instances:worlds', inst.id);
+    if (!worlds.length) {
+      clear(list, el('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, icon('globe'), el('h3', {}, 'No worlds yet'), el('div', {}, 'Worlds you create in-game show up here.')));
+      return;
+    }
+    clear(list, worlds.map((w) =>
+      el('div', { class: 'card world-row' },
+        w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico' }, icon('globe')),
+        el('div', { class: 'grow' }, el('b', {}, w.folder), el('span', {}, `Played ${timeAgo(w.lastPlayed)}`)),
+        el('button', { class: 'btn sm ghost icon', title: 'Show in folder', onclick: () => api.call('shell:showItem', inst.id, 'saves', w.folder) }, icon('folder')),
+        el('button', { class: 'btn sm primary', onclick: () => { selectInstance(inst.id); playInstance(inst.id, { world: w.folder }); } }, icon('play'), 'Play'))));
+  } catch (err) {
+    clear(list, el('div', { class: 'card empty' }, err.message));
+  }
+}
+
+async function drawScreenshots(root, inst) {
+  const grid = el('div', { class: 'shots' });
+  root.append(
+    el('div', { class: 'filter-row' },
+      el('span', { class: 'muted grow' }, 'Press ', el('span', { class: 'kbd' }, 'F2'), ' in-game to take a screenshot.'),
+      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'screenshots') }, icon('folder'), 'Screenshots folder')),
+    grid,
+  );
+  const load = async () => {
+    const shots = await api.call('instances:screenshots', inst.id);
+    if (!shots.length) {
+      clear(grid, el('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, icon('monitor'), el('h3', {}, 'No screenshots yet'), el('div', {}, 'Your best moments will show up here.')));
+      return;
+    }
+    clear(grid, shots.map((sh) =>
+      el('div', { class: 'shot', onclick: () => lightbox(sh.url) },
+        el('img', { src: sh.url, alt: sh.name, loading: 'lazy' }),
+        el('div', { class: 'acts' },
+          el('button', { class: 'btn sm icon', title: 'Show in folder', onclick: (e) => { e.stopPropagation(); api.call('shell:showItem', inst.id, 'screenshots', sh.name); } }, icon('folder')),
+          el('button', {
+            class: 'btn sm icon danger',
+            title: 'Delete',
+            onclick: async (e) => {
+              e.stopPropagation();
+              if (!(await confirmModal('Delete screenshot?', sh.name, { confirm: 'Delete', danger: true }))) return;
+              await api.call('instances:deleteScreenshot', inst.id, sh.name).catch(errorToast);
+              load();
+            },
+          }, icon('trash'))))));
+  };
+  load().catch(errorToast);
+}
+
 export function consoleView(lines) {
   const box = el('div', { class: 'console' });
   const add = (line) => {
@@ -280,7 +360,8 @@ function drawConsole(root, inst) {
     el('div', { class: 'filter-row' },
       el('span', { class: 'muted grow' }, 'Live output from the game. Crash reports are saved in the instance folder.'),
       el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'crash-reports').catch(() => api.call('instances:open', inst.id)) }, icon('folder'), 'Crash reports'),
-      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'logs').catch(() => {}) }, icon('folder'), 'Logs')),
+      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'logs').catch(() => {}) }, icon('folder'), 'Logs'),
+      el('button', { class: 'btn sm', onclick: () => { navigator.clipboard.writeText(box.innerText); toast('Log copied to clipboard'); } }, icon('layout'), 'Copy log')),
     box,
   );
   api.call('instances:logs', inst.id).then((lines) => {

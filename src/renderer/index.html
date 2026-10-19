@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
+      content="default-src 'self'; img-src 'self' https: data: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
     />
     <title>Pimpin Launcher</title>
     <link rel="stylesheet" href="css/app.css" />
@@ -24,6 +24,7 @@
       </div>
       <div class="titlebar-center" id="task-pill"></div>
       <div class="titlebar-right">
+        <div id="update-slot"></div>
         <div id="account-slot"></div>
         <div class="win-controls">
           <button class="win-btn" data-win="minimize" title="Minimize"></button>

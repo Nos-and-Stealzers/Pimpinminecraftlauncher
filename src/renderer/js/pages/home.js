@@ -13,7 +13,7 @@ export function render(page, _params, navigate) {
 
   let featureFor = null;
   const draw = (topic) => {
-    renderHero(hero, navigate);
+    renderHero(hero, navigate, topic);
     const sel = selectedInstance();
     if (topic !== 'game-progress' && (sel?.id !== featureFor || topic === 'instances-content')) {
       featureFor = sel?.id;
@@ -28,19 +28,64 @@ export function render(page, _params, navigate) {
   return unsub;
 }
 
-function renderHero(root, navigate) {
+function heroArt(acc) {
+  const art = el('div', { class: 'hero-art' }, el('div', { class: 'grid' }));
+  if (!acc) {
+    art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
+    return art;
+  }
+  const id = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
+  art.append(
+    el('div', { class: 'skin' },
+      el('div', { class: 'pedestal' }),
+      el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() })),
+  );
+  return art;
+}
+
+let heroKey = '';
+let heroRefs = null;
+
+function playButton(sel, g) {
+  if (g?.state === 'running') {
+    return { btn: el('button', { class: 'play-btn running', onclick: () => stopInstance(sel.id) }, icon('stop'), el('span', { class: 'label' }, 'PLAYING', el('small', {}, 'Click to force close'))) };
+  }
+  if (g?.state === 'preparing') {
+    const stage = el('small', {}, 'Preparing');
+    const fill = el('span', { class: 'fill' });
+    return { btn: el('button', { class: 'play-btn busy' }, el('span', { class: 'spin' }), el('span', { class: 'label' }, 'LAUNCHING', stage), fill), stage, fill };
+  }
+  return { btn: el('button', { class: 'play-btn', onclick: () => playInstance(sel.id) }, icon('play'), 'PLAY') };
+}
+
+function updateProgress(g) {
+  if (!heroRefs?.stage) return;
+  const p = g?.progress || {};
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  heroRefs.stage.textContent = `${p.stage || 'Preparing'}${p.total > 1 ? ` · ${pct}%` : ''}`;
+  heroRefs.fill.style.width = `${pct}%`;
+}
+
+function renderHero(root, navigate, topic) {
   const sel = selectedInstance();
   const acc = activeAccount();
   const g = sel ? state.game[sel.id] : null;
-  const art = el('div', { class: 'hero-art' }, el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'grid' }));
+  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state]);
+  // Progress ticks only touch the button; rebuilding would restart animations.
+  if (key === heroKey && root.childElementCount) {
+    updateProgress(g);
+    return;
+  }
+  heroKey = key;
 
   if (!sel) {
+    heroRefs = null;
     clear(
       root,
       el(
         'div',
         { class: 'hero' },
-        art,
+        heroArt(acc),
         el('div', { class: 'hero-eyebrow' }, 'Welcome to Pimpin'),
         el('h1', { class: 'hero-title' }, 'Your Minecraft, ', el('span', { class: 'grad' }, 'pimped out.')),
         el('p', { class: 'muted', style: { margin: '0 0 24px', maxWidth: '520px', lineHeight: 1.5 } }, 'Create an instance to get started. Pick a version, choose Fabric for mods & shaders, and we handle Java, libraries and assets for you.'),
@@ -50,26 +95,32 @@ function renderHero(root, navigate) {
     return;
   }
 
-  let btn;
-  if (g?.state === 'running') {
-    btn = el('button', { class: 'play-btn running', onclick: () => stopInstance(sel.id) }, icon('stop'), el('span', { class: 'label' }, 'PLAYING', el('small', {}, 'Click to force close')));
-  } else if (g?.state === 'preparing') {
-    const p = g.progress || {};
-    const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-    btn = el('button', { class: 'play-btn busy' }, el('span', { class: 'spin' }), el('span', { class: 'label' }, 'LAUNCHING', el('small', {}, `${p.stage || 'Preparing'}${p.total > 1 ? ` · ${pct}%` : ''}`)), el('span', { class: 'fill', style: { width: `${pct}%` } }));
-  } else {
-    btn = el('button', { class: 'play-btn', onclick: () => playInstance(sel.id) }, icon('play'), 'PLAY');
-  }
-
+  heroRefs = playButton(sel, g);
+  updateProgress(g);
   const picker = el('div', { class: 'instance-picker', title: 'Switch instance' }, instIcon(sel, 'sm'), el('div', { class: 'meta' }, el('b', {}, sel.name), el('span', {}, instSubtitle(sel))), icon('chevron'));
   picker.addEventListener('click', () => openInstancePicker(picker));
+
+  const worldCard = el('div', { class: 'card stat world-stat' }, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v dim' }, '—'));
+  api.call('instances:worlds', sel.id).then((worlds) => {
+    const w = worlds[0];
+    if (!w) {
+      clear(worldCard, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v dim', style: { fontSize: '15px' } }, 'No worlds yet'));
+      return;
+    }
+    clear(
+      worldCard,
+      w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico ph' }, icon('globe')),
+      el('div', { class: 'grow' }, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v world-name' }, w.folder)),
+      el('button', { class: 'btn sm primary', title: `Play ${w.folder}`, disabled: Boolean(g?.state), onclick: () => playInstance(sel.id, { world: w.folder }) }, icon('play')),
+    );
+  }).catch(() => {});
 
   clear(
     root,
     el(
       'div',
       { class: 'hero' },
-      art,
+      heroArt(acc),
       el('div', { class: 'hero-eyebrow' }, acc ? `Welcome back, ${acc.name}` : 'Ready when you are'),
       el('h1', { class: 'hero-title' }, el('span', { class: 'grad' }, sel.name)),
       el(
@@ -77,15 +128,16 @@ function renderHero(root, navigate) {
         { class: 'hero-meta' },
         el('span', { class: 'chip accent' }, icon('box'), `Minecraft ${sel.mcVersion}`),
         el('span', { class: 'chip' }, icon('puzzle'), LOADER_LABEL[sel.loader] || sel.loader),
+        sel.contentCount ? el('span', { class: 'chip' }, icon('layers'), `${sel.contentCount} mods & packs`) : null,
         sel.modpack ? el('span', { class: 'chip' }, icon('library'), 'Modpack') : null,
         g?.state === 'running' ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null,
       ),
       el(
         'div',
         { class: 'hero-actions' },
-        btn,
+        heroRefs.btn,
         picker,
-        el('button', { class: 'btn icon', style: { height: 'auto', width: '62px', borderRadius: '18px' }, title: 'Instance settings', onclick: () => navigate('instances', { id: sel.id }) }, icon('settings')),
+        el('button', { class: 'btn icon hero-gear', title: 'Instance settings', onclick: () => navigate('instances', { id: sel.id }) }, icon('settings')),
       ),
     ),
     el(
@@ -93,7 +145,7 @@ function renderHero(root, navigate) {
       { class: 'quick-stats' },
       el('div', { class: 'card stat' }, el('div', { class: 'k' }, 'Play time'), el('div', { class: 'v' }, fmtDuration(sel.playTime))),
       el('div', { class: 'card stat' }, el('div', { class: 'k' }, 'Last played'), el('div', { class: 'v' }, timeAgo(sel.lastPlayed))),
-      el('div', { class: 'card stat' }, el('div', { class: 'k' }, 'Instances'), el('div', { class: 'v' }, String(state.instances.length))),
+      worldCard,
     ),
   );
 }
@@ -155,7 +207,7 @@ export function featureGrid(sel, list) {
           input.disabled = false;
         }
       });
-      card.append(el('div', { class: 'ico' }, icon(f.icon)), el('div', { class: 'txt' }, el('b', {}, f.name), el('span', {}, f.desc)), sw);
+      card.append(el('div', { class: 'feature-top' }, el('div', { class: 'ico' }, icon(f.icon)), sw), el('div', { class: 'txt' }, el('b', {}, f.name), el('span', {}, f.desc)));
       return card;
     }),
   );

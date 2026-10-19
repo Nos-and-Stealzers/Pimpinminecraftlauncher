@@ -1,5 +1,5 @@
 // App shell: navigation rail, title bar, task progress pill and routing.
-import { el, icon, clear, fmtBytes, toast } from './dom.js';
+import { el, icon, clear, fmtBytes, toast, modal } from './dom.js';
 import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refreshInstances, refreshServers, selectedInstance } from './state.js';
 import { accountButton, playInstance, stopInstance } from './components.js';
 import * as home from './pages/home.js';
@@ -39,6 +39,7 @@ function renderRail() {
   const rail = document.getElementById('rail');
   const sel = selectedInstance();
   const running = sel && state.game[sel.id]?.state === 'running';
+  const preparing = sel && state.game[sel.id]?.state === 'preparing';
   clear(
     rail,
     Object.entries(PAGES).map(([key, p]) =>
@@ -49,11 +50,12 @@ function renderRail() {
       ? el(
           'button',
           {
-            class: `rail-play${running ? ' running' : ''}`,
-            title: running ? `Stop ${sel.name}` : `Play ${sel.name}`,
-            onclick: () => (running ? stopInstance(sel.id) : playInstance(sel.id)),
+            class: `rail-play${running ? ' running' : ''}${preparing ? ' busy' : ''}`,
+            id: 'rail-play',
+            title: running ? `Stop ${sel.name}` : preparing ? 'Launching…' : `Play ${sel.name}`,
+            onclick: () => (running ? stopInstance(sel.id) : preparing ? null : playInstance(sel.id)),
           },
-          icon(running ? 'stop' : 'play'),
+          preparing ? el('span', { class: 'spin' }) : icon(running ? 'stop' : 'play'),
         )
       : null,
   );
@@ -82,16 +84,19 @@ function wireEvents() {
   document.querySelectorAll('[data-win]').forEach((b) => b.addEventListener('click', () => api.call(`window:${b.dataset.win}`)));
 
   api.on('game:progress', (p) => {
+    const wasPreparing = state.game[p.id]?.state === 'preparing';
     state.game[p.id] = { ...(state.game[p.id] || {}), state: 'preparing', progress: p };
     showProgress(p);
-    notify('game-progress');
+    const ring = document.getElementById('rail-play');
+    if (ring) ring.style.setProperty('--p', p.total ? Math.round((p.done / p.total) * 100) : 0);
+    notify(wasPreparing ? 'game-progress' : 'game');
   });
   api.on('task:progress', showProgress);
   api.on('server:progress', showProgress);
   api.on('game:state', async (s) => {
     state.game[s.id] = { state: s.state };
     if (s.state === 'stopped') {
-      if (s.crashed) toast(`Minecraft closed unexpectedly (exit code ${s.code}). Check the instance console for details.`, 'err', 8000);
+      if (s.crashed) showCrash(s.id);
       document.getElementById('task-pill').replaceChildren();
     }
     await refreshInstances();
@@ -107,11 +112,53 @@ function wireEvents() {
     notify('instances-content');
   });
   api.on('toast', (t) => toast(t.text, t.kind));
+  api.on('update:state', renderUpdate);
+  api.on('window:state', (w) => document.body.classList.toggle('maximized', w.maximized));
 
   subscribe((topic) => {
     if (topic === 'accounts' || topic === 'settings') renderAccount();
     if (topic === 'instances' || topic === 'game' || topic === 'settings') renderRail();
   });
+}
+
+// ------------------------------------------------------------- updates --
+function renderUpdate(u) {
+  const slot = document.getElementById('update-slot');
+  if (u.state === 'downloading') {
+    clear(slot, el('div', { class: 'update-pill dl', title: `Downloading Pimpin ${u.version}` }, icon('download'), `Updating ${u.percent || 0}%`));
+  } else if (u.state === 'ready') {
+    clear(slot, el('button', { class: 'update-pill', title: `Restart to install Pimpin ${u.version}`, onclick: () => api.call('update:install') }, icon('refresh'), 'Restart to update'));
+  } else {
+    slot.replaceChildren();
+  }
+}
+
+// --------------------------------------------------------------- crashes --
+async function showCrash(id) {
+  const inst = state.instances.find((i) => i.id === id);
+  let info;
+  try {
+    info = await api.call('instances:crashInfo', id);
+  } catch {
+    toast('Minecraft closed unexpectedly. Check the instance console for details.', 'err', 8000);
+    return;
+  }
+  const log = el('div', { class: 'console small' }, info.tail.map((l) => el('div', { class: /ERROR|Exception|FATAL/.test(l) ? 'l-err' : /WARN/.test(l) ? 'l-warn' : '' }, l)));
+  const m = modal({
+    title: `${inst?.name || 'Minecraft'} crashed`,
+    wide: true,
+    body: [
+      el('p', { class: 'muted', style: { margin: 0 } }, info.report?.description ? `Minecraft reported: ${info.report.description}` : `The game exited with code ${info.code}.`),
+      info.hints.map((h) => el('div', { class: 'crash-hint' }, el('b', {}, icon('alert'), h.title), h.text ? el('pre', {}, h.text) : null)),
+      log,
+    ],
+    actions: [
+      el('button', { class: 'btn ghost', onclick: () => { navigator.clipboard.writeText(info.tail.join('\n')); toast('Log copied — paste it to whoever is helping you'); } }, icon('layout'), 'Copy log'),
+      info.report ? el('button', { class: 'btn', onclick: () => api.call('shell:showItem', id, 'crash-reports', info.report.file) }, icon('folder'), 'Crash report') : null,
+      el('button', { class: 'btn primary', onclick: () => { m.close(); navigate('instances', { id, tab: 'content' }); } }, icon('puzzle'), 'Manage mods'),
+    ].filter(Boolean),
+  });
+  requestAnimationFrame(() => (log.scrollTop = log.scrollHeight));
 }
 
 async function boot() {
@@ -122,6 +169,7 @@ async function boot() {
   for (const i of state.instances) if (i.running) state.game[i.id] = { state: 'running' };
   renderAccount();
   render();
+  renderUpdate(await api.call('update:get'));
 }
 
 boot().catch((err) => {

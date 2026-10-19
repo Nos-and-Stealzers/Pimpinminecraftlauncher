@@ -13,6 +13,7 @@ const EVENTS = [
   'server:progress',
   'instances:changed',
   'toast',
+  'update:state',
 ];
 
 contextBridge.exposeInMainWorld('pimpin', {

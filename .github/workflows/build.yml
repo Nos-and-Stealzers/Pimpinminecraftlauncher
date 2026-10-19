@@ -25,6 +25,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # Every build gets its own version so installed launchers can auto-update.
+      - name: Set version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.1.$GITHUB_RUN_NUMBER"; fi
+          npm version "$v" --no-git-tag-version --allow-same-version
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: npx electron-builder --win --publish never
@@ -40,6 +46,8 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
           if-no-files-found: error
 
   # Publishes the installers as a GitHub Release. Version tags (v1.2.3) and
@@ -59,15 +67,15 @@ jobs:
         id: tag
         shell: bash
         run: |
-          version=$(node -p "require('./package.json').version")
+          version="0.1.$GITHUB_RUN_NUMBER"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            echo "name=v$version-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "name=v$version" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           else
-            echo "name=v$version-test.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "name=v$version-test" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: softprops/action-gh-release@v2
@@ -81,8 +89,12 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
           body: |
             **Windows 10/11:** download `PimpinLauncher-Setup-*.exe` and run it (or `PimpinLauncher-Portable-*.exe`, no install needed).
             The app isn't code-signed yet, so SmartScreen may warn you: click **More info → Run anyway**.
 
             **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. On Debian/Ubuntu you can install the `.deb` instead.
+
+            Already installed with the Setup exe or AppImage? The launcher updates itself — no need to download again.

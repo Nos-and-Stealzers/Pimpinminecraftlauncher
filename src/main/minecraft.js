@@ -300,7 +300,7 @@ function expandArgs(list, vars, features) {
   return out.map((a) => a.replace(/\$\{([a-zA-Z_]+)\}/g, (m, k) => (k in vars ? vars[k] : m)));
 }
 
-function buildArgs(ctx, { instance, account, settings, gameDir, server }) {
+function buildArgs(ctx, { instance, account, settings, gameDir, server, world }) {
   const { version, vanilla, clientJar, libs, nativesDir, assetIndex, logArg } = ctx;
   const classpath = [...libs.classpath, clientJar].join(CP_SEP);
   const width = instance.width || settings.width;
@@ -335,6 +335,7 @@ function buildArgs(ctx, { instance, account, settings, gameDir, server }) {
     classpath_separator: CP_SEP,
     library_directory: dirs.libraries,
     quickPlayMultiplayer: server || '',
+    quickPlaySingleplayer: world || '',
     quickPlayPath: path.join(gameDir, 'quickPlay', 'log.json'),
   };
 
@@ -342,6 +343,7 @@ function buildArgs(ctx, { instance, account, settings, gameDir, server }) {
   const features = {
     has_custom_resolution: !settings.fullscreen,
     is_quick_play_multiplayer: Boolean(server && supportsQuickPlay),
+    is_quick_play_singleplayer: Boolean(world && !server && supportsQuickPlay),
   };
 
   const maxMem = instance.memoryMax || settings.memoryMax;
@@ -381,10 +383,10 @@ function buildArgs(ctx, { instance, account, settings, gameDir, server }) {
  * Install and start the game. Returns the child process.
  * `events` gets { progress, log } callbacks.
  */
-async function launch({ instance, account, settings, gameDir, server, javaPath }, events = {}) {
+async function launch({ instance, account, settings, gameDir, server, world, javaPath }, events = {}) {
   const ctx = await installVersion(instance, gameDir, events.progress);
   const java = javaPath || ctx.java;
-  const args = buildArgs(ctx, { instance, account, settings, gameDir, server });
+  const args = buildArgs(ctx, { instance, account, settings, gameDir, server, world });
   events.progress?.({ stage: 'Starting Minecraft', done: 1, total: 1 });
   const masked = args.map((a) => (a === account.accessToken ? '********' : a));
   events.log?.(`[Pimpin] ${java} ${masked.join(' ')}`);

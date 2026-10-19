@@ -20,11 +20,14 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
 - **Content manager.** Turn installed mods, shaders and packs on or off, remove them, or check for updates and update them all. Mods you drop into the folder by hand are identified automatically.
 - **Local servers.** Create a [Paper](https://papermc.io) server, install plugins from the library, start and stop it, type console commands, and **Join** with one click (it launches a matching instance and connects to `localhost`).
 - **Accounts.** Sign in with Microsoft (the official Microsoft login window) to play online, or add offline accounts. Login tokens are encrypted with your OS keychain.
-- **Custom UI.** Frameless window, five accent themes, live game console with readable logs, Minecraft news, and play-time tracking.
+- **Worlds & screenshots.** Each instance lists its worlds. Press Play on one to load straight into it (1.20+), or use "Jump back in" on Home. Screenshots appear in a gallery.
+- **Crash helper.** If the game crashes, a dialog shows the end of the log, the crash report and plain-English hints (incompatible mods, out of memory, wrong Java, graphics drivers).
+- **Auto-update.** The Windows installer and the AppImage update themselves from GitHub Releases. A "Restart to update" button appears when a new build is ready.
+- **Custom UI.** Frameless window, five accent themes, your 3D skin on the home screen, live game console with readable logs, Minecraft news, play-time tracking, and you can duplicate instances.
 
 ## Download
 
-Every push builds installers in GitHub Actions (**Actions → Build → Artifacts**). Pushing a tag like `v0.1.0` attaches them to a GitHub Release.
+Every push to `main` publishes a new release with installers on the [Releases page](https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases). Installed copies update themselves.
 
 | Platform | File |
 | --- | --- |
@@ -73,6 +76,7 @@ src/renderer/    the UI (plain HTML/CSS/JS modules, no framework)
 ## Not supported yet
 
 - Forge and NeoForge (instances and modpacks). Fabric and Quilt are supported.
-- Code signing and auto-update.
+- Code signing.
+- Auto-update for the portable exe and the `.deb` (download a new copy instead).
 
 Pimpin Launcher is not affiliated with Mojang or Microsoft. Minecraft is a trademark of Mojang Studios.

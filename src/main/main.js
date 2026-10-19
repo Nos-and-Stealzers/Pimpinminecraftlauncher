@@ -12,6 +12,7 @@ const modrinth = require('./modrinth');
 const { getJson } = require('./net');
 
 let win;
+let updateState = { state: 'idle' };
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -111,6 +112,17 @@ const handlers = {
   'instances:launch': (id, opts) => instances.launch(id, opts),
   'instances:kill': (id) => instances.kill(id),
   'instances:logs': (id) => instances.getLogs(id),
+  'instances:duplicate': (id) => instances.duplicate(id),
+  'instances:worlds': (id) => instances.worlds(id),
+  'instances:screenshots': (id) => instances.screenshots(id),
+  'instances:deleteScreenshot': (id, name) => instances.deleteScreenshot(id, name),
+  'instances:crashInfo': (id) => instances.crashInfo(id),
+  'shell:showItem': (id, sub, name) => shell.showItemInFolder(store.safeJoin(instances.dirOf(id), sub, name)),
+
+  'update:get': () => updateState,
+  'update:install': () => {
+    if (updateState.state === 'ready') require('electron-updater').autoUpdater.quitAndInstall();
+  },
 
   'content:list': async (target) => content.list(await holderFor(target)),
   'content:install': async (target, item) => content.install(await holderFor(target), item, progressFor(target)),
@@ -175,6 +187,33 @@ app.on('second-instance', () => {
   }
 });
 
-app.whenReady().then(createWindow);
+/**
+ * Self-update from GitHub Releases. Works for the Windows installer and the
+ * AppImage; the portable exe and .deb are updated by downloading a new copy.
+ */
+function setupUpdater() {
+  if (!app.isPackaged) return;
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return;
+  if (process.platform === 'linux' && !process.env.APPIMAGE) return;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const set = (s) => {
+    updateState = { ...updateState, ...s };
+    send('update:state', updateState);
+  };
+  autoUpdater.on('update-available', (info) => set({ state: 'downloading', version: info.version, percent: 0 }));
+  autoUpdater.on('download-progress', (p) => set({ state: 'downloading', percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (info) => set({ state: 'ready', version: info.version }));
+  autoUpdater.on('error', (err) => console.warn('Updater:', err.message));
+  const check = () => autoUpdater.checkForUpdates().catch((err) => console.warn('Update check failed:', err.message));
+  check();
+  setInterval(check, 4 * 3600e3);
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  setupUpdater();
+});
 app.on('before-quit', () => servers.stopAll());
 app.on('window-all-closed', () => app.quit());
