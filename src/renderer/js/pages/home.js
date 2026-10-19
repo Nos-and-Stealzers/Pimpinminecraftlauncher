@@ -2,6 +2,7 @@
 import { el, icon, clear, errorToast, toast, fmtDuration, timeAgo, switchEl } from '../dom.js';
 import { api, state, subscribe, selectedInstance, activeAccount, refreshInstances, LOADER_LABEL } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, openInstancePicker, newInstanceModal } from '../components.js';
+import { mountSkin, blockScene, effectsOn } from '../fx3d.js';
 
 let newsCache = null;
 
@@ -17,11 +18,12 @@ export function render(page, _params, navigate) {
     const sel = selectedInstance();
     if (topic !== 'game-progress' && (sel?.id !== featureFor || topic === 'instances-content')) {
       featureFor = sel?.id;
-      renderFeatures(features, sel, navigate);
+      if (state.settings.showFeatures === false) features.replaceChildren();
+      else renderFeatures(features, sel, navigate);
     }
   };
   draw();
-  renderNews(news);
+  if (state.settings.showNews !== false) renderNews(news);
   const unsub = subscribe((topic) => {
     if (['instances', 'instances-content', 'game', 'game-progress', 'accounts', 'settings'].includes(topic)) draw(topic);
   });
@@ -31,15 +33,22 @@ export function render(page, _params, navigate) {
 function heroArt(acc) {
   const art = el('div', { class: 'hero-art' }, el('div', { class: 'grid' }));
   if (!acc) {
-    art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
+    if (effectsOn()) art.append(blockScene());
+    else art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
     return art;
   }
   const id = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
-  art.append(
-    el('div', { class: 'skin' },
-      el('div', { class: 'pedestal' }),
-      el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() })),
-  );
+  const skin = el('div', { class: 'skin' }, el('div', { class: 'pedestal' }));
+  art.append(skin);
+  const mode = state.settings.skinMode || '3d';
+  if (mode === 'off') return art;
+  if (state.settings.skinPedestal === 'block') skin.classList.add('block-pedestal');
+  if (mode === '3d') {
+    skin.classList.add('live');
+    mountSkin(skin, id, { pose: state.settings.skinPose, spin: state.settings.skinSpin, pedestal: state.settings.skinPedestal });
+  } else {
+    skin.append(el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() }));
+  }
   return art;
 }
 
@@ -70,7 +79,7 @@ function renderHero(root, navigate, topic) {
   const sel = selectedInstance();
   const acc = activeAccount();
   const g = sel ? state.game[sel.id] : null;
-  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state]);
+  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state, effectsOn(), ...['skinMode', 'skinPose', 'skinSpin', 'skinPedestal', 'blockIcons'].map((k) => state.settings[k])]);
   // Progress ticks only touch the button; rebuilding would restart animations.
   if (key === heroKey && root.childElementCount) {
     updateProgress(g);

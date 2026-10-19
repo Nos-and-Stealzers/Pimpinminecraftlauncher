@@ -1,7 +1,7 @@
 // Library: browse and install mods, shaders, resource packs, modpacks and
 // server plugins from the public Modrinth library.
 import { el, icon, clear, modal, errorToast, toast, fmtNum, seg, safeUrl, markdown, switchEl } from '../dom.js';
-import { api, state, refreshInstances, selectedInstance, LOADER_LABEL } from '../state.js';
+import { api, state, refreshInstances, selectedInstance, LOADER_LABEL, SERVER_LABEL } from '../state.js';
 
 const TYPES = [
   { value: 'mod', label: 'Mods', icon: 'puzzle' },
@@ -91,7 +91,7 @@ export function render(page, params, navigate) {
       );
       return;
     }
-    const sel = el('select', { class: 'select' }, list.map((x) => el('option', { value: x.id }, `${x.name} — ${x.mcVersion}${isPlugin ? ' Paper' : ` ${LOADER_LABEL[x.loader] || ''}`}`)));
+    const sel = el('select', { class: 'select' }, list.map((x) => el('option', { value: x.id }, `${x.name} — ${x.mcVersion}${isPlugin ? ` ${SERVER_LABEL[x.software] || 'Paper'}` : ` ${LOADER_LABEL[x.loader] || ''}`}`)));
     sel.value = t?.id;
     sel.addEventListener('change', async () => {
       if (isPlugin) mem.serverId = sel.value;
@@ -101,7 +101,9 @@ export function render(page, params, navigate) {
     });
     const warn = !isPlugin && t && t.loader === 'vanilla' && (mem.type === 'mod' || mem.type === 'shader')
       ? el('span', { class: 'chip', style: { color: 'var(--warn)' } }, icon('alert'), 'Vanilla instance — switch to Fabric to use this')
-      : null;
+      : isPlugin && t?.software === 'vanilla'
+        ? el('span', { class: 'chip', style: { color: 'var(--warn)' } }, icon('alert'), 'Vanilla server — switch to Paper or Purpur to use plugins')
+        : null;
     clear(
       targetBar,
       el('div', { class: 'target-bar' },
