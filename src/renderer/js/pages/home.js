@@ -18,11 +18,12 @@ export function render(page, _params, navigate) {
     const sel = selectedInstance();
     if (topic !== 'game-progress' && (sel?.id !== featureFor || topic === 'instances-content')) {
       featureFor = sel?.id;
-      renderFeatures(features, sel, navigate);
+      if (state.settings.showFeatures === false) features.replaceChildren();
+      else renderFeatures(features, sel, navigate);
     }
   };
   draw();
-  renderNews(news);
+  if (state.settings.showNews !== false) renderNews(news);
   const unsub = subscribe((topic) => {
     if (['instances', 'instances-content', 'game', 'game-progress', 'accounts', 'settings'].includes(topic)) draw(topic);
   });
@@ -39,9 +40,12 @@ function heroArt(acc) {
   const id = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
   const skin = el('div', { class: 'skin' }, el('div', { class: 'pedestal' }));
   art.append(skin);
-  if (effectsOn()) {
+  const mode = state.settings.skinMode || '3d';
+  if (mode === 'off') return art;
+  if (state.settings.skinPedestal === 'block') skin.classList.add('block-pedestal');
+  if (mode === '3d') {
     skin.classList.add('live');
-    mountSkin(skin, id);
+    mountSkin(skin, id, { pose: state.settings.skinPose, spin: state.settings.skinSpin, pedestal: state.settings.skinPedestal });
   } else {
     skin.append(el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() }));
   }
@@ -75,7 +79,7 @@ function renderHero(root, navigate, topic) {
   const sel = selectedInstance();
   const acc = activeAccount();
   const g = sel ? state.game[sel.id] : null;
-  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state, effectsOn()]);
+  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state, effectsOn(), ...['skinMode', 'skinPose', 'skinSpin', 'skinPedestal', 'blockIcons'].map((k) => state.settings[k])]);
   // Progress ticks only touch the button; rebuilding would restart animations.
   if (key === heroKey && root.childElementCount) {
     updateProgress(g);

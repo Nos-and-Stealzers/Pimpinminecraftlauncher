@@ -2,7 +2,8 @@
 import { el, icon, clear, fmtBytes, toast, modal } from './dom.js';
 import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refreshInstances, refreshServers, selectedInstance } from './state.js';
 import { accountButton, playInstance, stopInstance } from './components.js';
-import { installTilt } from './fx3d.js';
+import { installTilt, blockIcon } from './fx3d.js';
+import { installAppearance, applyAppearance } from './appearance.js';
 import * as home from './pages/home.js';
 import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
@@ -10,11 +11,11 @@ import * as servers from './pages/servers.js';
 import * as settings from './pages/settings.js';
 
 const PAGES = {
-  home: { mod: home, label: 'Home', icon: 'home' },
-  library: { mod: library, label: 'Library', icon: 'library' },
-  instances: { mod: instances, label: 'Instances', icon: 'layers' },
-  servers: { mod: servers, label: 'Servers', icon: 'server' },
-  settings: { mod: settings, label: 'Settings', icon: 'settings' },
+  home: { mod: home, label: 'Home', icon: 'home', block: 'grass' },
+  library: { mod: library, label: 'Library', icon: 'library', block: 'bookshelf' },
+  instances: { mod: instances, label: 'Instances', icon: 'layers', block: 'crafting' },
+  servers: { mod: servers, label: 'Servers', icon: 'server', block: 'furnace' },
+  settings: { mod: settings, label: 'Settings', icon: 'settings', block: 'command' },
 };
 
 let current = { page: 'home', params: {} };
@@ -44,7 +45,7 @@ function renderRail() {
   clear(
     rail,
     Object.entries(PAGES).map(([key, p]) =>
-      el('button', { class: `rail-item${current.page === key ? ' active' : ''}`, onclick: () => navigate(key) }, icon(p.icon), p.label),
+      el('button', { class: `rail-item${current.page === key ? ' active' : ''}`, onclick: () => navigate(key) }, state.settings?.blockIcons ? blockIcon(p.block, 22) : icon(p.icon), p.label),
     ),
     el('div', { class: 'rail-spacer' }),
     sel
@@ -96,6 +97,7 @@ function wireEvents() {
   api.on('server:progress', showProgress);
   api.on('game:state', async (s) => {
     state.game[s.id] = { state: s.state };
+    document.body.classList.toggle('game-running', Object.values(state.game).some((g) => g.state === 'running'));
     if (s.state === 'stopped') {
       if (s.crashed) showCrash(s.id);
       document.getElementById('task-pill').replaceChildren();
@@ -124,6 +126,7 @@ function wireEvents() {
   subscribe((topic) => {
     if (topic === 'accounts' || topic === 'settings') renderAccount();
     if (topic === 'instances' || topic === 'game' || topic === 'settings') renderRail();
+    if (topic === 'settings') applyAppearance();
   });
 }
 
@@ -170,11 +173,12 @@ async function showCrash(id) {
 async function boot() {
   wireEvents();
   installTilt();
+  installAppearance();
   state.info = await api.call('app:info');
   document.body.classList.add(`os-${state.info.platform}`);
-  subscribe((t) => t === 'settings' && document.body.classList.toggle('no3d', state.settings.effects3d === false));
   await Promise.all([refreshSettings(), refreshAccounts(), refreshInstances(), refreshServers()]);
-  document.body.classList.toggle('no3d', state.settings.effects3d === false);
+  applyAppearance();
+  if (PAGES[state.settings.startPage]) current = { page: state.settings.startPage, params: {} };
   for (const i of state.instances) if (i.running) state.game[i.id] = { state: 'running' };
   renderAccount();
   render();

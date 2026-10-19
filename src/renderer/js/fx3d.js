@@ -3,6 +3,7 @@
 // perspective tilt for cards.
 import { el } from './dom.js';
 import { api, state } from './state.js';
+import { faceTex } from './textures.js';
 
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 export const effectsOn = () => state.settings?.effects3d !== false;
@@ -101,7 +102,8 @@ function buildModel(src, S, { legacy, slim }) {
  * Mount a 3D player into `root`. Resolves to a cleanup function. Falls back to
  * a floating block when the skin can't be loaded (offline).
  */
-export async function mountSkin(root, player, { scale = 8 } = {}) {
+export async function mountSkin(root, player, { pose = 'idle', spin: spinMode = 'sway', pedestal = 'glow' } = {}) {
+  const scale = pedestal === 'block' ? 6 : 8;
   let src;
   try {
     src = await api.call('skin:get', player);
@@ -115,7 +117,13 @@ export async function mountSkin(root, player, { scale = 8 } = {}) {
   const stage = el('div', { class: 'mc-stage', title: 'Drag to spin · click to wave' });
   const spin = el('div', { class: 'mc-spin' });
   const model = buildModel(src, scale, analyse(img));
+  model.classList.add(`pose-${pose}`);
+  model.style.setProperty('--s', `${scale}px`);
   spin.append(model);
+  if (pedestal === 'block') {
+    stage.classList.add('on-block');
+    spin.append(el('div', { class: 'mc-pedestal', style: { top: `${32 * scale}px`, width: `${16 * scale}px` } }, cube3d('grass', 16 * scale, true)));
+  }
   stage.append(spin);
   root.append(stage);
 
@@ -139,7 +147,9 @@ export async function mountSkin(root, player, { scale = 8 } = {}) {
     if (!dragging) {
       yaw += vel;
       vel *= 0.94;
-      if (Math.abs(vel) < 0.02 && !still) {
+      if (Math.abs(vel) < 0.02 && !still && spinMode === 'spin') {
+        yaw += 0.35;
+      } else if (Math.abs(vel) < 0.02 && !still && spinMode === 'sway') {
         idle += 1;
         // Ease back into a gentle sway after the user lets go.
         const target = -28 + Math.sin(t / 2600) * 22;
@@ -197,7 +207,7 @@ export async function mountSkin(root, player, { scale = 8 } = {}) {
 
 // ---------------------------------------------------------------- blocks --
 /** A 3D block with six faces; `kind` picks the look (grass, diamond, …). */
-export function cube3d(kind = 'grass', size = 80) {
+export function cube3d(kind = 'grass', size = 80, flat = false) {
   const h = size / 2;
   const faces = [
     ['front', `translateZ(${h}px)`],
@@ -207,13 +217,18 @@ export function cube3d(kind = 'grass', size = 80) {
     ['top', `rotateX(90deg) translateZ(${h}px)`],
     ['bottom', `rotateX(-90deg) translateZ(${h}px)`],
   ];
-  return el('div', { class: `cube3d b-${kind}`, style: { width: `${size}px`, height: `${size}px` } },
-    faces.map(([f, t]) => el('div', { class: `cf ${f}`, style: { transform: t } })));
+  return el('div', { class: `cube3d b-${kind}${flat ? ' static' : ''}`, style: { width: `${size}px`, height: `${size}px` } },
+    faces.map(([f, t]) => el('div', { class: `cf ${f}`, style: { transform: t, backgroundImage: faceTex(kind, f), backgroundSize: '100% 100%' } })));
+}
+
+/** A small block that turns towards the viewer on hover — used as an icon. */
+export function blockIcon(kind, size = 24) {
+  return el('span', { class: 'block-icon' }, cube3d(kind, size, true));
 }
 
 /** Floating blocks for the hero when there's no skin to show. */
 export function blockScene() {
-  const kinds = [['grass', 110], ['diamond', 54], ['gold', 64], ['emerald', 36], ['tnt', 46]];
+  const kinds = [['grass', 110], ['diamond', 54], ['gold', 64], ['emerald', 36], ['tnt', 46], ['crafting', 40], ['amethyst', 30]];
   return el('div', { class: 'block-scene' }, kinds.map(([k, s], i) => el('div', { class: `float f${i}` }, cube3d(k, s))));
 }
 

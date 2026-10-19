@@ -4,11 +4,18 @@ import { el, icon, modal, popover, closePopover, toast, errorToast, microsoftLog
 import {
   api, state, notify, refreshAccounts, refreshInstances, selectInstance, getVersions, activeAccount, headUrl, LOADER_LABEL, ICON_KEYS,
 } from './state.js';
+import { cube3d } from './fx3d.js';
+
+const ICON_BLOCKS = { violet: 'amethyst', crimson: 'redstone', emerald: 'emerald', ocean: 'diamond', gold: 'gold', grass: 'grass', night: 'obsidian', pack: 'bookshelf' };
 
 export function instIcon(inst, size = '') {
   const cls = `inst-icon ${size} ic-${inst?.icon || 'violet'}`;
   const url = inst?.iconUrl && safeUrl(inst.iconUrl);
   if (url) return el('div', { class: cls }, el('img', { src: url, alt: '' }));
+  if (state.settings?.blockIcons) {
+    const px = size === 'lg' ? 36 : size === 'sm' ? 18 : 24;
+    return el('div', { class: `${cls} as-block` }, cube3d(ICON_BLOCKS[inst?.icon] || 'amethyst', px, true));
+  }
   const letter = (inst?.name || '?').trim().charAt(0).toUpperCase();
   return el('div', { class: cls }, letter);
 }

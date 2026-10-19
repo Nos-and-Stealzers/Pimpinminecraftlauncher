@@ -92,6 +92,7 @@ const handlers = {
   'window:minimize': () => win.minimize(),
   'window:maximize': () => (win.isMaximized() ? win.unmaximize() : win.maximize()),
   'window:close': () => win.close(),
+  'window:zoom': (factor) => win.webContents.setZoomFactor(Math.min(1.5, Math.max(0.7, Number(factor) || 1))),
   'shell:openExternal': (url) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
   },
