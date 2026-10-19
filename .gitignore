@@ -4,3 +4,5 @@ dist/
 mod/build/
 mod/.gradle/
 mod/run/
+mod/versions/*/build/
+__pycache__/

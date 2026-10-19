@@ -1,0 +1,113 @@
+{
+    "version": "1.1.0",
+    "jars": [
+        {
+            "file": "pimpin-client-1.20.1.jar",
+            "built": "1.20.1",
+            "covers": [
+                "1.20",
+                "1.20.1"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.20.2.jar",
+            "built": "1.20.2",
+            "covers": [
+                "1.20.2"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.20.4.jar",
+            "built": "1.20.4",
+            "covers": [
+                "1.20.3",
+                "1.20.4"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.20.6.jar",
+            "built": "1.20.6",
+            "covers": [
+                "1.20.5",
+                "1.20.6"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.1.jar",
+            "built": "1.21.1",
+            "covers": [
+                "1.21",
+                "1.21.1"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.3.jar",
+            "built": "1.21.3",
+            "covers": [
+                "1.21.2",
+                "1.21.3"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.4.jar",
+            "built": "1.21.4",
+            "covers": [
+                "1.21.4"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.5.jar",
+            "built": "1.21.5",
+            "covers": [
+                "1.21.5"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.8.jar",
+            "built": "1.21.8",
+            "covers": [
+                "1.21.6",
+                "1.21.7",
+                "1.21.8"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.10.jar",
+            "built": "1.21.10",
+            "covers": [
+                "1.21.9",
+                "1.21.10"
+            ]
+        },
+        {
+            "file": "pimpin-client-1.21.11.jar",
+            "built": "1.21.11",
+            "covers": [
+                "1.21.11"
+            ]
+        },
+        {
+            "file": "pimpin-client-26.1.2.jar",
+            "built": "26.1.2",
+            "covers": [
+                "26.1",
+                "26.1.1",
+                "26.1.2"
+            ]
+        },
+        {
+            "file": "pimpin-client-26.2.jar",
+            "built": "26.2",
+            "covers": [
+                "26.2"
+            ]
+        },
+        {
+            "file": "pimpin-client-26.3.jar",
+            "built": "26.3",
+            "covers": [
+                "26.3"
+            ]
+        }
+    ]
+}

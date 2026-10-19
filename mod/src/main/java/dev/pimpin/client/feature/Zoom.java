@@ -2,7 +2,8 @@ package dev.pimpin.client.feature;
 
 import dev.pimpin.client.PimpinClient;
 import dev.pimpin.client.PimpinConfig;
-import net.minecraft.client.MinecraftClient;
+import dev.pimpin.client.compat.Compat;
+import net.minecraft.client.Minecraft;
 
 /** Hold the zoom key to zoom in; scroll while zooming to change how far. */
 public final class Zoom {
@@ -14,13 +15,13 @@ public final class Zoom {
 
     private Zoom() {}
 
-    public static void tick(MinecraftClient client) {
-        boolean want = PimpinClient.zoomKey.isPressed() && client.currentScreen == null && client.player != null;
+    public static void tick(Minecraft client) {
+        boolean want = PimpinClient.zoomKey.isDown() && Compat.screen(client) == null && client.player != null;
         if (want && !zooming) {
-            savedCinematic = client.options.smoothCameraEnabled;
-            if (PimpinConfig.get().smoothZoom) client.options.smoothCameraEnabled = true;
+            savedCinematic = client.options.smoothCamera;
+            if (PimpinConfig.get().smoothZoom) client.options.smoothCamera = true;
         } else if (!want && zooming) {
-            client.options.smoothCameraEnabled = savedCinematic;
+            client.options.smoothCamera = savedCinematic;
             scroll = 1.0;
         }
         zooming = want;

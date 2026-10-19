@@ -1,38 +1,39 @@
-plugins {
-    id 'fabric-loom' version '1.11.8'
+buildscript {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath "net.fabricmc:fabric-loom:${loom_version}"
+    }
 }
 
-version = "${project.mod_version}+${project.minecraft_version}"
-group = 'dev.pimpin'
-base { archivesName = 'pimpin-client' }
-
-repositories {}
-
-dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+subprojects {
+    apply from: rootProject.file('version.gradle')
 }
 
-processResources {
-    inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') { expand 'version': project.version }
+static int mcKey(String v) {
+    def p = v.tokenize('.').collect { it.toInteger() }
+    while (p.size() < 3) p << 0
+    return p[0] * 10000 + p[1] * 100 + p[2]
 }
 
-tasks.withType(JavaCompile).configureEach { it.options.release = 21 }
-
-java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
-
-jar { from('LICENSE') { rename { "${it}_pimpin" } } }
-
-// `gradle runClient -PquickPlay=MyWorld` jumps straight into a world (used for testing).
-loom {
-    runs {
-        client {
-            if (project.hasProperty('quickPlay')) {
-                programArgs '--quickPlaySingleplayer', project.property('quickPlay'), '--width', '1280', '--height', '720'
-            }
+// Copies every built jar to ../resources/mods and writes the version table the launcher reads.
+tasks.register('collect') {
+    dependsOn subprojects.collect { "${it.path}:build" }
+    doLast {
+        def out = file('../resources/mods')
+        out.mkdirs()
+        out.listFiles().findAll { it.name.startsWith('pimpin-client-') && it.name.endsWith('.jar') }.each { it.delete() }
+        def table = []
+        subprojects.sort { a, b -> mcKey(a.name) <=> mcKey(b.name) }.each { p ->
+            def jar = p.ext.releaseJar.get().asFile
+            def name = "pimpin-client-${p.name}.jar"
+            copy { from jar; into out; rename { name } }
+            table << [file: name, built: p.name, covers: p.property('mc_covers').split(',') as List]
         }
+        def manifest = [version: mod_version, jars: table]
+        new File(out, 'pimpin-client.json').text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest)) + '\n'
+        println "Collected ${table.size()} jars into ${out}"
     }
 }

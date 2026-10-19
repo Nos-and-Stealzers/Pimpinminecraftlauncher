@@ -83,7 +83,7 @@ async function create({ name, mcVersion, loader = 'fabric', loaderVersion = null
     // Install in the background so the UI isn't blocked.
     (async () => {
       // Pimpin Client brings zoom, a minimap and a mod menu; otherwise use Zoomify + Mod Menu.
-      const list = content.clientJar(mcVersion) ? ['fps', 'pimpinclient'] : ['fps', 'zoom', 'modmenu'];
+      const list = content.clientJar(mcVersion, loader) ? ['fps', 'pimpinclient'] : ['fps', 'zoom', 'modmenu'];
       for (const f of list) {
         await content.setFeature(holder(meta), f, true, (p) => emit('task:progress', { id, ...p })).catch(() => {});
       }
@@ -129,6 +129,8 @@ async function launch(id, { server, world } = {}) {
   emit('game:state', { id, state: 'preparing' });
   try {
     const account = await auth.getLaunchAccount(settings.activeAccount);
+    // Keep the bundled Pimpin Client jar in step with this launcher build.
+    await content.refreshPimpinClient(holder(meta)).catch((err) => pushLog(id, `[Pimpin] Could not update Pimpin Client: ${err.message}`));
     const { child, loaderVersion } = await minecraft.launch(
       {
         instance: meta,

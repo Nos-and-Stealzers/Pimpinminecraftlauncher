@@ -11,6 +11,7 @@ const content = require('./content');
 const modrinth = require('./modrinth');
 const files = require('./files');
 const packs = require('./packs');
+const shaders = require('./shaders');
 const { getJson, request } = require('./net');
 
 let win;
@@ -150,25 +151,18 @@ async function packTarget(id) {
 }
 
 /** Install a shader pack from the library and switch it on in Iris. */
-async function enableShader(holder, dir, slug, target) {
-  await content.install(holder, { projectId: slug, type: 'shader' }, progressFor(target));
-  const meta = await holder.load();
-  const project = await modrinth.getProject(slug);
-  const rec = (meta.content || []).find((c) => c.type === 'shader' && c.projectId === project.id);
-  if (!rec) return;
-  const file = path.join(dir, 'config', 'iris.properties');
-  let text = '';
-  try {
-    text = await require('fs/promises').readFile(file, 'utf8');
-  } catch {
-    /* Iris hasn't run yet */
-  }
-  for (const [k, v] of [['shaderPack', rec.file], ['enableShaders', 'true']]) {
-    const re = new RegExp(`^${k}=.*$`, 'm');
-    text = re.test(text) ? text.replace(re, () => `${k}=${v}`) : `${text}${k}=${v}\n`;
-  }
-  await require('fs/promises').mkdir(path.dirname(file), { recursive: true });
-  await require('fs/promises').writeFile(file, text);
+/**
+ * Installs one of our shader packs and makes sure the instance can load it:
+ * Iris + Sodium on Fabric/Quilt (OptiFine users pick it up from shaderpacks/ too).
+ */
+async function enablePimpinShader(inst, dir, shaderId, target) {
+  const failed = [];
+  if (inst.loader === 'vanilla') throw new Error('Shaders need a Fabric or Quilt instance (for Iris).');
+  const holder = await holderFor(target);
+  const res = await content.setFeature(holder, 'shaders', true, progressFor(target)).catch((err) => ({ failed: [err.message] }));
+  failed.push(...(res.failed || []));
+  await shaders.install(dir, shaderId, true);
+  return failed;
 }
 
 async function notRunning(id) {
@@ -368,30 +362,66 @@ const handlers = {
   'packs:combo': async (id, mode) => {
     await notRunning(id);
     const { inst, dir } = await packTarget(id);
-    const pack = mode === 'pretty' ? 'pretty' : 'performance';
+    const pack = mode === 'fps' ? 'performance' : 'pretty';
     const other = pack === 'pretty' ? 'performance' : 'pretty';
     await packs.setActive(dir, packs.PACKS[other].file, inst.mcVersion, false);
     await packs.install(dir, pack, inst.mcVersion);
-    await packs.applyPreset(dir, mode === 'pretty' ? 'pretty' : 'fps', inst.mcVersion);
+    await packs.applyPreset(dir, mode === 'pretty' ? 'pretty' : mode === 'balanced' ? 'balanced' : 'fps', inst.mcVersion);
     const failed = [];
     if (inst.loader !== 'vanilla') {
       const target = { kind: 'instance', id };
       const holder = await holderFor(target);
-      const own = content.clientJar(inst.mcVersion) ? ['pimpinclient'] : [];
-      for (const f of mode === 'pretty' ? ['fps', ...own, 'shaders', 'skinlayers', 'animations', 'ctm', 'dynamiclights'] : ['fps', ...own, 'dynamicfps']) {
+      const own = content.clientJar(inst.mcVersion, inst.loader) ? ['pimpinclient'] : [];
+      const extras = { pretty: ['skinlayers', 'animations', 'ctm', 'dynamiclights'], balanced: ['skinlayers', 'ctm'], fps: ['dynamicfps'] }[mode] || [];
+      for (const f of ['fps', ...own, ...extras]) {
         const res = await content.setFeature(holder, f, true, progressFor(target)).catch((err) => ({ failed: [err.message] }));
         failed.push(...(res.failed || []));
       }
-      if (mode === 'pretty') {
+      if (mode === 'pretty' || mode === 'balanced') {
         try {
-          await enableShader(holder, dir, 'complementary-reimagined', target);
+          failed.push(...(await enablePimpinShader(inst, dir, mode === 'pretty' ? 'ultra' : 'lite', target)));
         } catch (err) {
           failed.push(`Shaders: ${err.message}`);
         }
+      } else {
+        for (const id of Object.keys(shaders.SHADERS)) await shaders.setActive(dir, id, false);
       }
       send('instances:changed');
     }
     return { failed, status: await packs.status(dir, inst.mcVersion) };
+  },
+
+  'shaders:status': async (id) => {
+    const { dir } = await packTarget(id);
+    return shaders.status(dir);
+  },
+  'shaders:install': async (id, shaderId) => {
+    await notRunning(id);
+    const { inst, dir } = await packTarget(id);
+    const failed = await enablePimpinShader(inst, dir, shaderId, { kind: 'instance', id });
+    send('instances:changed');
+    return { failed, status: await shaders.status(dir) };
+  },
+  'shaders:toggle': async (id, shaderId, on) => {
+    await notRunning(id);
+    const { dir } = await packTarget(id);
+    if (on) await shaders.install(dir, shaderId, true);
+    else await shaders.setActive(dir, shaderId, false);
+    return shaders.status(dir);
+  },
+  'shaders:remove': async (id, shaderId) => {
+    await notRunning(id);
+    const { dir } = await packTarget(id);
+    await shaders.remove(dir, shaderId);
+    return shaders.status(dir);
+  },
+  'shaders:export': async (shaderId) => {
+    const pack = shaders.SHADERS[shaderId];
+    const res = await dialog.showSaveDialog(win, { title: `Save ${pack.name}`, defaultPath: pack.file, filters: [{ name: 'Shader pack', extensions: ['zip'] }] });
+    if (res.canceled || !res.filePath) return null;
+    await require('fs/promises').writeFile(res.filePath, await shaders.build(shaderId));
+    shell.showItemInFolder(res.filePath);
+    return res.filePath;
   },
 
   'servers:software': () => servers.SOFTWARE,

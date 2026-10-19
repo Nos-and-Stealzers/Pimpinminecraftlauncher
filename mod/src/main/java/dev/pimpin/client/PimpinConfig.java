@@ -8,6 +8,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 /** Every Pimpin Client setting, saved as config/pimpin-client.json. */
 public final class PimpinConfig {
@@ -35,9 +36,15 @@ public final class PimpinConfig {
     // Minimap
     public boolean minimap = true;
     public int minimapSize = 96;
-    public int minimapZoom = 1; // blocks per pixel: 1, 2 or 4
+    public int mapZoom = 1; // index into Minimap.ZOOMS
+    public int minimapCorner = 1; // same corners as the HUD
+    public boolean minimapRound = false;
+    public boolean minimapRotate = false;
     public boolean minimapCoords = true;
     public boolean minimapPlayers = true;
+    public boolean minimapMobs = true;
+    public boolean minimapCaves = true;
+    public boolean minimapShading = true;
 
     // Zoom
     public float zoomFactor = 4.0f;
@@ -82,16 +89,35 @@ public final class PimpinConfig {
         if (instance == null) instance = new PimpinConfig();
         instance.minimapSize = Math.max(48, Math.min(192, instance.minimapSize));
         instance.hudScale = Math.max(0.5f, Math.min(2f, instance.hudScale));
+        instance.mapZoom = Math.max(0, Math.min(4, instance.mapZoom));
+        instance.minimapCorner = Math.floorMod(instance.minimapCorner, 4);
+        instance.hudCorner = Math.floorMod(instance.hudCorner, 4);
     }
 
     public static void save() {
         try {
             Files.createDirectories(FILE.getParent());
-            try (Writer w = Files.newBufferedWriter(FILE)) {
+            Path tmp = FILE.resolveSibling(FILE.getFileName() + ".tmp");
+            try (Writer w = Files.newBufferedWriter(tmp)) {
                 GSON.toJson(get(), w);
             }
+            Files.move(tmp, FILE, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
             PimpinClient.LOG.warn("Could not save {}", FILE, e);
         }
+    }
+
+    /** Puts every setting back to its default (the FPS boost must be undone first). */
+    public static void reset() {
+        PimpinConfig fresh = new PimpinConfig();
+        for (var f : PimpinConfig.class.getFields()) {
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            try {
+                f.set(get(), f.get(fresh));
+            } catch (IllegalAccessException ignored) {
+                // only public fields are copied
+            }
+        }
+        save();
     }
 }

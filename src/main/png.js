@@ -65,6 +65,13 @@ class Image {
     return this;
   }
 
+  /** Copy of a w×h region starting at (x, y). */
+  crop(x, y, w, h = w) {
+    const out = new Image(w, h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) out.set(i, j, this.get(x + i, y + j));
+    return out;
+  }
+
   toPNG() {
     const header = Buffer.alloc(13);
     header.writeUInt32BE(this.w, 0);

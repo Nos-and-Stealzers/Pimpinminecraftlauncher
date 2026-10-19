@@ -1,86 +1,86 @@
 package dev.pimpin.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
+import dev.pimpin.client.compat.Compat;
+import dev.pimpin.client.compat.Hud;
+import dev.pimpin.client.compat.Keys;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.Zoom;
-import dev.pimpin.client.hud.PimpinHud;
 import dev.pimpin.client.hud.Minimap;
+import dev.pimpin.client.hud.PimpinHud;
 import dev.pimpin.client.screen.ModMenuScreen;
-import dev.pimpin.client.screen.PimpinSettingsScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.GameMenuScreen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.text.Text;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class PimpinClient implements ClientModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger("Pimpin Client");
-    private static final String CATEGORY = "key.categories.pimpin";
 
-    public static KeyBinding zoomKey;
-    public static KeyBinding menuKey;
-    public static KeyBinding minimapKey;
-    public static KeyBinding minimapZoomKey;
-    public static KeyBinding boostKey;
+    public static KeyMapping zoomKey;
+    public static KeyMapping menuKey;
+    public static KeyMapping minimapKey;
+    public static KeyMapping minimapZoomKey;
+    public static KeyMapping bigMapKey;
+    public static KeyMapping boostKey;
 
     @Override
     public void onInitializeClient() {
         PimpinConfig.load();
-        zoomKey = key("zoom", GLFW.GLFW_KEY_Z);
-        menuKey = key("menu", GLFW.GLFW_KEY_RIGHT_SHIFT);
-        minimapKey = key("minimap", GLFW.GLFW_KEY_M);
-        minimapZoomKey = key("minimap_zoom", GLFW.GLFW_KEY_N);
-        boostKey = key("boost", GLFW.GLFW_KEY_UNKNOWN);
+        zoomKey = Keys.register("zoom", InputConstants.KEY_Z);
+        menuKey = Keys.register("menu", InputConstants.KEY_RSHIFT);
+        minimapKey = Keys.register("minimap", InputConstants.KEY_M);
+        minimapZoomKey = Keys.register("minimap_zoom", InputConstants.KEY_N);
+        bigMapKey = Keys.register("big_map", InputConstants.KEY_J);
+        boostKey = Keys.register("boost", InputConstants.UNKNOWN.getValue());
 
-        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
-        HudRenderCallback.EVENT.register(PimpinHud::render);
+        ClientTickEvents.END_CLIENT_TICK.register(PimpinClient::tick);
+        Hud.register(PimpinHud::render);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             FpsBooster.restoreBackgroundLimit(client);
             PimpinConfig.save();
         });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
             if (!PimpinConfig.get().menuButtons) return;
-            if (screen instanceof TitleScreen || screen instanceof GameMenuScreen) {
-                Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal("✦ Pimpin"), b -> client.setScreen(new ModMenuScreen(screen)))
-                        .dimensions(4, 4, 70, 20)
-                        .tooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Mods, Pimpin settings and FPS booster")))
+            if (screen instanceof TitleScreen || screen instanceof PauseScreen) {
+                //#if MC >= 26.1
+                var widgets = Screens.getWidgets(screen);
+                //#else
+                var widgets = Screens.getButtons(screen);
+                //#endif
+                widgets.add(Button.builder(Component.literal("✦ Pimpin"), b -> Compat.setScreen(client, new ModMenuScreen(screen)))
+                        .bounds(4, 4, 70, 20)
+                        .tooltip(Tooltip.create(Component.literal("Mods, Pimpin settings and FPS booster")))
                         .build());
             }
         });
         LOG.info("Pimpin Client ready");
     }
 
-    private static KeyBinding key(String name, int code) {
-        return KeyBindingHelper.registerKeyBinding(new KeyBinding("key.pimpin." + name, InputUtil.Type.KEYSYM, code, CATEGORY));
-    }
-
-    private void tick(MinecraftClient client) {
+    private static void tick(Minecraft client) {
         PimpinConfig cfg = PimpinConfig.get();
-        while (menuKey.wasPressed()) {
-            if (client.currentScreen == null) client.setScreen(new ModMenuScreen(null));
+        while (menuKey.consumeClick()) {
+            if (Compat.screen(client) == null) Compat.setScreen(client, new ModMenuScreen(null));
         }
-        while (minimapKey.wasPressed()) {
+        while (minimapKey.consumeClick()) {
             cfg.minimap = !cfg.minimap;
             PimpinConfig.save();
         }
-        while (minimapZoomKey.wasPressed()) {
-            cfg.minimapZoom = cfg.minimapZoom >= 4 ? 1 : cfg.minimapZoom * 2;
-            Minimap.markDirty();
-            PimpinConfig.save();
+        while (minimapZoomKey.consumeClick()) {
+            Minimap.cycleZoom(client);
         }
-        while (boostKey.wasPressed()) {
+        while (boostKey.consumeClick()) {
             FpsBooster.toggle(client);
         }
         Zoom.tick(client);
@@ -88,10 +88,5 @@ public final class PimpinClient implements ClientModInitializer {
         DeathTracker.tick(client);
         Minimap.tick(client);
         PimpinHud.tick(client);
-    }
-
-    /** Settings screen, also opened from the mod menu. */
-    public static PimpinSettingsScreen settings(net.minecraft.client.gui.screen.Screen parent) {
-        return new PimpinSettingsScreen(parent);
     }
 }
