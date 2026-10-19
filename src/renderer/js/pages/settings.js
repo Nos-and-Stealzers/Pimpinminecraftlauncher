@@ -2,6 +2,7 @@
 import { el, icon, errorToast, toast, switchEl, seg } from '../dom.js';
 import { cube3d } from '../fx3d.js';
 import { PRESETS } from '../appearance.js';
+import { updateModal } from '../qol.js';
 import { api, state, updateSettings } from '../state.js';
 
 const ACCENTS = [
@@ -134,7 +135,16 @@ export function render(page, _params, navigate) {
     el('div', { class: 'card settings-card' },
       el('h3', {}, icon('layout'), 'Launcher'),
       el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Hide launcher while playing'), el('span', {}, 'It comes back when the game closes.')), switchEl(s.closeOnLaunch, (v) => save({ closeOnLaunch: v }))),
+      row('Keep running in the tray', 'Closing the window keeps Pimpin in the system tray, with a quick Play button.', switchEl(Boolean(s.minimizeToTray), (v) => save({ minimizeToTray: v }))),
+      state.info?.platform !== 'linux' ? row('Start with my computer', 'Opens quietly in the tray when you log in.', switchEl(Boolean(s.launchOnStartup), (v) => save({ launchOnStartup: v }))) : null,
+      row('Desktop notifications', 'When a server is online, the game crashes or an update is ready — only while Pimpin is in the background.', switchEl(s.notifications !== false, (v) => save({ notifications: v }))),
+      row('Welcome tour', 'Run the first-time setup again.', el('button', { class: 'btn sm', onclick: async () => { await save({ onboarded: false }); const { onboarding } = await import('../qol.js'); onboarding(navigate); } }, icon('sparkle'), 'Start')),
       el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Data folder'), el('span', {}, s.root)), el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open'))),
+    el('div', { class: 'card settings-card' },
+      el('h3', {}, icon('download'), 'Updates'),
+      row('Install updates automatically', 'Downloads in the background and installs when you close the launcher.', switchEl(s.autoUpdate !== false, (v) => save({ autoUpdate: v }))),
+      row('Update channel', 'Beta gets test builds first. They can be less stable.', pick('updateChannel', [['stable', 'Stable'], ['beta', 'Beta']])),
+      row(`Version ${state.info?.version || ''}`, null, el('button', { class: 'btn sm primary', onclick: () => updateModal() }, icon('refresh'), 'Check for updates'))),
     el('div', { class: 'card settings-card' },
       el('h3', {}, icon('info'), 'About'),
       el('div', { class: 'muted', style: { lineHeight: 1.6 } },

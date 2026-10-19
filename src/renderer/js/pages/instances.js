@@ -7,6 +7,7 @@ import { featureGrid } from './home.js';
 import { lightbox } from './library.js';
 import { fileBrowser } from '../files.js';
 import { drawPimpin } from './pimpin.js';
+import { importInstance, updateAllMods } from '../qol.js';
 
 const tabMem = {};
 
@@ -47,6 +48,8 @@ function renderList(page, params, navigate) {
     el('div', { class: 'page-head' },
       el('div', {}, el('h1', { class: 'page-title' }, 'Instances'), el('p', { class: 'page-sub' }, 'Each instance has its own version, mods, shaders, worlds and settings.')),
       el('div', { class: 'row' },
+        el('button', { class: 'btn', title: 'Update the mods in every instance', onclick: () => updateAllMods() }, icon('refresh'), 'Update all'),
+        el('button', { class: 'btn', onclick: () => importInstance(navigate) }, icon('upload'), 'Import'),
         el('button', { class: 'btn', onclick: () => navigate('library', { type: 'modpack' }) }, icon('library'), 'Install modpack'),
         el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance')),
     ),
@@ -88,6 +91,7 @@ function renderDetail(page, id, navigate, initialTab) {
             running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null)),
         el('div', { class: 'row' },
           el('button', { class: 'btn icon', title: 'Open folder', onclick: () => api.call('instances:open', id) }, icon('folder')),
+          el('button', { class: 'btn icon', title: 'Export as .zip (share or back up)', onclick: () => api.call('instances:export', id).then((f) => f && toast('Instance exported')).catch(errorToast) }, icon('archive')),
           el('button', {
             class: 'btn icon',
             title: 'Duplicate instance',

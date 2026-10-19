@@ -82,7 +82,9 @@ async function create({ name, mcVersion, loader = 'fabric', loaderVersion = null
   if (essentials && loader !== 'vanilla') {
     // Install in the background so the UI isn't blocked.
     (async () => {
-      for (const f of ['fps', 'zoom', 'modmenu']) {
+      // Pimpin Client brings zoom, a minimap and a mod menu; otherwise use Zoomify + Mod Menu.
+      const list = content.clientJar(mcVersion) ? ['fps', 'pimpinclient'] : ['fps', 'zoom', 'modmenu'];
+      for (const f of list) {
         await content.setFeature(holder(meta), f, true, (p) => emit('task:progress', { id, ...p })).catch(() => {});
       }
       emit('instances:changed');
@@ -228,6 +230,40 @@ async function duplicate(id) {
   return get(newId);
 }
 
+const EXPORT_SKIP = /(^|[\\/])(logs|crash-reports|\.cache|\.fabric)([\\/]|$)|\.part$/;
+
+/** Zip an instance (worlds, mods, settings) so it can be shared or backed up. */
+async function exportZip(id, file) {
+  if (running.has(id)) throw new Error('Close the game before exporting this instance.');
+  const zip = new AdmZip();
+  await zip.addLocalFolderPromise(dirOf(id), { filter: (name) => !EXPORT_SKIP.test(name) });
+  await zip.writeZipPromise(file);
+  return file;
+}
+
+/** Import an instance zip made by Pimpin (or any zip with pimpin-instance.json inside). */
+async function importZip(file) {
+  const zip = new AdmZip(file);
+  const metaEntry = zip.getEntries().find((e) => /(^|\/)pimpin-instance\.json$/.test(e.entryName) && e.entryName.split('/').length <= 2);
+  if (!metaEntry) throw new Error('This zip is not a Pimpin instance (no pimpin-instance.json inside).');
+  const prefix = metaEntry.entryName.replace(/pimpin-instance\.json$/, '');
+  const meta = JSON.parse(metaEntry.getData().toString('utf8'));
+  const taken = new Set((await list()).map((i) => i.name));
+  let name = meta.name || 'Imported instance';
+  if (taken.has(name)) name = `${name} (imported)`;
+  const id = uniqueDir(dirs.instances, name);
+  const dest = dirOf(id);
+  await fsp.mkdir(dest, { recursive: true });
+  for (const e of zip.getEntries()) {
+    if (e.isDirectory || !e.entryName.startsWith(prefix)) continue;
+    const target = safeJoin(dest, e.entryName.slice(prefix.length));
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await fsp.writeFile(target, e.getData());
+  }
+  await save(id, { ...meta, id, name, created: Date.now(), lastPlayed: 0, playTime: 0 });
+  return get(id);
+}
+
 async function worlds(id) {
   const saves = path.join(dirOf(id), 'saves');
   const out = [];
@@ -360,6 +396,8 @@ async function installModpack({ projectId, versionId }) {
 }
 
 module.exports = {
+  exportZip,
+  importZip,
   setEmitter,
   list,
   get,

@@ -4,6 +4,7 @@ import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refres
 import { accountButton, playInstance, stopInstance } from './components.js';
 import { installTilt, blockIcon } from './fx3d.js';
 import { installAppearance, applyAppearance } from './appearance.js';
+import { installShortcuts, commandPalette, updateModal, whatsNew, onboarding, notifyDesktop } from './qol.js';
 import * as home from './pages/home.js';
 import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
@@ -107,6 +108,7 @@ function wireEvents() {
   });
   api.on('server:state', async (s) => {
     state.server[s.id] = { state: s.state, ready: s.ready };
+    if (s.ready) notifyDesktop('Server is online', `${state.servers.find((x) => x.id === s.id)?.name || 'Your server'} is ready to join.`);
     if (s.error) toast(s.error, 'err');
     await refreshServers();
   });
@@ -131,12 +133,17 @@ function wireEvents() {
 }
 
 // ------------------------------------------------------------- updates --
+let lastUpdateState = null;
 function renderUpdate(u) {
   const slot = document.getElementById('update-slot');
+  if (u.state === 'ready' && lastUpdateState !== 'ready') notifyDesktop('Pimpin update ready', `Restart the launcher to install ${u.version}.`);
+  lastUpdateState = u.state;
   if (u.state === 'downloading') {
-    clear(slot, el('div', { class: 'update-pill dl', title: `Downloading Pimpin ${u.version}` }, icon('download'), `Updating ${u.percent || 0}%`));
+    clear(slot, el('button', { class: 'update-pill dl', title: `Downloading Pimpin ${u.version}`, onclick: () => updateModal() }, icon('download'), `Updating ${u.percent || 0}%`));
   } else if (u.state === 'ready') {
     clear(slot, el('button', { class: 'update-pill', title: `Restart to install Pimpin ${u.version}`, onclick: () => api.call('update:install') }, icon('refresh'), 'Restart to update'));
+  } else if (u.state === 'available' || u.state === 'manual') {
+    clear(slot, el('button', { class: 'update-pill', title: `Pimpin ${u.version} is available`, onclick: () => updateModal() }, icon('download'), `Update to ${u.version}`));
   } else {
     slot.replaceChildren();
   }
@@ -145,6 +152,7 @@ function renderUpdate(u) {
 // --------------------------------------------------------------- crashes --
 async function showCrash(id) {
   const inst = state.instances.find((i) => i.id === id);
+  notifyDesktop(`${inst?.name || 'Minecraft'} crashed`, 'Open the launcher to see what went wrong.');
   let info;
   try {
     info = await api.call('instances:crashInfo', id);
@@ -174,6 +182,10 @@ async function boot() {
   wireEvents();
   installTilt();
   installAppearance();
+  installShortcuts(navigate, () => current);
+  // Stop background animations while the launcher is hidden (e.g. while you play).
+  document.addEventListener('visibilitychange', () => document.body.classList.toggle('app-hidden', document.hidden));
+  document.getElementById('search-slot')?.append(el('button', { class: 'palette-btn', title: 'Search everything (Ctrl+K)', onclick: () => commandPalette(navigate) }, icon('search'), el('span', {}, 'Search'), el('span', { class: 'kbd' }, 'Ctrl K')));
   state.info = await api.call('app:info');
   document.body.classList.add(`os-${state.info.platform}`);
   await Promise.all([refreshSettings(), refreshAccounts(), refreshInstances(), refreshServers()]);
@@ -183,6 +195,8 @@ async function boot() {
   renderAccount();
   render();
   renderUpdate(await api.call('update:get'));
+  await whatsNew();
+  onboarding(navigate);
 }
 
 boot().catch((err) => {

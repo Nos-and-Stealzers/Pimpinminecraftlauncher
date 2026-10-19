@@ -37,11 +37,16 @@ const LOADERS = {
 
 // ---------------------------------------------------------------- versions --
 
+let manifestMemo = null; // { at, data }
+
 async function getVersionManifest() {
+  // Reuse the manifest for 10 minutes instead of re-downloading it for every screen.
+  if (manifestMemo && Date.now() - manifestMemo.at < 600e3) return manifestMemo.data;
   const cache = path.join(dirs.cache, 'version_manifest_v2.json');
   try {
     const manifest = await getJson(MANIFEST_URL);
     await writeJson(cache, manifest);
+    manifestMemo = { at: Date.now(), data: manifest };
     return manifest;
   } catch (err) {
     const cached = await readJson(cache, null);

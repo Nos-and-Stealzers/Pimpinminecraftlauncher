@@ -15,6 +15,7 @@ const PLUGIN_LOADERS = ['paper', 'spigot', 'bukkit', 'purpur'];
  * of Modrinth projects that get installed (with dependencies) when switched on.
  */
 const FEATURES = [
+  { id: 'pimpinclient', name: 'Pimpin Client', icon: 'sparkle', desc: 'Our own mod: HUD, keystrokes, minimap, zoom, FPS booster and a built-in mod menu.', custom: true, projects: [] },
   { id: 'fps', name: 'FPS Boost', icon: 'bolt', desc: 'Sodium, Lithium, FerriteCore, Entity Culling & ImmediatelyFast.', projects: ['sodium', 'lithium', 'ferrite-core', 'entityculling', 'immediatelyfast'] },
   { id: 'shaders', name: 'Shader Support', icon: 'sun', desc: 'Iris — load any shader pack from the library.', projects: ['iris'] },
   { id: 'zoom', name: 'Zoom', icon: 'search', desc: 'Smooth, scrollable zoom (Zoomify).', projects: ['zoomify'] },
@@ -29,6 +30,53 @@ const FEATURES = [
   { id: 'dynamicfps', name: 'Background Saver', icon: 'moon', desc: 'Dynamic FPS — lowers FPS when tabbed out.', projects: ['dynamic-fps'] },
   { id: 'modmenu', name: 'Mod Menu', icon: 'menu', desc: 'In-game list of your mods and their settings.', projects: ['modmenu'] },
 ];
+
+// ------------------------------------------------------- Pimpin Client --
+// The launcher's own Fabric mod ships inside the app, one jar per Minecraft version.
+const CLIENT_DIR = path.join(__dirname, '..', '..', 'resources', 'mods');
+const CLIENT_FILE = 'pimpin-client.jar';
+
+function clientJar(mcVersion) {
+  const p = path.join(CLIENT_DIR, `pimpin-client-${mcVersion}.jar`);
+  return fs.existsSync(p) ? p : null;
+}
+
+function clientVersions() {
+  try {
+    return fs.readdirSync(CLIENT_DIR).map((f) => /^pimpin-client-(.+)\.jar$/.exec(f)?.[1]).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function setPimpinClient(holder, enabled, onProgress) {
+  const mods = path.join(holder.dir, 'mods');
+  const dest = path.join(mods, CLIENT_FILE);
+  if (!enabled) {
+    await remove(holder, { type: 'mod', file: CLIENT_FILE });
+    return { failed: [] };
+  }
+  const jar = clientJar(holder.mcVersion);
+  if (!jar) throw new Error(`Pimpin Client is available for Minecraft ${clientVersions().join(', ') || '1.21.4'} right now. More versions are coming.`);
+  await fsp.mkdir(mods, { recursive: true });
+  // Read + write (not copy) so this also works from inside the packaged app archive.
+  await fsp.writeFile(dest, await fsp.readFile(jar));
+  await fsp.rm(`${dest}.disabled`, { force: true });
+  await withLock(holder.dir, async () => {
+    const meta = await holder.load();
+    meta.content = (meta.content || []).filter((c) => c.file !== CLIENT_FILE);
+    meta.content.push({ type: 'mod', file: CLIENT_FILE, title: 'Pimpin Client', projectId: null, versionNumber: '1.0.0', icon: null, pimpin: true });
+    await holder.save(meta);
+  });
+  const failed = [];
+  // Pimpin Client needs Fabric API.
+  try {
+    await install(holder, { projectId: 'fabric-api', type: 'mod' }, onProgress);
+  } catch (err) {
+    failed.push(`Fabric API: ${err.message}`);
+  }
+  return { failed };
+}
 
 const slugIds = new Map();
 async function resolveSlugs(slugs) {
@@ -252,6 +300,10 @@ async function featureState(holder) {
   }
   const idOf = Object.fromEntries([...slugIds.entries()].map(([slug, v]) => [slug, v.id]));
   return FEATURES.map((f) => {
+    if (f.custom) {
+      const available = Boolean(clientJar(holder.mcVersion));
+      return { id: f.id, name: f.name, icon: f.icon, desc: f.desc, enabled: enabledFiles.has(CLIENT_FILE), available, custom: true, note: available ? null : `Minecraft ${clientVersions().join(', ')} only for now` };
+    }
     const ids = f.projects.map((s) => idOf[s]).filter(Boolean);
     const on =
       ids.length > 0 &&
@@ -267,6 +319,7 @@ async function featureState(holder) {
 async function setFeature(holder, featureId, enabled, onProgress) {
   const feature = FEATURES.find((f) => f.id === featureId);
   if (!feature) throw new Error('Unknown feature');
+  if (feature.custom) return setPimpinClient(holder, enabled, onProgress);
   const projects = await resolveSlugs(feature.projects);
   const failed = [];
   if (enabled) {
@@ -337,4 +390,5 @@ module.exports = {
   setFeature,
   identifyLocal,
   resolveSlugs,
+  clientJar,
 };

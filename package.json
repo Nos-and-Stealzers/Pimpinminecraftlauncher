@@ -34,6 +34,7 @@
     },
     "files": [
       "src/**/*",
+      "resources/**/*",
       "package.json"
     ],
     "artifactName": "PimpinLauncher-${version}-${os}-${arch}.${ext}",
