@@ -15,6 +15,7 @@ const PLUGIN_LOADERS = ['paper', 'spigot', 'bukkit', 'purpur'];
  * of Modrinth projects that get installed (with dependencies) when switched on.
  */
 const FEATURES = [
+  { id: 'pimpinclient', name: 'Pimpin Client', icon: 'sparkle', desc: 'Our own mod: HUD, keystrokes, a fast minimap + big map, zoom, FPS booster and a mod menu.', custom: true, projects: [] },
   { id: 'fps', name: 'FPS Boost', icon: 'bolt', desc: 'Sodium, Lithium, FerriteCore, Entity Culling & ImmediatelyFast.', projects: ['sodium', 'lithium', 'ferrite-core', 'entityculling', 'immediatelyfast'] },
   { id: 'shaders', name: 'Shader Support', icon: 'sun', desc: 'Iris — load any shader pack from the library.', projects: ['iris'] },
   { id: 'zoom', name: 'Zoom', icon: 'search', desc: 'Smooth, scrollable zoom (Zoomify).', projects: ['zoomify'] },
@@ -29,6 +30,103 @@ const FEATURES = [
   { id: 'dynamicfps', name: 'Background Saver', icon: 'moon', desc: 'Dynamic FPS — lowers FPS when tabbed out.', projects: ['dynamic-fps'] },
   { id: 'modmenu', name: 'Mod Menu', icon: 'menu', desc: 'In-game list of your mods and their settings.', projects: ['modmenu'] },
 ];
+
+// ------------------------------------------------------- Pimpin Client --
+// The launcher's own Fabric mod ships inside the app. resources/mods/pimpin-client.json
+// (written by `gradlew collect` in mod/) lists each jar and the Minecraft versions it runs on.
+const CLIENT_DIR = path.join(__dirname, '..', '..', 'resources', 'mods');
+const CLIENT_FILE = 'pimpin-client.jar';
+const CLIENT_LOADERS = ['fabric', 'quilt'];
+
+let clientManifest = null;
+function readClientManifest() {
+  if (!clientManifest) {
+    try {
+      clientManifest = JSON.parse(fs.readFileSync(path.join(CLIENT_DIR, 'pimpin-client.json'), 'utf8'));
+    } catch {
+      clientManifest = { version: '0', jars: [] };
+    }
+  }
+  return clientManifest;
+}
+
+function clientEntry(mcVersion) {
+  return readClientManifest().jars.find((j) => j.covers.includes(mcVersion)) || null;
+}
+
+function clientJar(mcVersion, loader = 'fabric') {
+  if (loader && !CLIENT_LOADERS.includes(loader)) return null;
+  const entry = clientEntry(mcVersion);
+  return entry ? path.join(CLIENT_DIR, entry.file) : null;
+}
+
+/** "1.20.1 – 26.3" style summary for messages. */
+function clientRange() {
+  const all = readClientManifest().jars.flatMap((j) => j.covers);
+  return all.length ? `${all[0]} – ${all[all.length - 1]}` : 'none';
+}
+
+const clientVersion = () => readClientManifest().version;
+
+async function writeClientJar(holder) {
+  const jar = clientJar(holder.mcVersion, holder.loader);
+  if (!jar) return false;
+  const mods = path.join(holder.dir, 'mods');
+  await fsp.mkdir(mods, { recursive: true });
+  // Read + write (not copy) so this also works from inside the packaged app archive.
+  await fsp.writeFile(path.join(mods, CLIENT_FILE), await fsp.readFile(jar));
+  return true;
+}
+
+async function setPimpinClient(holder, enabled, onProgress) {
+  const dest = path.join(holder.dir, 'mods', CLIENT_FILE);
+  if (!enabled) {
+    await remove(holder, { type: 'mod', file: CLIENT_FILE });
+    return { failed: [] };
+  }
+  if (!CLIENT_LOADERS.includes(holder.loader)) throw new Error('Pimpin Client needs a Fabric or Quilt instance.');
+  if (!(await writeClientJar(holder))) {
+    throw new Error(`Pimpin Client isn't built for Minecraft ${holder.mcVersion}. It runs on ${clientRange()}.`);
+  }
+  await fsp.rm(`${dest}.disabled`, { force: true });
+  await withLock(holder.dir, async () => {
+    const meta = await holder.load();
+    meta.content = (meta.content || []).filter((c) => c.file !== CLIENT_FILE);
+    meta.content.push({ type: 'mod', file: CLIENT_FILE, title: 'Pimpin Client', projectId: null, versionNumber: clientVersion(), icon: null, pimpin: true });
+    await holder.save(meta);
+  });
+  const failed = [];
+  // Pimpin Client needs Fabric API.
+  try {
+    await install(holder, { projectId: 'fabric-api', type: 'mod' }, onProgress);
+  } catch (err) {
+    failed.push(`Fabric API: ${err.message}`);
+  }
+  return { failed };
+}
+
+/**
+ * Before each launch: if the instance has Pimpin Client switched on, swap in the jar
+ * shipped with this launcher build, so app updates also update the mod.
+ */
+async function refreshPimpinClient(holder) {
+  const dest = path.join(holder.dir, 'mods', CLIENT_FILE);
+  if (!fs.existsSync(dest)) return false;
+  const jar = clientJar(holder.mcVersion, holder.loader);
+  if (!jar) return false;
+  const [have, want] = await Promise.all([sha1File(dest).catch(() => null), sha1Buffer(await fsp.readFile(jar))]);
+  if (have === want) return false;
+  await writeClientJar(holder);
+  await withLock(holder.dir, async () => {
+    const meta = await holder.load();
+    const entry = (meta.content || []).find((c) => c.file === CLIENT_FILE);
+    if (entry) entry.versionNumber = clientVersion();
+    await holder.save(meta);
+  });
+  return true;
+}
+
+const sha1Buffer = (buf) => require('crypto').createHash('sha1').update(buf).digest('hex');
 
 const slugIds = new Map();
 async function resolveSlugs(slugs) {
@@ -252,6 +350,11 @@ async function featureState(holder) {
   }
   const idOf = Object.fromEntries([...slugIds.entries()].map(([slug, v]) => [slug, v.id]));
   return FEATURES.map((f) => {
+    if (f.custom) {
+      const available = Boolean(clientJar(holder.mcVersion, holder.loader));
+      const note = available ? null : CLIENT_LOADERS.includes(holder.loader) ? `Runs on Minecraft ${clientRange()}` : 'Needs Fabric or Quilt';
+      return { id: f.id, name: f.name, icon: f.icon, desc: f.desc, enabled: enabledFiles.has(CLIENT_FILE), available, custom: true, note };
+    }
     const ids = f.projects.map((s) => idOf[s]).filter(Boolean);
     const on =
       ids.length > 0 &&
@@ -267,6 +370,7 @@ async function featureState(holder) {
 async function setFeature(holder, featureId, enabled, onProgress) {
   const feature = FEATURES.find((f) => f.id === featureId);
   if (!feature) throw new Error('Unknown feature');
+  if (feature.custom) return setPimpinClient(holder, enabled, onProgress);
   const projects = await resolveSlugs(feature.projects);
   const failed = [];
   if (enabled) {
@@ -337,4 +441,7 @@ module.exports = {
   setFeature,
   identifyLocal,
   resolveSlugs,
+  clientJar,
+  clientRange,
+  refreshPimpinClient,
 };

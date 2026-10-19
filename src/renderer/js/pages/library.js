@@ -113,6 +113,12 @@ export function render(page, params, navigate) {
         el('span', { class: 'grow' }),
         el('label', { class: 'row muted', style: { gap: '8px', fontSize: '12.5px' } }, 'Only compatible', switchEl(mem.compatible, (v) => { mem.compatible = v; mem.offset = 0; runSearch(); })),
       ),
+      mem.type === 'resourcepack' && t
+        ? el('div', { class: 'pimpin-promo', onclick: () => navigate('instances', { id: t.id, tab: 'pimpin' }) },
+            icon('sparkle'),
+            el('div', { class: 'grow' }, el('b', {}, 'Try the Pimpin packs'), el('span', {}, 'Our own original packs: Pimpin Performance for FPS and Pimpin Pretty for looks.')),
+            el('span', { class: 'btn sm primary' }, 'Open', icon('chevronRight')))
+        : null,
     );
   };
 

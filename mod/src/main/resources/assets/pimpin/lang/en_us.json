@@ -1,0 +1,10 @@
+{
+  "key.categories.pimpin": "Pimpin Client",
+  "key.category.pimpin.main": "Pimpin Client",
+  "key.pimpin.zoom": "Zoom (hold, scroll to adjust)",
+  "key.pimpin.menu": "Open Pimpin menu",
+  "key.pimpin.minimap": "Toggle minimap",
+  "key.pimpin.minimap_zoom": "Minimap zoom",
+  "key.pimpin.big_map": "Big map (hold, scroll to zoom)",
+  "key.pimpin.boost": "Toggle FPS boost"
+}

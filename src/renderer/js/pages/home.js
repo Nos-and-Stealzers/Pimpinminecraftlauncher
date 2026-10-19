@@ -161,7 +161,7 @@ function renderHero(root, navigate, topic) {
 
 async function renderFeatures(root, sel, navigate) {
   if (!sel) return root.replaceChildren();
-  const head = el('h2', { class: 'section' }, icon('wand'), 'Client features', el('small', {}, `One-click mods for ${sel.name}`), el('span', { class: 'grow' }), el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod' }) }, 'Browse all mods', icon('external')));
+  const head = el('h2', { class: 'section' }, icon('wand'), 'Client features', el('small', {}, `One-click mods for ${sel.name}`), el('span', { class: 'grow' }), el('button', { class: 'btn sm', onclick: () => navigate('instances', { id: sel.id, tab: 'pimpin' }) }, icon('sparkle'), 'Pimpin packs'), el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod' }) }, 'Browse all mods', icon('external')));
   if (sel.loader === 'vanilla') {
     clear(
       root,
@@ -199,7 +199,7 @@ export function featureGrid(sel, list) {
     'div',
     { class: 'feature-grid' },
     list.map((f) => {
-      const card = el('div', { class: `feature${f.enabled ? ' on' : ''}` });
+      const card = el('div', { class: `feature${f.enabled ? ' on' : ''}${f.custom ? ' own' : ''}${f.note ? ' unavailable' : ''}` });
       const sw = switchEl(f.enabled, async (on, label, input) => {
         label.classList.add('busy');
         input.disabled = true;
@@ -216,7 +216,10 @@ export function featureGrid(sel, list) {
           input.disabled = false;
         }
       });
-      card.append(el('div', { class: 'feature-top' }, el('div', { class: 'ico' }, icon(f.icon)), sw), el('div', { class: 'txt' }, el('b', {}, f.name), el('span', {}, f.desc)));
+      if (f.note && !f.enabled) sw.querySelector('input').disabled = true;
+      card.append(
+        el('div', { class: 'feature-top' }, el('div', { class: 'ico' }, icon(f.icon)), f.custom ? el('span', { class: 'chip accent own-chip' }, 'Pimpin') : null, sw),
+        el('div', { class: 'txt' }, el('b', {}, f.name), el('span', {}, f.note ? `${f.desc} (${f.note})` : f.desc)));
       return card;
     }),
   );

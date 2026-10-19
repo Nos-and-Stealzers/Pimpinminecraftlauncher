@@ -1,3 +1,8 @@
 node_modules/
 dist/
 *.log
+mod/build/
+mod/.gradle/
+mod/run/
+mod/versions/*/build/
+__pycache__/

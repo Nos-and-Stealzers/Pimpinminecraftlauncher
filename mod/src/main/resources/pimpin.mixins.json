@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.pimpin.client.mixin",
+  "compatibilityLevel": "${mixin_java}",
+  "client": ["GameRendererMixin", "MouseHandlerMixin"],
+  "injectors": { "defaultRequire": ${mixin_require} }
+}

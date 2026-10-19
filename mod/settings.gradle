@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'pimpin-client'
+
+// One subproject per supported Minecraft version, all built from the shared src/.
+// Pick a subset with -Pversions=1.21.4,26.3
+def wanted = providers.gradleProperty('versions').orNull?.split(',')?.collect { it.trim() } as Set
+file('versions').listFiles().findAll { it.isDirectory() && new File(it, 'gradle.properties').exists() }.sort { it.name }.each { dir ->
+    if (wanted && !wanted.contains(dir.name)) return
+    include ":${dir.name}"
+    project(":${dir.name}").projectDir = dir
+}

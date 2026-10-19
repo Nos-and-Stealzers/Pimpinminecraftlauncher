@@ -1,0 +1,156 @@
+// Build script shared by every versions/<mc> subproject.
+// Sources live once in mod/src and go through a small line preprocessor:
+//   //#if MC >= 1.21.6   //#elseif MC < 1.20.5 && MC != 1.20.1   //#else   //#endif
+// Lines in branches that don't match the subproject's Minecraft version are blanked
+// (line numbers stay the same, so compiler errors point at the real source line).
+
+static int mcNumber(String v) {
+    def p = v.tokenize('.').collect { it.toInteger() }
+    while (p.size() < 3) p << 0
+    return p[0] * 10000 + p[1] * 100 + p[2]
+}
+
+def mc = project.property('minecraft_version') as String
+def mcNum = mcNumber(mc)
+def unobfuscated = mcNum >= mcNumber('26.1')
+def javaVersion = (project.property('java_version') as String).toInteger()
+
+apply plugin: unobfuscated ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+
+version = "${rootProject.mod_version}+${mc}"
+group = 'dev.pimpin'
+base { archivesName = 'pimpin-client' }
+
+def evalCondition = { String expr ->
+    expr.split(/\|\|/).any { String orPart ->
+        orPart.split(/&&/).every { String term ->
+            def m = term.trim() =~ /^MC\s*(>=|<=|==|!=|>|<)\s*([0-9.]+)$/
+            if (!m.matches()) throw new GradleException("Bad preprocessor condition: '${term.trim()}'")
+            int other = mcNumber(m.group(2))
+            switch (m.group(1)) {
+                case '>=': return mcNum >= other
+                case '<=': return mcNum <= other
+                case '>': return mcNum > other
+                case '<': return mcNum < other
+                case '==': return mcNum == other
+                default: return mcNum != other
+            }
+        }
+    }
+}
+
+def preprocess = { String text, String fileName ->
+    def out = new StringBuilder()
+    def stack = [] // [parentActive, anyTaken, active]
+    boolean active = true
+    text.readLines().eachWithIndex { String line, int i ->
+        def t = line.trim()
+        def where = "${fileName}:${i + 1}"
+        if (t.startsWith('//#if ')) {
+            boolean c = evalCondition(t.substring(6))
+            stack.push([active, c, active && c])
+            active = active && c
+            out << '\n'
+        } else if (t.startsWith('//#elseif ')) {
+            if (stack.isEmpty()) throw new GradleException("#elseif without #if at ${where}")
+            def top = stack.pop()
+            boolean c = !top[1] && evalCondition(t.substring(10))
+            stack.push([top[0], top[1] || c, top[0] && c])
+            active = top[0] && c
+            out << '\n'
+        } else if (t == '//#else') {
+            if (stack.isEmpty()) throw new GradleException("#else without #if at ${where}")
+            def top = stack.pop()
+            stack.push([top[0], true, top[0] && !top[1]])
+            active = top[0] && !top[1]
+            out << '\n'
+        } else if (t == '//#endif') {
+            if (stack.isEmpty()) throw new GradleException("#endif without #if at ${where}")
+            active = stack.pop()[0]
+            out << '\n'
+        } else {
+            out << (active ? line : '') << '\n'
+        }
+    }
+    if (!stack.isEmpty()) throw new GradleException("Unclosed #if in ${fileName}")
+    return out.toString()
+}
+
+def preJava = layout.buildDirectory.dir('preprocessed/java')
+def preprocessJava = tasks.register('preprocessJava') {
+    def srcDir = rootProject.file('src/main/java')
+    inputs.dir(srcDir)
+    inputs.property('mc', mc)
+    outputs.dir(preJava)
+    doLast {
+        def dest = preJava.get().asFile
+        project.delete(dest)
+        srcDir.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+            def rel = srcDir.toPath().relativize(f.toPath()).toString()
+            def target = new File(dest, rel)
+            target.parentFile.mkdirs()
+            target.setText(preprocess(f.getText('UTF-8'), rel), 'UTF-8')
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java { srcDirs = [preJava] }
+        resources { srcDirs = [rootProject.file('src/main/resources')] }
+    }
+}
+tasks.named('compileJava') { dependsOn preprocessJava }
+
+repositories {}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mc}"
+    if (unobfuscated) {
+        implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+        implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    } else {
+        mappings loom.officialMojangMappings()
+        modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    }
+}
+
+processResources {
+    def props = [
+        version   : project.version,
+        mc_range  : project.property('mc_range'),
+        java      : javaVersion,
+        mixin_java: javaVersion >= 21 ? 'JAVA_21' : 'JAVA_17',
+        // Release jars skip a hook that can't find its target instead of crashing the game;
+        // -PstrictMixins makes every hook required, so test runs catch renamed methods.
+        mixin_require: project.hasProperty('strictMixins') ? 1 : 0,
+    ]
+    inputs.properties(props)
+    filesMatching(['fabric.mod.json', 'pimpin.mixins.json']) { expand(props) }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = javaVersion
+    it.options.encoding = 'UTF-8'
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(javaVersion)
+    targetCompatibility = JavaVersion.toVersion(javaVersion)
+}
+
+// The jar players install: remapped for obfuscated versions, plain jar for 26.x.
+ext.releaseJar = unobfuscated ? tasks.named('jar').flatMap { it.archiveFile } : tasks.named('remapJar').flatMap { it.archiveFile }
+
+// `gradle :1.21.4:runClient -PquickPlay=World` jumps straight into a world (used for testing).
+loom {
+    runs {
+        client {
+            runDir = "../../run/${mc}"
+            if (project.hasProperty('quickPlay')) {
+                programArgs '--quickPlaySingleplayer', project.property('quickPlay'), '--width', '1280', '--height', '720'
+            }
+        }
+    }
+}

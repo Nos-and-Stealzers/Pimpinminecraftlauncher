@@ -88,6 +88,13 @@ const DEFAULT_SETTINGS = {
   showFeatures: true,
   showNews: true,
   startPage: 'home',
+  autoUpdate: true,
+  updateChannel: 'stable',
+  lastSeenVersion: null,
+  onboarded: false,
+  notifications: true,
+  minimizeToTray: false,
+  launchOnStartup: false,
   lastInstance: null,
   activeAccount: null,
 };

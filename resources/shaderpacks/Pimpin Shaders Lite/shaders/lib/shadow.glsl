@@ -1,0 +1,32 @@
+// shadow lookup: hardware filtered with a few taps
+uniform sampler2DShadow shadowtex0;
+
+vec2 distortShadow(vec2 p) {
+    return p / (length(p) * SHADOW_DISTORT + (1.0 - SHADOW_DISTORT));
+}
+
+vec3 shadowClipPos(vec3 playerPos, vec3 worldNormal) {
+    float dist = length(playerPos);
+    float texel = 2.0 * shadowDistance / float(shadowMapResolution);
+    float grow = SHADOW_DISTORT * min(dist / shadowDistance, 1.0) + (1.0 - SHADOW_DISTORT);
+    vec3 p = playerPos + worldNormal * (texel * grow * 1.7 + 0.01);
+    return (shadowProjection * (shadowModelView * vec4(p, 1.0))).xyz;
+}
+
+vec3 sampleShadow(vec3 clip, float fallback, float noise) {
+    vec3 c = vec3(distortShadow(clip.xy), clip.z) * 0.5 + 0.5;
+    float fade = smoothstep(0.8, 0.98, max(abs(clip.x), abs(clip.y)));
+    if (fade >= 1.0 || c.z >= 1.0) return vec3(fallback);
+    c.z -= 0.00012;
+#ifdef SOFT_SHADOWS
+    float r = SHADOW_SOFTNESS / float(shadowMapResolution);
+    float s = shadow2D(shadowtex0, c + vec3(-0.6, 1.4, 0.0) * r).x;
+    s += shadow2D(shadowtex0, c + vec3(1.4, 0.6, 0.0) * r).x;
+    s += shadow2D(shadowtex0, c + vec3(0.6, -1.4, 0.0) * r).x;
+    s += shadow2D(shadowtex0, c + vec3(-1.4, -0.6, 0.0) * r).x;
+    s *= 0.25;
+#else
+    float s = shadow2D(shadowtex0, c).x;
+#endif
+    return vec3(mix(s, fallback, fade));
+}

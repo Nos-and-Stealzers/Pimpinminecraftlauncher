@@ -6,6 +6,8 @@ import { instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } 
 import { featureGrid } from './home.js';
 import { lightbox } from './library.js';
 import { fileBrowser } from '../files.js';
+import { drawPimpin } from './pimpin.js';
+import { importInstance, updateAllMods } from '../qol.js';
 
 const tabMem = {};
 
@@ -46,6 +48,8 @@ function renderList(page, params, navigate) {
     el('div', { class: 'page-head' },
       el('div', {}, el('h1', { class: 'page-title' }, 'Instances'), el('p', { class: 'page-sub' }, 'Each instance has its own version, mods, shaders, worlds and settings.')),
       el('div', { class: 'row' },
+        el('button', { class: 'btn', title: 'Update the mods in every instance', onclick: () => updateAllMods() }, icon('refresh'), 'Update all'),
+        el('button', { class: 'btn', onclick: () => importInstance(navigate) }, icon('upload'), 'Import'),
         el('button', { class: 'btn', onclick: () => navigate('library', { type: 'modpack' }) }, icon('library'), 'Install modpack'),
         el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance')),
     ),
@@ -87,6 +91,7 @@ function renderDetail(page, id, navigate, initialTab) {
             running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null)),
         el('div', { class: 'row' },
           el('button', { class: 'btn icon', title: 'Open folder', onclick: () => api.call('instances:open', id) }, icon('folder')),
+          el('button', { class: 'btn icon', title: 'Export as .zip (share or back up)', onclick: () => api.call('instances:export', id).then((f) => f && toast('Instance exported')).catch(errorToast) }, icon('archive')),
           el('button', {
             class: 'btn icon',
             title: 'Duplicate instance',
@@ -126,6 +131,7 @@ function renderDetail(page, id, navigate, initialTab) {
   const drawTabs = () => {
     const defs = [
       ['features', 'Client features', 'wand'],
+      ['pimpin', 'Pimpin Specials', 'sparkle'],
       ['content', 'Content', 'puzzle'],
       ['worlds', 'Worlds', 'globe'],
       ['screenshots', 'Screenshots', 'monitor'],
@@ -144,6 +150,7 @@ function renderDetail(page, id, navigate, initialTab) {
     if (tab === 'content') drawContent(body, inst, navigate);
     if (tab === 'worlds') drawWorlds(body, inst);
     if (tab === 'screenshots') drawScreenshots(body, inst);
+    if (tab === 'pimpin') drawPimpin(body, inst);
     if (tab === 'files') fileBrowser(body, { kind: 'instance', id: inst.id }, { rootLabel: inst.name });
     if (tab === 'console') offLog = drawConsole(body, inst);
     if (tab === 'settings') drawSettings(body, inst, () => { drawHead(); });
