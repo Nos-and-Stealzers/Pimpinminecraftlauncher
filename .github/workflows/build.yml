@@ -45,6 +45,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            **Windows 10/11:** download `PimpinLauncher-Setup-*.exe` and run it (or use the Portable exe — no install needed).
+            The app isn't code-signed yet, so SmartScreen may warn: click **More info → Run anyway**.
+
+            **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. Debian/Ubuntu users can install the `.deb` instead.
           files: |
             dist/*.exe
             dist/*.AppImage
