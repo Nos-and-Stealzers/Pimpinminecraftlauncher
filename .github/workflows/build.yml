@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+        env:
+          TMPDIR: ${{ runner.temp }}
       # Every build gets its own version so installed launchers can auto-update.
       - name: Set version
         shell: bash
