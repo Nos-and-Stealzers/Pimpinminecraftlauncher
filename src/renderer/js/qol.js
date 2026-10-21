@@ -214,6 +214,7 @@ function commands(navigate) {
     { label: 'Library', hint: 'Ctrl+2', icon: 'library', run: () => navigate('library') },
     { label: 'Instances', hint: 'Ctrl+3', icon: 'layers', run: () => navigate('instances') },
     { label: 'Servers', hint: 'Ctrl+4', icon: 'server', run: () => navigate('servers') },
+    { label: 'Wardrobe', sub: 'Original characters and skin import/export', icon: 'user', run: () => navigate('wardrobe') },
     { label: 'Settings', hint: 'Ctrl+,', icon: 'settings', run: () => navigate('settings') },
     { label: 'New instance', hint: 'Ctrl+N', icon: 'plus', run: () => newInstanceModal() },
     { label: 'New server', icon: 'plus', run: () => navigate('servers', { create: true }) },

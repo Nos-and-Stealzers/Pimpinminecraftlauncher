@@ -25,6 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm test
       # Every build gets its own version so installed launchers can auto-update.
       - name: Set version
         shell: bash

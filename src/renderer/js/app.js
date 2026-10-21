@@ -10,12 +10,14 @@ import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
 import * as servers from './pages/servers.js';
 import * as settings from './pages/settings.js';
+import * as wardrobe from './pages/wardrobe.js';
 
 const PAGES = {
   home: { mod: home, label: 'Home', icon: 'home' },
   library: { mod: library, label: 'Library', icon: 'library' },
   instances: { mod: instances, label: 'Instances', icon: 'layers' },
   servers: { mod: servers, label: 'Servers', icon: 'server' },
+  wardrobe: { mod: wardrobe, label: 'Wardrobe', icon: 'user' },
   settings: { mod: settings, label: 'Settings', icon: 'settings' },
 };
 const RECENT_MAX = 8;

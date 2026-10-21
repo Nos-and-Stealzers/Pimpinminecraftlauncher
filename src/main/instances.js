@@ -15,6 +15,22 @@ const { download, pool } = require('./net');
 const META = 'pimpin-instance.json';
 const LOADER_NAMES = { vanilla: 'Vanilla', fabric: 'Fabric', quilt: 'Quilt' };
 const running = new Map(); // id -> { child, started }
+const preparing = new Set();
+const maintenance = new Set();
+
+function isBusy(id) {
+  return running.has(id) || preparing.has(id) || maintenance.has(id);
+}
+
+async function withStopped(id, task) {
+  if (isBusy(id)) throw new Error('Stop Minecraft and wait for other tasks to finish first.');
+  maintenance.add(id);
+  try {
+    return await task();
+  } finally {
+    maintenance.delete(id);
+  }
+}
 const logs = new Map(); // id -> string[]
 const lastRun = new Map(); // id -> { started, code }
 let emit = () => {};
@@ -64,11 +80,12 @@ async function list() {
 
 /** Re-checks every game file (hashes included) and re-downloads anything broken. */
 async function repair(id) {
-  if (running.has(id)) throw new Error('Close the game first.');
-  const meta = await get(id);
-  await minecraft.installVersion(meta, dirOf(id), (p) => emit('game:progress', { id, ...p }), { verify: true });
-  emit('game:progress', { id, stage: 'Done', done: 1, total: 1 });
-  return { ok: true };
+  return withStopped(id, async () => {
+    const meta = await get(id);
+    await minecraft.installVersion(meta, dirOf(id), (p) => emit('game:progress', { id, ...p }), { verify: true });
+    emit('game:progress', { id, stage: 'Done', done: 1, total: 1 });
+    return { ok: true };
+  });
 }
 
 function warm(meta) {
@@ -123,10 +140,11 @@ async function update(id, patch) {
 }
 
 async function remove(id) {
-  if (running.has(id)) throw new Error('Close the game before deleting this instance.');
-  await fsp.rm(dirOf(id), { recursive: true, force: true });
-  if (getSettings().lastInstance === id) await updateSettings({ lastInstance: null });
-  return list();
+  return withStopped(id, async () => {
+    await fsp.rm(dirOf(id), { recursive: true, force: true });
+    if (getSettings().lastInstance === id) await updateSettings({ lastInstance: null });
+    return list();
+  });
 }
 
 function pushLog(id, line) {
@@ -139,12 +157,13 @@ function pushLog(id, line) {
 }
 
 async function launch(id, { server, world } = {}) {
-  if (running.has(id)) throw new Error('This instance is already running.');
-  const meta = await get(id);
-  const settings = getSettings();
-  logs.set(id, []);
-  emit('game:state', { id, state: 'preparing' });
+  if (isBusy(id)) throw new Error('This instance is already running or busy.');
+  preparing.add(id);
   try {
+    const meta = await get(id);
+    const settings = getSettings();
+    logs.set(id, []);
+    emit('game:state', { id, state: 'preparing' });
     // Account refresh may hit the network; do it while the game files are checked.
     const accountReady = auth.getLaunchAccount(settings.activeAccount);
     accountReady.catch(() => {});
@@ -203,6 +222,8 @@ async function launch(id, { server, world } = {}) {
     pushLog(id, `[Pimpin] ${err.stack || err.message}`);
     emit('game:state', { id, state: 'stopped', error: err.message });
     throw err;
+  } finally {
+    preparing.delete(id);
   }
 }
 
@@ -420,6 +441,8 @@ async function installModpack({ projectId, versionId }) {
 }
 
 module.exports = {
+  isBusy,
+  withStopped,
   exportZip,
   importZip,
   setEmitter,

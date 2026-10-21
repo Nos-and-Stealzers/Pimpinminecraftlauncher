@@ -14,6 +14,8 @@ const packs = require('./packs');
 const shaders = require('./shaders');
 const importer = require('./importer');
 const gameLogs = require('./logs');
+const wardrobe = require('./wardrobe');
+const worldBackups = require('./world-backups');
 const { getJson, request } = require('./net');
 
 let win;
@@ -212,6 +214,25 @@ const handlers = {
   },
   'loaders:versions': (loader, mc) => minecraft.getLoaderVersions(loader, mc),
   'loaders:games': (loader) => minecraft.getLoaderGameVersions(loader),
+
+  'wardrobe:list': () => wardrobe.listSkins(),
+  'wardrobe:select': (options) => wardrobe.selectSkin(options),
+  'wardrobe:import': (options) => wardrobe.importSkin(options),
+  'wardrobe:export': (options) => wardrobe.exportSkin(options),
+  'wardrobe:delete': (options) => wardrobe.deleteSkin(options),
+
+  'worldBackups:list': (id, world) => worldBackups.list(id, world),
+  'worldBackups:create': (id, world) => worldBackups.create(id, world),
+  'worldBackups:restore': (id, world, name) => worldBackups.restore(id, world, name),
+  'worldBackups:delete': (id, world, name) => worldBackups.deleteBackup(id, world, name),
+  'worldBackups:export': async (id, world, name) => {
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: path.basename(String(name)),
+      filters: [{ name: 'World backup', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return { exported: false };
+    return worldBackups.exportBackup(id, world, name, result.filePath);
+  },
 
   'instances:list': () => instances.list(),
   'instances:get': (id) => instances.get(id),

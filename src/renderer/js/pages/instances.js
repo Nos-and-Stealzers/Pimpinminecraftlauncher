@@ -9,6 +9,7 @@ import { lightbox } from './library.js';
 import { fileBrowser } from '../files.js';
 import { drawPimpin } from './pimpin.js';
 import { importInstance, updateAllMods } from '../qol.js';
+import { openWorldBackups } from '../world-backups.js';
 
 const tabMem = {};
 const PREFS_KEY = 'pimpin.instanceList';
@@ -430,6 +431,7 @@ async function drawWorlds(root, inst) {
       el('div', { class: 'card world-row' },
         w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico' }, icon('globe')),
         el('div', { class: 'grow' }, el('b', {}, w.folder), el('span', {}, `Played ${timeAgo(w.lastPlayed).toLowerCase()}`)),
+        el('button', { class: 'btn sm ghost', onclick: () => openWorldBackups(inst, w) }, 'Backups'),
         el('button', { class: 'btn sm ghost icon', title: 'Show in folder', onclick: () => api.call('shell:showItem', inst.id, 'saves', w.folder) }, icon('folder')),
         el('button', { class: 'btn sm primary', onclick: () => selectInstance(inst.id).then(() => playInstance(inst.id, { world: w.folder })) }, icon('play'), 'Play'))));
   } catch (err) {
