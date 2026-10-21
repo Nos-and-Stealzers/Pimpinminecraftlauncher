@@ -36,9 +36,18 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 #if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined CLOUD_SHADOWS
         vis *= cloudShadow(wpos, mat3(gbufferModelViewInverse) * L);
 #endif
-        // light glowing through leaves and grass when looking towards the sun
-        float sss = foliage * pow(max(dot(V, L), 0.0), 6.0) * 1.1;
-        direct = sunC * (diffuse + sss) * vis;
+        // light glowing through leaves and grass when looking towards the sun: a tight forward lobe
+        // plus a wide one, tinted by the leaf colour a second time (light passes through the leaf)
+        float VoL = max(dot(V, L), 0.0);
+        float sss = foliage * (pow(VoL, 8.0) * 2.4 + pow(VoL, 2.0) * 0.5) * SSS_STRENGTH;
+        vec3 sssTint = mix(vec3(1.0), sat3(alb * 3.2), 0.65);
+        // light still gets through a block or two of leaves even where the leaf itself is in shadow
+#if defined ULTRA && defined SHADOWS && !defined PROGRAM_HAND
+        vec3 sssVis = max(vis, vec3(foliage > 0.5 ? shadowThrough(shadowP) * smoothstep(0.02, 0.3, skyL) : 0.0));
+#else
+        vec3 sssVis = max(vis, vec3(foliage * 0.4 * smoothstep(0.55, 1.0, skyL)));
+#endif
+        direct = sunC * (diffuse * vis + sss * sssTint * sssVis);
         if (shine > 0.0) direct += sunC * vis * ggxSpecular(n, V, L, mix(0.45, 0.18, shine)) * shine;
     }
     vec3 amb = ambientColor() * skyL * skyL * (0.62 + 0.38 * NdotU);
@@ -49,7 +58,7 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 #endif
 #ifdef DIM_END
     vec3 Le = normalize(mat3(gbufferModelView) * vec3(0.3, 0.88, 0.36));
-    direct = vec3(0.60, 0.40, 1.0) * 0.6 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
+    direct = vec3(0.62, 0.36, 1.0) * 0.5 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
 #endif
     float bl = lm.x;
     float held = float(max(heldBlockLightValue, heldBlockLightValue2));
@@ -61,7 +70,14 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 }
 
 vec3 emission(vec3 alb, vec3 srgb, float id) {
-    if (isId(id, ID_LAVA)) return alb * 1.8 * EMISSIVE_STRENGTH;
+    if (isId(id, ID_LAVA)) return alb * 1.5 * EMISSIVE_STRENGTH;
+#ifdef GLOWING_ORES
+    if (isId(id, ID_ORE)) {
+        // only the coloured specks glow, the grey stone around them stays put
+        float chroma = max(srgb.r, max(srgb.g, srgb.b)) - min(srgb.r, min(srgb.g, srgb.b));
+        return alb * smoothstep(0.18, 0.45, chroma) * 0.9 * EMISSIVE_STRENGTH;
+    }
+#endif
     if (isId(id, ID_GLOW)) {
         float m = smoothstep(0.55, 0.95, max(srgb.r, max(srgb.g, srgb.b)));
         return alb * m * 1.4 * EMISSIVE_STRENGTH;

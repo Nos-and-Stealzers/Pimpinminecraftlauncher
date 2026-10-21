@@ -1,4 +1,28 @@
 varying vec2 uv;
+const bool colortex0MipmapEnabled = true;
+
+#if defined GODRAYS && defined DIM_OVERWORLD
+// screen-space light shafts: march from the pixel towards the sun on screen and count how much open sky
+// lies on the way (cheap stand-in for shadow-map volumetric light)
+vec3 godRays(vec3 dir, float noise) {
+    vec3 Lv = normalize(shadowLightPosition);
+    float VoL = dot(dir, Lv);
+    if (VoL < 0.0) return vec3(0.0);
+    vec4 sc = gbufferProjection * vec4(Lv, 1.0);
+    vec2 spos = sc.xy / sc.w * 0.5 + 0.5;
+    vec2 delta = (spos - uv) / float(GODRAY_STEPS) * 0.85;
+    vec2 p = uv + delta * noise;
+    float acc = 0.0;
+    for (int i = 0; i < GODRAY_STEPS; i++) {
+        if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0) acc += step(1.0, texture2D(depthtex0, p).r);
+        p += delta;
+    }
+    acc /= float(GODRAY_STEPS);
+    float phase = pow(VoL, 10.0) * 0.8 + pow(VoL, 3.0) * 0.2;
+    float amount = (0.25 + 0.75 * twilightFactor() + 0.3 * rainStrength) * GODRAY_STRENGTH;
+    return sunLightColor() * acc * phase * amount * 0.22 * eyeSkyLight();
+}
+#endif
 
 #ifdef SSAO
 // cheap depth-only ambient occlusion (after Capt Tatsu / MakeUp), 2 x SSAO_STEPS taps
@@ -37,8 +61,18 @@ void main() {
 #endif
         col = applyFog(col, dir, dist);
     }
+#if defined GODRAYS && defined DIM_OVERWORLD
+    if (isEyeInWater == 0) col += godRays(dir, dither(gl_FragCoord.xy));
+#endif
     vec4 weather = texture2D(colortex3, uv);
     col = col * (1.0 - weather.a) + weather.rgb;
     col = mediumFog(col, dist);
+#ifdef BLOOM
+    // cheap bloom from four mip levels of the HDR image
+    vec3 bloom = texture2D(colortex0, uv, 3.0).rgb * 0.30 + texture2D(colortex0, uv, 4.5).rgb * 0.30
+               + texture2D(colortex0, uv, 6.0).rgb * 0.25 + texture2D(colortex0, uv, 7.5).rgb * 0.15;
+    float bl = luma(bloom);
+    col += (bloom * clamp((bl - 0.8) / max(bl, 0.0001), 0.0, 1.0) * 0.5 + bloom * 0.02) * BLOOM_STRENGTH;
+#endif
     gl_FragData[0] = vec4(finishColor(col, uv, exposureValue()), 1.0);
 }

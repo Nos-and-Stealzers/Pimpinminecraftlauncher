@@ -55,7 +55,8 @@ void main() {
     gl_FragData[1] = vec4(0.0);
     gl_FragData[2] = vec4(0.0);
 #else
-    vec3 R = reflect(V, n);
+    // reflections use a calmer normal than the glint so the sky does not break into white blotches
+    vec3 R = reflect(V, normalize(mix(normalize(viewNormal), n, 0.55)));
     float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
     vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
@@ -63,10 +64,11 @@ void main() {
         float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
         float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
         if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
-        float a = 1.0 - exp(-thick * 0.32 * WATER_FOG);
-        a = mix(0.10, 0.97, a);
-        vec3 deep = vec3(0.020, 0.13, 0.16) * (ambientColor() * lmcoord.y * lmcoord.y + sunLightColor() * 0.12 + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
-        deep = mix(deep, color * 0.6, 0.25);
+        float a = 1.0 - exp(-thick * 0.30 * WATER_FOG);
+        a = mix(0.16, 0.95, a);
+        vec3 deep = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        deep *= 0.85 + 0.3 * luma(texture2D(tex, texcoord).rgb);
+        F = max(F, 0.05);
         float A = a * (1.0 - F) + F;
         color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
         alpha = sat(A + luma(spec));

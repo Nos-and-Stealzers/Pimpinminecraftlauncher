@@ -1,5 +1,9 @@
 // shadow lookup: a rotated Vogel disk of hardware-filtered taps
 uniform sampler2DShadow shadowtex0;
+#ifdef COLORED_SHADOWS
+uniform sampler2DShadow shadowtex1;
+uniform sampler2D shadowcolor0;
+#endif
 
 vec2 distortShadow(vec2 p) {
     return p / (length(p) * SHADOW_DISTORT + (1.0 - SHADOW_DISTORT));
@@ -26,5 +30,14 @@ vec3 sampleShadow(vec3 clip, float fallback, float noise) {
 #else
     float s = shadow2D(shadowtex0, c).x;
 #endif
-    return vec3(mix(s, fallback, fade));
+    vec3 v = vec3(s);
+#ifdef COLORED_SHADOWS
+    // light that only stained glass / ice blocks gets their colour (one extra tap of each map)
+    float s1 = shadow2D(shadowtex1, c).x;
+    if (s1 > s + 0.01) {
+        vec4 sc = texture2D(shadowcolor0, c.xy);
+        v = vec3(s) + (s1 - s) * mix(vec3(1.0), sc.rgb, sc.a);
+    }
+#endif
+    return mix(v, vec3(fallback), fade);
 }

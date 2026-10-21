@@ -27,8 +27,11 @@ void main() {
         col = skyRadiance(lutDirection((px - 0.5) / (vec2(LUT_W, LUT_H) - 1.0)), sunL);
     } else if (px.x < 1.0) {
         vec3 sunC = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(0.0, 0.06, sinE);
-        vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.085 * moonTint() * smoothstep(0.0, 0.06, -sinE);
-        col = (sunC + moonC) * (1.0 - 0.85 * rainStrength);
+        vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.065 * moonTint() * smoothstep(0.0, 0.06, -sinE);
+        col = (sunC * vec3(1.05, 0.98, 0.90) + moonC) * (1.0 - 0.85 * rainStrength);
+    } else if (px.x < 3.0 && px.x >= 2.0) {
+        // the sun disk colour: reddened by the long path through the air, kept until the sun has set
+        col = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(-0.06, 0.0, sinE) * (1.0 - 0.9 * rainStrength);
     } else if (px.x < 2.0) {
         // cosine weighted average of the sky over the upper hemisphere
         col = skyRadiance(vec3(0.0, 1.0, 0.0), sunL);
@@ -36,7 +39,7 @@ void main() {
         col += (skyRadiance(vec3(0.99, 0.14, 0.0), sunL) + 2.0 * skyRadiance(vec3(0.0, 0.14, 0.99), sunL) + skyRadiance(vec3(-0.99, 0.14, 0.0), sunL)) * 0.3;
         col /= 5.2;
         // a little saturation so shade stays blue instead of grey
-        col = mix(vec3(luma(col)), col, 1.25) * AMBIENT_STRENGTH;
+        col = mix(vec3(luma(col)), col, 1.1) * AMBIENT_STRENGTH;
         col += vec3(0.006, 0.009, 0.018) * MOON_BRIGHTNESS * (1.0 - dayFactor());
     } else {
         discard;

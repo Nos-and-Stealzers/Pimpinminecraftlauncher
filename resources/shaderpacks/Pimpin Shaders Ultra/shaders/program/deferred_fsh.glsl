@@ -85,10 +85,7 @@ void main() {
     vec3 dir = normalize(vp);
     float noise = dither(gl_FragCoord.xy);
     if (depth >= 1.0) {
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
-#ifdef DIM_END
-        col += endSkyDetail(dir);
-#endif
+        col = paintSky(dir, uv);
     }
 #ifdef SSAO
     else if (depth > 0.56) {

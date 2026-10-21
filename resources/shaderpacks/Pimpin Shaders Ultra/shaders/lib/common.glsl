@@ -9,6 +9,7 @@
 #define ID_GLOW 10020.0
 #define ID_LAVA 10021.0
 #define ID_SHINY 10030.0
+#define ID_ORE 10040.0
 #define PI 3.14159265
 
 bool isId(float id, float want) { return abs(id - want) < 0.5; }

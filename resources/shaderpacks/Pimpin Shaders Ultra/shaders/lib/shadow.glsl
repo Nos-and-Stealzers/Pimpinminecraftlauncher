@@ -26,6 +26,14 @@ vec3 shadowTap(vec2 uv, float z) {
 #endif
 }
 
+// how much light passes through the leaves between this point and the sun (depth behind the first occluder)
+float shadowThrough(vec3 clip) {
+    if (max(abs(clip.x), abs(clip.y)) > 0.98) return 0.0;
+    vec3 c = vec3(distortShadow(clip.xy), clip.z) * 0.5 + 0.5;
+    float thick = max(c.z - texture2D(shadowtex1, c.xy).r, 0.0) * 256.0;
+    return exp(-thick * 1.1);
+}
+
 vec3 sampleShadow(vec3 clip, float fallback, float noise) {
     vec3 c = vec3(distortShadow(clip.xy), clip.z) * 0.5 + 0.5;
     float fade = smoothstep(0.8, 0.98, max(abs(clip.x), abs(clip.y)));

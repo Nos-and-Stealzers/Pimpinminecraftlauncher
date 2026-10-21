@@ -19,11 +19,23 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 
 #define SHADOWS
 #define SOFT_SHADOWS
+#define COLORED_SHADOWS
 #define SHADOW_SOFTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define SHADOW_DISTORT 0.85
 #define SSAO
 #define SSAO_STEPS 4 // [3 4 6 8]
 #define SSAO_STRENGTH 0.8 // [0.4 0.6 0.8 1.0]
+#define SSS_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define CLOUDS_2D
+#define CLOUD_AMOUNT 1.0 // [0.0 0.5 1.0 1.5 2.0 3.0]
+#define CLOUD_PLANE_HEIGHT 260.0 // [200.0 260.0 320.0 400.0]
+#define GODRAYS
+#define GODRAY_STEPS 10 // [6 8 10 14 20]
+#define GODRAY_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define BLOOM
+#define BLOOM_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define GLOWING_ORES
+#define SUN_SIZE 1.0 // [0.5 0.75 1.0 1.5 2.0]
 #define WAVING_PLANTS
 #define WAVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define WATER_WAVES
@@ -76,6 +88,10 @@ const float drynessHalflife = 300.0;
 #define CLOUD_HEIGHT 192.0 // [128.0 160.0 192.0 224.0 256.0]
 #define CLOUD_THICKNESS 90.0 // [50.0 70.0 90.0 120.0]
 #define CLOUD_AMOUNT 1.0 // [0.0 0.5 1.0 1.5 2.0 3.0]
+#define CIRRUS
+#define SSS_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define GLOWING_ORES
+#define SUN_SIZE 1.0 // [0.5 0.75 1.0 1.5 2.0]
 #define SSR
 #define SSR_STEPS 24 // [12 16 24 32 48]
 #define WET_REFLECTIONS
@@ -113,6 +129,7 @@ const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
 const vec4 colortex2ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
 const vec4 colortex3ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
+const vec4 shadowcolor0ClearColor = vec4(1.0, 1.0, 1.0, 0.0);
 */
 """
 BUFFERS_ULTRA = """/*
@@ -152,36 +169,36 @@ frustum.culling=true
 
 PROPS_LITE = """# Pimpin Shaders Lite
 """ + PROPS_COMMON + """
-profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5
-profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0
-profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0
+profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !COLORED_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5 !GODRAYS !BLOOM CLOUDS_2D
+profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=10 BLOOM CLOUDS_2D
+profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=14 BLOOM CLOUDS_2D
 
 screen=<profile> <empty> [SHADOWS_PAGE] [WORLD_PAGE] [SKY_PAGE] [CAMERA_PAGE]
 screen.columns=2
-screen.SHADOWS_PAGE=SHADOWS SOFT_SHADOWS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel
-screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH
-screen.SKY_PAGE=FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY
-screen.CAMERA_PAGE=EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
-sliders=shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+screen.SHADOWS_PAGE=SHADOWS SOFT_SHADOWS COLORED_SHADOWS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH
+screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH GLOWING_ORES
+screen.SKY_PAGE=CLOUDS_2D CLOUD_AMOUNT CLOUD_PLANE_HEIGHT CLOUD_BRIGHTNESS GODRAYS GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY
+screen.CAMERA_PAGE=BLOOM BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+sliders=shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH CLOUD_AMOUNT CLOUD_PLANE_HEIGHT GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE BLOOM_STRENGTH WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
 """
 
 PROPS_ULTRA = """# Pimpin Shaders Ultra
 """ + PROPS_COMMON + """
-profile.LOW=shadowMapResolution=1024 shadowDistance=64.0 SHADOW_SAMPLES=8 !PCSS SSAO_SAMPLES=4 !VOLUMETRIC_LIGHT VL_STEPS=8 VOLUMETRIC_CLOUDS CLOUD_STEPS=8 SSR SSR_STEPS=12 !WET_REFLECTIONS BLOOM !WATER_DETAIL
-profile.MEDIUM=shadowMapResolution=2048 shadowDistance=96.0 SHADOW_SAMPLES=8 PCSS SSAO_SAMPLES=6 VOLUMETRIC_LIGHT VL_STEPS=8 VOLUMETRIC_CLOUDS CLOUD_STEPS=12 SSR SSR_STEPS=16 WET_REFLECTIONS BLOOM WATER_DETAIL
-profile.HIGH=shadowMapResolution=3072 shadowDistance=128.0 SHADOW_SAMPLES=12 PCSS SSAO_SAMPLES=8 VOLUMETRIC_LIGHT VL_STEPS=12 VOLUMETRIC_CLOUDS CLOUD_STEPS=16 SSR SSR_STEPS=24 WET_REFLECTIONS BLOOM WATER_DETAIL
-profile.ULTRA=shadowMapResolution=4096 shadowDistance=160.0 SHADOW_SAMPLES=24 PCSS SSAO_SAMPLES=12 VOLUMETRIC_LIGHT VL_STEPS=24 VOLUMETRIC_CLOUDS CLOUD_STEPS=24 SSR SSR_STEPS=32 WET_REFLECTIONS BLOOM WATER_DETAIL
+profile.LOW=shadowMapResolution=1024 shadowDistance=64.0 SHADOW_SAMPLES=8 !PCSS SSAO_SAMPLES=4 !VOLUMETRIC_LIGHT VL_STEPS=8 VOLUMETRIC_CLOUDS CLOUD_STEPS=8 SSR SSR_STEPS=12 !WET_REFLECTIONS BLOOM !WATER_DETAIL !CIRRUS
+profile.MEDIUM=shadowMapResolution=2048 shadowDistance=96.0 SHADOW_SAMPLES=8 PCSS SSAO_SAMPLES=6 VOLUMETRIC_LIGHT VL_STEPS=8 VOLUMETRIC_CLOUDS CLOUD_STEPS=12 SSR SSR_STEPS=16 WET_REFLECTIONS BLOOM WATER_DETAIL CIRRUS
+profile.HIGH=shadowMapResolution=3072 shadowDistance=128.0 SHADOW_SAMPLES=12 PCSS SSAO_SAMPLES=8 VOLUMETRIC_LIGHT VL_STEPS=12 VOLUMETRIC_CLOUDS CLOUD_STEPS=16 SSR SSR_STEPS=24 WET_REFLECTIONS BLOOM WATER_DETAIL CIRRUS
+profile.ULTRA=shadowMapResolution=4096 shadowDistance=160.0 SHADOW_SAMPLES=24 PCSS SSAO_SAMPLES=12 VOLUMETRIC_LIGHT VL_STEPS=24 VOLUMETRIC_CLOUDS CLOUD_STEPS=24 SSR SSR_STEPS=32 WET_REFLECTIONS BLOOM WATER_DETAIL CIRRUS
 
 screen=<profile> <empty> [SHADOWS_PAGE] [LIGHT_PAGE] [CLOUDS_PAGE] [WATER_PAGE] [SKY_PAGE] [WORLD_PAGE] [CAMERA_PAGE]
 screen.columns=2
-screen.SHADOWS_PAGE=SHADOWS PCSS shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS COLORED_SHADOWS sunPathRotation ambientOcclusionLevel
+screen.SHADOWS_PAGE=SHADOWS PCSS shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS COLORED_SHADOWS sunPathRotation ambientOcclusionLevel SSS_STRENGTH
 screen.LIGHT_PAGE=SSAO SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VOLUMETRIC_LIGHT VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH
-screen.CLOUDS_PAGE=VOLUMETRIC_CLOUDS CLOUD_SHADOWS CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS
+screen.CLOUDS_PAGE=VOLUMETRIC_CLOUDS CLOUD_SHADOWS CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS CIRRUS
 screen.WATER_PAGE=WATER_WAVES WATER_DETAIL WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG CAUSTICS SSR SSR_STEPS WET_REFLECTIONS
-screen.SKY_PAGE=FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY
-screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH
+screen.SKY_PAGE=SUN_SIZE FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY
+screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH GLOWING_ORES
 screen.CAMERA_PAGE=TAA TAA_BLEND SHARPEN BLOOM BLOOM_STRENGTH AUTO_EXPOSURE EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
-sliders=shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS sunPathRotation ambientOcclusionLevel SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG SSR_STEPS FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY WAVE_STRENGTH TAA_BLEND BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+sliders=shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS sunPathRotation ambientOcclusionLevel SSS_STRENGTH SUN_SIZE SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG SSR_STEPS FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY WAVE_STRENGTH TAA_BLEND BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
 """
 
 LANG = {
@@ -211,6 +228,12 @@ LANG = {
     "option.STAR_BRIGHTNESS": "Stars", "option.CLOUD_BRIGHTNESS": "Cloud Brightness", "option.END_SKY": "End Brightness",
     "option.BLOCKLIGHT_STRENGTH": "Torch Light", "option.EMISSIVE_STRENGTH": "Glowing Blocks",
     "option.EXPOSURE": "Exposure", "option.SATURATION": "Saturation", "option.NIGHT_DESAT": "Night Vision Shift", "option.VIGNETTE": "Vignette",
+    "option.SSS_STRENGTH": "Light Through Leaves", "option.CLOUDS_2D": "Clouds", "option.CLOUD_PLANE_HEIGHT": "Cloud Height",
+    "option.GODRAYS": "Sun Rays", "option.GODRAY_STEPS": "Sun Ray Quality", "option.GODRAY_STRENGTH": "Sun Ray Strength",
+    "option.GLOWING_ORES": "Glowing Ores", "option.SUN_SIZE": "Sun Size", "option.CIRRUS": "High Cirrus Clouds",
+    "option.CLOUDS_2D.comment": "Soft drifting clouds drawn into the sky. Replaces the blocky vanilla clouds.",
+    "option.GODRAYS.comment": "Beams of light around the sun when it peeks past trees and hills.",
+    "option.GLOWING_ORES.comment": "The coloured bits of ore blocks glow a little, so you can spot them in caves.",
     "option.shadowMapResolution.comment": "Higher is sharper but slower.",
     "option.shadowDistance.comment": "How far shadows reach, in blocks. Lower is faster.",
     "option.PCSS.comment": "Shadows get softer the further they are from what casts them.",
@@ -229,10 +252,11 @@ Made for the Pimpin Launcher by Nos and Stealzers. Works with Iris (Fabric/NeoFo
 Minecraft 1.16.5 and newer.
 
 Looks good, keeps your FPS: a physically based sky (sunsets go orange and red on their own, the
-night turns deep blue), fog that fades distant land into the horizon, soft sun shadows, ambient
+night turns deep blue under a Milky Way), a round sun with glare, soft drifting clouds, sun rays
+past trees and hills, fog that fades distant land into the horizon, soft sun shadows, ambient
 occlusion in corners, light glowing through leaves, water that is clear in the shallows and deep
-blue further out, swaying plants, filmic colours. It costs the world passes plus two cheap
-full-screen passes.
+blue further out, swaying plants, bloom around lights and ACES filmic colours. It costs the world
+passes plus two cheap full-screen passes.
 
 Profiles (Shader Settings): Fast, Balanced (default), Crisp.
 """
@@ -242,10 +266,12 @@ README_ULTRA = """Pimpin Shaders Ultra
 Made for the Pimpin Launcher by Nos and Stealzers. Works with Iris (Fabric/NeoForge) and OptiFine,
 Minecraft 1.16.5 and newer. Built for looks first: expect a big FPS drop on weaker graphics cards.
 
-A physically based sky with volumetric clouds and cloud shadows, high resolution soft shadows that
+A physically based sky with a round sun, glare, a Milky Way at night, volumetric clouds under high
+cirrus and cloud shadows, high resolution soft shadows that
 harden near contact, coloured light through stained glass, god rays, ambient occlusion, water with
 refraction, depth colour, caustics and screen-space reflections, wet reflective ground in rain,
-temporal anti-aliasing, bloom, auto exposure, a deep blue night with twinkling stars.
+leaves that glow when backlit, glowing ores, temporal anti-aliasing, bloom, auto exposure and ACES
+filmic colours, a deep blue night with twinkling stars.
 The Nether and the End have their own lighting and fog.
 
 Profiles (Shader Settings): Low, Medium, High (default), Ultra.
@@ -312,12 +338,12 @@ def build(ultra):
         "shadow": SHADOW_ULTRA if ultra else SHADOW_LITE,
         "waving": WAVING, "water": WATER, "lighting": LIGHTING, "tonemap": TONEMAP, "fog": FOG,
     }
-    if ultra:
-        libs["clouds"] = CLOUDS
+    libs["clouds"] = CLOUDS
+    libs["skypaint"] = SKY_PAINT
     extra_libs = ["clouds"] if ultra else []
     libs_geo = ["settings", "uniforms", "common", "atmosphere", "shadow", "waving", "water"] + extra_libs + ["lighting"]
     libs_vsh = libs_geo[:-1]
-    libs_post = ["settings", "uniforms", "common", "atmosphere", "shadow", "water"] + extra_libs + ["tonemap", "fog"]
+    libs_post = ["settings", "uniforms", "common", "atmosphere", "shadow", "water", "clouds", "tonemap", "fog", "skypaint"]
     libs_prepare = ["settings", "uniforms", "common", "atmosphere"]
 
     st = libs["settings"]

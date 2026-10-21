@@ -7,9 +7,9 @@ float eyeSkyLight() { return float(eyeBrightnessSmooth.y) / 240.0; }
 vec3 applyFog(vec3 col, vec3 dir, float dist) {
     float border = smoothstep(far * 0.6, far, dist);
 #if defined DIM_NETHER
-    float f = 1.0 - exp(-dist * 0.014 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
-    float f = 1.0 - exp(-dist * 0.005 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.008 * FOG_DENSITY);
 #else
     float dy = dot(dir, normalize(upPosition));
     float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
@@ -26,6 +26,10 @@ vec3 applyFog(vec3 col, vec3 dir, float dist) {
     vec3 fc = skyColorAt(dir);
 #ifdef DIM_OVERWORLD
     fc *= mix(0.08, 1.0, eyeSkyLight());
+#endif
+#ifdef DIM_NETHER
+    // the haze glows brighter low down, lit by the lava seas
+    fc *= 1.0 + 0.8 * sat(-dot(dir, normalize(upPosition)) * 2.0 + 0.3);
 #endif
     return mix(col, fc, f);
 }
@@ -47,11 +51,11 @@ vec3 mediumFog(vec3 col, float dist) {
 }
 
 float exposureValue() {
-    float e = EXPOSURE;
+    float e = EXPOSURE * 0.9;
 #ifdef DIM_OVERWORLD
     float eye = eyeSkyLight();
-    e *= mix(2.2, 1.0, eye);
-    e *= mix(1.0, mix(1.9, 1.0, dayFactor()), eye);
+    e *= mix(1.7, 1.0, eye);
+    e *= mix(1.0, mix(1.25, 1.0, dayFactor()), eye);
 #else
     e *= 1.35;
 #endif
@@ -63,9 +67,15 @@ vec3 finishColor(vec3 col, vec2 uv, float exposure) {
     col *= exposure;
     // dark scenes lose colour and drift blue, like the eye at night
     float l = luma(col);
-    float scot = (1.0 - smoothstep(0.0, 0.12, l)) * NIGHT_DESAT;
-    col = mix(col, vec3(l) * vec3(0.72, 0.86, 1.2), scot * 0.65);
-    col = lottes(max(col, vec3(0.0)));
+    float scot = 1.0 - smoothstep(0.0, 0.12, l);
+#ifdef DIM_OVERWORLD
+    // moonlit scenes: the eye's rods take over, colours fade to a cool blue-grey (Purkinje shift)
+    // (only dim, mostly neutral pixels: torch-lit and glowing things keep their warm colour)
+    float warmth = sat((col.r - col.b) / max(l, 1e-4));
+    scot = max(scot, (1.0 - dayFactor()) * eyeSkyLight() * (1.0 - smoothstep(0.02, 0.3, l)) * (1.0 - warmth) * 0.75);
+#endif
+    col = mix(col, vec3(l) * vec3(0.70, 0.86, 1.25), scot * 0.7 * NIGHT_DESAT);
+    col = tonemap(max(col, vec3(0.0)));
     col = grade(col);
     col = pow(sat3(col), vec3(1.0 / 2.2));
     vec2 v = uv - 0.5;

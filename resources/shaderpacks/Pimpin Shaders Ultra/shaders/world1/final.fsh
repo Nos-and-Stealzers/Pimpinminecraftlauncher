@@ -30,4 +30,5 @@ const vec4 shadowcolor0ClearColor = vec4(1.0, 1.0, 1.0, 0.0);
 #include "/lib/clouds.glsl"
 #include "/lib/tonemap.glsl"
 #include "/lib/fog.glsl"
+#include "/lib/skypaint.glsl"
 #include "/program/final_fsh.glsl"

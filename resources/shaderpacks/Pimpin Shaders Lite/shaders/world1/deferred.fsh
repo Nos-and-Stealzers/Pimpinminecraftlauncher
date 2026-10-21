@@ -8,6 +8,8 @@
 #include "/lib/atmosphere.glsl"
 #include "/lib/shadow.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/tonemap.glsl"
 #include "/lib/fog.glsl"
+#include "/lib/skypaint.glsl"
 #include "/program/deferred_fsh.glsl"

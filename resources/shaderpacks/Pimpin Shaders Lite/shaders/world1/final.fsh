@@ -10,6 +10,7 @@ const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
 const vec4 colortex2ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
 const vec4 colortex3ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
+const vec4 shadowcolor0ClearColor = vec4(1.0, 1.0, 1.0, 0.0);
 */
 #include "/lib/settings.glsl"
 #include "/lib/uniforms.glsl"
@@ -17,6 +18,8 @@ const vec4 colortex3ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
 #include "/lib/atmosphere.glsl"
 #include "/lib/shadow.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/tonemap.glsl"
 #include "/lib/fog.glsl"
+#include "/lib/skypaint.glsl"
 #include "/program/final_fsh.glsl"

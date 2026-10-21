@@ -30,6 +30,10 @@ const float drynessHalflife = 300.0;
 #define CLOUD_HEIGHT 192.0 // [128.0 160.0 192.0 224.0 256.0]
 #define CLOUD_THICKNESS 90.0 // [50.0 70.0 90.0 120.0]
 #define CLOUD_AMOUNT 1.0 // [0.0 0.5 1.0 1.5 2.0 3.0]
+#define CIRRUS
+#define SSS_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define GLOWING_ORES
+#define SUN_SIZE 1.0 // [0.5 0.75 1.0 1.5 2.0]
 #define SSR
 #define SSR_STEPS 24 // [12 16 24 32 48]
 #define WET_REFLECTIONS
@@ -76,6 +80,10 @@ const float drynessHalflife = 300.0;
 #ifdef VOLUMETRIC_CLOUDS
 #endif
 #ifdef CLOUD_SHADOWS
+#endif
+#ifdef CIRRUS
+#endif
+#ifdef GLOWING_ORES
 #endif
 #ifdef SSR
 #endif

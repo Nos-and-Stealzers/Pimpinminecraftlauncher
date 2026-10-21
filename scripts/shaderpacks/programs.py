@@ -3,6 +3,10 @@
 
 SHADOW_LITE = r"""// shadow lookup: a rotated Vogel disk of hardware-filtered taps
 uniform sampler2DShadow shadowtex0;
+#ifdef COLORED_SHADOWS
+uniform sampler2DShadow shadowtex1;
+uniform sampler2D shadowcolor0;
+#endif
 
 vec2 distortShadow(vec2 p) {
     return p / (length(p) * SHADOW_DISTORT + (1.0 - SHADOW_DISTORT));
@@ -29,7 +33,16 @@ vec3 sampleShadow(vec3 clip, float fallback, float noise) {
 #else
     float s = shadow2D(shadowtex0, c).x;
 #endif
-    return vec3(mix(s, fallback, fade));
+    vec3 v = vec3(s);
+#ifdef COLORED_SHADOWS
+    // light that only stained glass / ice blocks gets their colour (one extra tap of each map)
+    float s1 = shadow2D(shadowtex1, c).x;
+    if (s1 > s + 0.01) {
+        vec4 sc = texture2D(shadowcolor0, c.xy);
+        v = vec3(s) + (s1 - s) * mix(vec3(1.0), sc.rgb, sc.a);
+    }
+#endif
+    return mix(v, vec3(fallback), fade);
 }
 """
 
@@ -59,6 +72,14 @@ vec3 shadowTap(vec2 uv, float z) {
 #else
     return vec3(0.0);
 #endif
+}
+
+// how much light passes through the leaves between this point and the sun (depth behind the first occluder)
+float shadowThrough(vec3 clip) {
+    if (max(abs(clip.x), abs(clip.y)) > 0.98) return 0.0;
+    vec3 c = vec3(distortShadow(clip.xy), clip.z) * 0.5 + 0.5;
+    float thick = max(c.z - texture2D(shadowtex1, c.xy).r, 0.0) * 256.0;
+    return exp(-thick * 1.1);
 }
 
 vec3 sampleShadow(vec3 clip, float fallback, float noise) {
@@ -121,8 +142,11 @@ varying float blockId;
 void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
     if (c.a < 0.1) discard;
-#ifdef ULTRA
+#if defined ULTRA || defined COLORED_SHADOWS
     if (isId(blockId, ID_WATER)) {
+#ifndef ULTRA
+        discard;
+#endif
         c = vec4(0.62, 0.86, 1.0, 0.35);
     } else if (c.a < 0.97 || isId(blockId, ID_GLASS) || isId(blockId, ID_ICE)) {
         vec3 tint = toLinear(c.rgb);
@@ -216,9 +240,18 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 #if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined CLOUD_SHADOWS
         vis *= cloudShadow(wpos, mat3(gbufferModelViewInverse) * L);
 #endif
-        // light glowing through leaves and grass when looking towards the sun
-        float sss = foliage * pow(max(dot(V, L), 0.0), 6.0) * 1.1;
-        direct = sunC * (diffuse + sss) * vis;
+        // light glowing through leaves and grass when looking towards the sun: a tight forward lobe
+        // plus a wide one, tinted by the leaf colour a second time (light passes through the leaf)
+        float VoL = max(dot(V, L), 0.0);
+        float sss = foliage * (pow(VoL, 8.0) * 2.4 + pow(VoL, 2.0) * 0.5) * SSS_STRENGTH;
+        vec3 sssTint = mix(vec3(1.0), sat3(alb * 3.2), 0.65);
+        // light still gets through a block or two of leaves even where the leaf itself is in shadow
+#if defined ULTRA && defined SHADOWS && !defined PROGRAM_HAND
+        vec3 sssVis = max(vis, vec3(foliage > 0.5 ? shadowThrough(shadowP) * smoothstep(0.02, 0.3, skyL) : 0.0));
+#else
+        vec3 sssVis = max(vis, vec3(foliage * 0.4 * smoothstep(0.55, 1.0, skyL)));
+#endif
+        direct = sunC * (diffuse * vis + sss * sssTint * sssVis);
         if (shine > 0.0) direct += sunC * vis * ggxSpecular(n, V, L, mix(0.45, 0.18, shine)) * shine;
     }
     vec3 amb = ambientColor() * skyL * skyL * (0.62 + 0.38 * NdotU);
@@ -229,7 +262,7 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 #endif
 #ifdef DIM_END
     vec3 Le = normalize(mat3(gbufferModelView) * vec3(0.3, 0.88, 0.36));
-    direct = vec3(0.60, 0.40, 1.0) * 0.6 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
+    direct = vec3(0.62, 0.36, 1.0) * 0.5 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
 #endif
     float bl = lm.x;
     float held = float(max(heldBlockLightValue, heldBlockLightValue2));
@@ -241,7 +274,14 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
 }
 
 vec3 emission(vec3 alb, vec3 srgb, float id) {
-    if (isId(id, ID_LAVA)) return alb * 1.8 * EMISSIVE_STRENGTH;
+    if (isId(id, ID_LAVA)) return alb * 1.5 * EMISSIVE_STRENGTH;
+#ifdef GLOWING_ORES
+    if (isId(id, ID_ORE)) {
+        // only the coloured specks glow, the grey stone around them stays put
+        float chroma = max(srgb.r, max(srgb.g, srgb.b)) - min(srgb.r, min(srgb.g, srgb.b));
+        return alb * smoothstep(0.18, 0.45, chroma) * 0.9 * EMISSIVE_STRENGTH;
+    }
+#endif
     if (isId(id, ID_GLOW)) {
         float m = smoothstep(0.55, 0.95, max(srgb.r, max(srgb.g, srgb.b)));
         return alb * m * 1.4 * EMISSIVE_STRENGTH;
@@ -293,6 +333,15 @@ void main() {
     vec3 direct;
     vec3 indirect;
     vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, viewPos, worldPos, shine, direct, indirect);
+#if defined PROGRAM_TERRAIN && defined DIM_OVERWORLD && !defined ULTRA
+    // Lite has no screen-space reflections: wet ground and puddles mirror the sky instead
+    if (wet > 0.01 && foliage < 0.5) {
+        float puddle = smoothstep(0.45, 0.7, valueNoise(worldPos.xz * 0.35)) * smoothstep(0.9, 0.98, up);
+        vec3 V = normalize(viewPos);
+        float F = 0.03 + 0.97 * pow(1.0 - max(dot(-V, n), 0.0), 5.0);
+        color = mix(color, skyColorAt(reflect(V, n)), F * wet * mix(0.35, 1.0, puddle));
+    }
+#endif
     vec3 glow = emission(alb, albedo.rgb, blockId);
     color += glow;
 
@@ -368,7 +417,8 @@ void main() {
     gl_FragData[1] = vec4(0.0);
     gl_FragData[2] = vec4(0.0);
 #else
-    vec3 R = reflect(V, n);
+    // reflections use a calmer normal than the glint so the sky does not break into white blotches
+    vec3 R = reflect(V, normalize(mix(normalize(viewNormal), n, 0.55)));
     float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
     vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
@@ -376,10 +426,11 @@ void main() {
         float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
         float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
         if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
-        float a = 1.0 - exp(-thick * 0.32 * WATER_FOG);
-        a = mix(0.10, 0.97, a);
-        vec3 deep = vec3(0.020, 0.13, 0.16) * (ambientColor() * lmcoord.y * lmcoord.y + sunLightColor() * 0.12 + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
-        deep = mix(deep, color * 0.6, 0.25);
+        float a = 1.0 - exp(-thick * 0.30 * WATER_FOG);
+        a = mix(0.16, 0.95, a);
+        vec3 deep = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        deep *= 0.85 + 0.3 * luma(texture2D(tex, texcoord).rgb);
+        F = max(F, 0.05);
         float A = a * (1.0 - F) + F;
         color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
         alpha = sat(A + luma(spec));
@@ -431,7 +482,7 @@ void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
     gl_FragData[0] = vec4(toLinear(c.rgb) * 1.6, c.a);
 #elif defined PROGRAM_CLOUDS
-#if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+#if (defined VOLUMETRIC_CLOUDS || defined CLOUDS_2D) && defined DIM_OVERWORLD
     discard;
 #endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
@@ -450,8 +501,9 @@ void main() {
 #elif defined PROGRAM_WEATHER
     vec4 c = texture2D(tex, texcoord) * glcolor;
     if (c.a < 0.01) discard;
-    vec3 col = toLinear(c.rgb) * (ambientColor() * 1.6 + blockLightColor(lmcoord.x) + 0.05);
-    gl_FragData[0] = vec4(col, c.a * 0.55);
+    vec3 tint = mix(vec3(luma(toLinear(c.rgb))), toLinear(c.rgb), 0.35);
+    vec3 col = tint * (ambientColor() * 2.0 + blockLightColor(lmcoord.x) + 0.04);
+    gl_FragData[0] = vec4(col, c.a * 0.42);
 #else
     // particles and anything else textured
     vec4 c = texture2D(tex, texcoord) * glcolor;
@@ -496,10 +548,12 @@ void main() {
 
 SKYTEXTURED_VSH = r"""varying vec2 texcoord;
 varying vec4 glcolor;
+varying vec3 viewPos;
 
 void main() {
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
+    viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     gl_Position = ftransform();
     JITTER(gl_Position);
 }
@@ -507,20 +561,19 @@ void main() {
 
 SKYTEXTURED_FSH = r"""varying vec2 texcoord;
 varying vec4 glcolor;
+varying vec3 viewPos;
 
 void main() {
+#ifdef DIM_OVERWORLD
+    // the square vanilla sun is replaced by a round disk drawn with the sky in deferred
+    if (dot(normalize(viewPos), normalize(sunPosition)) > 0.5) discard;
+#endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
 #ifdef DIM_END
     gl_FragData[0] = vec4(toLinear(c.rgb) * vec3(0.85, 0.7, 1.15) * 0.9 * END_SKY, c.a);
 #else
-    vec3 col = toLinear(c.rgb) * 6.0;
-#ifdef DIM_OVERWORLD
-    // the sun sinks into the atmosphere: reddened near the horizon
-    col *= sunTransmittance(max(sunHeight(), 0.01)) * 1.2 + vec3(0.02);
-#endif
-#ifdef MC_RENDER_STAGE_MOON
-    if (renderStage == MC_RENDER_STAGE_MOON) col = toLinear(c.rgb) * 1.4 * MOON_BRIGHTNESS * vec3(0.85, 0.92, 1.0);
-#endif
+    // only the moon (and custom sky textures in other dimensions) get here
+    vec3 col = toLinear(c.rgb) * 1.6 * MOON_BRIGHTNESS * vec3(0.85, 0.92, 1.0);
     gl_FragData[0] = vec4(col * (1.0 - rainStrength), c.a);
 #endif
 }
@@ -564,8 +617,11 @@ void main() {
         col = skyRadiance(lutDirection((px - 0.5) / (vec2(LUT_W, LUT_H) - 1.0)), sunL);
     } else if (px.x < 1.0) {
         vec3 sunC = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(0.0, 0.06, sinE);
-        vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.085 * moonTint() * smoothstep(0.0, 0.06, -sinE);
-        col = (sunC + moonC) * (1.0 - 0.85 * rainStrength);
+        vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.065 * moonTint() * smoothstep(0.0, 0.06, -sinE);
+        col = (sunC * vec3(1.05, 0.98, 0.90) + moonC) * (1.0 - 0.85 * rainStrength);
+    } else if (px.x < 3.0 && px.x >= 2.0) {
+        // the sun disk colour: reddened by the long path through the air, kept until the sun has set
+        col = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(-0.06, 0.0, sinE) * (1.0 - 0.9 * rainStrength);
     } else if (px.x < 2.0) {
         // cosine weighted average of the sky over the upper hemisphere
         col = skyRadiance(vec3(0.0, 1.0, 0.0), sunL);
@@ -573,7 +629,7 @@ void main() {
         col += (skyRadiance(vec3(0.99, 0.14, 0.0), sunL) + 2.0 * skyRadiance(vec3(0.0, 0.14, 0.99), sunL) + skyRadiance(vec3(-0.99, 0.14, 0.0), sunL)) * 0.3;
         col /= 5.2;
         // a little saturation so shade stays blue instead of grey
-        col = mix(vec3(luma(col)), col, 1.25) * AMBIENT_STRENGTH;
+        col = mix(vec3(luma(col)), col, 1.1) * AMBIENT_STRENGTH;
         col += vec3(0.006, 0.009, 0.018) * MOON_BRIGHTNESS * (1.0 - dayFactor());
     } else {
         discard;
@@ -591,9 +647,9 @@ float eyeSkyLight() { return float(eyeBrightnessSmooth.y) / 240.0; }
 vec3 applyFog(vec3 col, vec3 dir, float dist) {
     float border = smoothstep(far * 0.6, far, dist);
 #if defined DIM_NETHER
-    float f = 1.0 - exp(-dist * 0.014 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
-    float f = 1.0 - exp(-dist * 0.005 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.008 * FOG_DENSITY);
 #else
     float dy = dot(dir, normalize(upPosition));
     float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
@@ -610,6 +666,10 @@ vec3 applyFog(vec3 col, vec3 dir, float dist) {
     vec3 fc = skyColorAt(dir);
 #ifdef DIM_OVERWORLD
     fc *= mix(0.08, 1.0, eyeSkyLight());
+#endif
+#ifdef DIM_NETHER
+    // the haze glows brighter low down, lit by the lava seas
+    fc *= 1.0 + 0.8 * sat(-dot(dir, normalize(upPosition)) * 2.0 + 0.3);
 #endif
     return mix(col, fc, f);
 }
@@ -631,11 +691,11 @@ vec3 mediumFog(vec3 col, float dist) {
 }
 
 float exposureValue() {
-    float e = EXPOSURE;
+    float e = EXPOSURE * 0.9;
 #ifdef DIM_OVERWORLD
     float eye = eyeSkyLight();
-    e *= mix(2.2, 1.0, eye);
-    e *= mix(1.0, mix(1.9, 1.0, dayFactor()), eye);
+    e *= mix(1.7, 1.0, eye);
+    e *= mix(1.0, mix(1.25, 1.0, dayFactor()), eye);
 #else
     e *= 1.35;
 #endif
@@ -647,14 +707,41 @@ vec3 finishColor(vec3 col, vec2 uv, float exposure) {
     col *= exposure;
     // dark scenes lose colour and drift blue, like the eye at night
     float l = luma(col);
-    float scot = (1.0 - smoothstep(0.0, 0.12, l)) * NIGHT_DESAT;
-    col = mix(col, vec3(l) * vec3(0.72, 0.86, 1.2), scot * 0.65);
-    col = lottes(max(col, vec3(0.0)));
+    float scot = 1.0 - smoothstep(0.0, 0.12, l);
+#ifdef DIM_OVERWORLD
+    // moonlit scenes: the eye's rods take over, colours fade to a cool blue-grey (Purkinje shift)
+    // (only dim, mostly neutral pixels: torch-lit and glowing things keep their warm colour)
+    float warmth = sat((col.r - col.b) / max(l, 1e-4));
+    scot = max(scot, (1.0 - dayFactor()) * eyeSkyLight() * (1.0 - smoothstep(0.02, 0.3, l)) * (1.0 - warmth) * 0.75);
+#endif
+    col = mix(col, vec3(l) * vec3(0.70, 0.86, 1.25), scot * 0.7 * NIGHT_DESAT);
+    col = tonemap(max(col, vec3(0.0)));
     col = grade(col);
     col = pow(sat3(col), vec3(1.0 / 2.2));
     vec2 v = uv - 0.5;
     col *= 1.0 - VIGNETTE * pow(dot(v, v) * 2.0, 1.3);
     col += (dither(gl_FragCoord.xy) - 0.5) / 255.0;
+    return col;
+}
+"""
+
+SKY_PAINT = r"""// the full sky behind the world: atmosphere, sun disk + glare, moon glow, stars, Milky Way, flat clouds
+vec3 paintSky(vec3 dir, vec2 uv) {
+    vec3 col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
+#ifdef DIM_END
+    col += endSkyDetail(dir);
+#endif
+#ifdef DIM_OVERWORLD
+    col += sunMoonGlow(dir) + nightSkyDetail(dir);
+#ifdef CLOUDS_2D
+    vec4 cl = cloudPlane(dir, CLOUD_PLANE_HEIGHT, 0.0021, 0.42 + CLOUD_AMOUNT * 0.12 + rainStrength * 0.3, 1.0, 0.92);
+    col = col * cl.a + cl.rgb;
+#endif
+#ifdef CIRRUS
+    vec4 ci = cloudPlane(dir, 620.0, 0.0011, 0.30 + rainStrength * 0.2, 3.5, 0.55);
+    col = col * ci.a + ci.rgb;
+#endif
+#endif
     return col;
 }
 """
@@ -665,18 +752,36 @@ DEFERRED_LITE = r"""varying vec2 uv;
 void main() {
     vec3 col = texture2D(colortex0, uv).rgb;
     float depth = texture2D(depthtex0, uv).r;
-    if (depth >= 1.0) {
-        vec3 dir = normalize(screenToView(uv, 1.0));
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
-#ifdef DIM_END
-        col += endSkyDetail(dir);
-#endif
-    }
+    if (depth >= 1.0) col = paintSky(normalize(screenToView(uv, 1.0)), uv);
     gl_FragData[0] = vec4(col, 1.0);
 }
 """
 
 FINAL_LITE = r"""varying vec2 uv;
+const bool colortex0MipmapEnabled = true;
+
+#if defined GODRAYS && defined DIM_OVERWORLD
+// screen-space light shafts: march from the pixel towards the sun on screen and count how much open sky
+// lies on the way (cheap stand-in for shadow-map volumetric light)
+vec3 godRays(vec3 dir, float noise) {
+    vec3 Lv = normalize(shadowLightPosition);
+    float VoL = dot(dir, Lv);
+    if (VoL < 0.0) return vec3(0.0);
+    vec4 sc = gbufferProjection * vec4(Lv, 1.0);
+    vec2 spos = sc.xy / sc.w * 0.5 + 0.5;
+    vec2 delta = (spos - uv) / float(GODRAY_STEPS) * 0.85;
+    vec2 p = uv + delta * noise;
+    float acc = 0.0;
+    for (int i = 0; i < GODRAY_STEPS; i++) {
+        if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0) acc += step(1.0, texture2D(depthtex0, p).r);
+        p += delta;
+    }
+    acc /= float(GODRAY_STEPS);
+    float phase = pow(VoL, 10.0) * 0.8 + pow(VoL, 3.0) * 0.2;
+    float amount = (0.25 + 0.75 * twilightFactor() + 0.3 * rainStrength) * GODRAY_STRENGTH;
+    return sunLightColor() * acc * phase * amount * 0.22 * eyeSkyLight();
+}
+#endif
 
 #ifdef SSAO
 // cheap depth-only ambient occlusion (after Capt Tatsu / MakeUp), 2 x SSAO_STEPS taps
@@ -715,9 +820,19 @@ void main() {
 #endif
         col = applyFog(col, dir, dist);
     }
+#if defined GODRAYS && defined DIM_OVERWORLD
+    if (isEyeInWater == 0) col += godRays(dir, dither(gl_FragCoord.xy));
+#endif
     vec4 weather = texture2D(colortex3, uv);
     col = col * (1.0 - weather.a) + weather.rgb;
     col = mediumFog(col, dist);
+#ifdef BLOOM
+    // cheap bloom from four mip levels of the HDR image
+    vec3 bloom = texture2D(colortex0, uv, 3.0).rgb * 0.30 + texture2D(colortex0, uv, 4.5).rgb * 0.30
+               + texture2D(colortex0, uv, 6.0).rgb * 0.25 + texture2D(colortex0, uv, 7.5).rgb * 0.15;
+    float bl = luma(bloom);
+    col += (bloom * clamp((bl - 0.8) / max(bl, 0.0001), 0.0, 1.0) * 0.5 + bloom * 0.02) * BLOOM_STRENGTH;
+#endif
     gl_FragData[0] = vec4(finishColor(col, uv, exposureValue()), 1.0);
 }
 """
@@ -810,10 +925,7 @@ void main() {
     vec3 dir = normalize(vp);
     float noise = dither(gl_FragCoord.xy);
     if (depth >= 1.0) {
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
-#ifdef DIM_END
-        col += endSkyDetail(dir);
-#endif
+        col = paintSky(dir, uv);
     }
 #ifdef SSAO
     else if (depth > 0.56) {

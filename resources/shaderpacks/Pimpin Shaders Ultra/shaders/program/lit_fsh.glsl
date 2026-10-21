@@ -33,6 +33,15 @@ void main() {
     vec3 direct;
     vec3 indirect;
     vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, viewPos, worldPos, shine, direct, indirect);
+#if defined PROGRAM_TERRAIN && defined DIM_OVERWORLD && !defined ULTRA
+    // Lite has no screen-space reflections: wet ground and puddles mirror the sky instead
+    if (wet > 0.01 && foliage < 0.5) {
+        float puddle = smoothstep(0.45, 0.7, valueNoise(worldPos.xz * 0.35)) * smoothstep(0.9, 0.98, up);
+        vec3 V = normalize(viewPos);
+        float F = 0.03 + 0.97 * pow(1.0 - max(dot(-V, n), 0.0), 5.0);
+        color = mix(color, skyColorAt(reflect(V, n)), F * wet * mix(0.35, 1.0, puddle));
+    }
+#endif
     vec3 glow = emission(alb, albedo.rgb, blockId);
     color += glow;
 

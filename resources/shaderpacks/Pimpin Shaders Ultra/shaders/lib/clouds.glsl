@@ -13,6 +13,8 @@ float cloudCoverage(vec2 xz) {
     return sat((cloudFbm(p) - (0.62 - cov)) * 3.2);
 }
 
+#ifdef VOLUMETRIC_CLOUDS
+
 float cloudDensity(vec3 wp, bool detail) {
     float h = (wp.y - CLOUD_HEIGHT) / CLOUD_THICKNESS;
     if (h < 0.0 || h > 1.0) return 0.0;
@@ -34,3 +36,34 @@ float cloudShadow(vec3 wp, vec3 Lworld) {
     vec3 p = wp + Lworld * ((CLOUD_HEIGHT + CLOUD_THICKNESS * 0.35 - wp.y) / Lworld.y);
     return 1.0 - 0.75 * smoothstep(0.0, 0.6, cloudCoverage(p.xz));
 }
+#endif
+
+#ifdef DIM_OVERWORLD
+// A flat noise layer (Lite's clouds, Ultra's high cirrus). Returns scattered light (rgb) and transmittance (a).
+// Lighting: the layer is brighter where the coverage thins towards the sun (cheap self-shadowing),
+// plus a forward-scattering lobe that gives silver linings around the sun.
+vec4 cloudPlane(vec3 dirView, float height, float scale, float cover, float stretch, float opacity) {
+    vec3 d = mat3(gbufferModelViewInverse) * dirView;
+    if (d.y < 0.01) return vec4(0.0, 0.0, 0.0, 1.0);
+    float t = (height - cameraPosition.y) / d.y;
+    if (t <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+    vec2 p = (cameraPosition.xz + d.xz * t + vec2(frameTimeCounter * 3.0, frameTimeCounter * 1.1)) * scale;
+    p.x *= 1.0 / stretch;
+    float n = cloudFbm(p);
+    float c = smoothstep(1.0 - cover, 1.0 - cover + 0.32, n);
+    if (c <= 0.001) return vec4(0.0, 0.0, 0.0, 1.0);
+    vec3 Lw = normalize(mat3(gbufferModelViewInverse) * shadowLightPosition);
+    float n2 = cloudFbm(p + normalize(Lw.xz + 1e-4) * 0.22);
+    float lit = sat(0.55 + (n - n2) * 2.5);
+    float mu = dot(d, Lw);
+    float phase = 0.55 + 1.6 * pow(max(mu, 0.0), 10.0) + 0.35 * pow(max(mu, 0.0), 2.0);
+    float thin = 1.0 - c;
+    vec3 light = cloudLightColor() * (0.22 + 0.78 * lit) * phase * (0.30 + 0.45 * thin) + ambientColor() * (0.85 + 0.3 * thin);
+    light *= mix(1.0, 0.45, rainStrength) * CLOUD_BRIGHTNESS;
+    float fade = exp(-t * 0.00011) * smoothstep(0.01, 0.12, d.y);
+    float a = c * opacity * fade;
+    // distant parts melt into the sky colour
+    light = mix(skyColorAt(dirView) * 1.05, light, fade);
+    return vec4(light * a, 1.0 - a);
+}
+#endif

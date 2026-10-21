@@ -25,6 +25,7 @@ uniform vec4 entityColor;
 uniform float rainStrength;
 uniform float wetness;
 uniform float frameTimeCounter;
+uniform float sunAngle;
 uniform float viewWidth;
 uniform float viewHeight;
 uniform float near;
