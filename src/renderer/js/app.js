@@ -4,7 +4,7 @@ import { el, icon, clear, fmtBytes, toast, errorToast, modal } from './dom.js';
 import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refreshInstances, refreshServers, selectedInstance, selectInstance } from './state.js';
 import { accountButton, instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from './components.js';
 import { applyAppearance } from './appearance.js';
-import { installShortcuts, commandPalette, updateModal, whatsNew, onboarding, notifyDesktop, importInstance } from './qol.js';
+import { installShortcuts, commandPalette, updateModal, installUpdate, whatsNew, onboarding, notifyDesktop, importInstance } from './qol.js';
 import * as home from './pages/home.js';
 import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
@@ -41,6 +41,7 @@ function render() {
 
 // --------------------------------------------------------------- sidebar --
 const taskSlot = el('div', { class: 'side-task hidden' });
+const updateCard = el('div', { class: 'update-card hidden' });
 
 function playToggle(inst, cls) {
   const g = state.game[inst.id]?.state;
@@ -85,7 +86,7 @@ function renderSidebar() {
               el('div', { class: 'grow' }, el('b', {}, i.name), el('span', {}, instSubtitle(i))),
               playToggle(i, 'mini-play')))
         : el('div', { class: 'side-empty' }, 'No instances yet.')),
-    el('div', { class: 'side-foot' }, taskSlot, footPlay),
+    el('div', { class: 'side-foot' }, updateCard, taskSlot, footPlay),
   );
 }
 
@@ -192,12 +193,37 @@ function renderUpdate(u) {
   if (u.state === 'downloading') {
     clear(slot, el('button', { class: 'update-pill dl', title: `Downloading Pimpin ${u.version}`, onclick: () => updateModal() }, icon('download'), `Updating ${u.percent || 0}%`));
   } else if (u.state === 'ready') {
-    clear(slot, el('button', { class: 'update-pill', title: `Restart to install Pimpin ${u.version}`, onclick: () => api.call('update:install') }, icon('refresh'), 'Restart to update'));
+    clear(slot, el('button', { class: 'update-pill', title: `Restart to install Pimpin ${u.version}`, onclick: installUpdate }, icon('refresh'), 'Restart to update'));
   } else if (u.state === 'available' || u.state === 'manual') {
     clear(slot, el('button', { class: 'update-pill', title: `Pimpin ${u.version} is available`, onclick: () => updateModal() }, icon('download'), `Update to ${u.version}`));
   } else {
     slot.replaceChildren();
   }
+  renderUpdateCard(u);
+}
+
+// The sidebar card stays put until the update is installed, so it can't be missed.
+function renderUpdateCard(u) {
+  const notes = el('button', { class: 'link', onclick: () => updateModal() }, "What's new");
+  if (u.state === 'available' || u.state === 'manual') {
+    clear(updateCard,
+      el('div', { class: 'update-card-head' }, icon('download'), el('b', { class: 'grow' }, 'Update available'), notes),
+      el('span', { class: 'muted' }, `Pimpin ${u.version} is out. You have ${u.current}.`),
+      el('button', { class: 'btn primary sm', onclick: () => api.call('update:download').catch(errorToast) },
+        u.state === 'manual' ? 'Download Pimpin Launcher' : 'Update Pimpin Launcher'));
+  } else if (u.state === 'downloading') {
+    clear(updateCard,
+      el('div', { class: 'update-card-head' }, el('span', { class: 'spin xs' }), el('b', { class: 'grow' }, `Downloading ${u.version || 'update'}`), el('span', { class: 'dim' }, `${u.percent || 0}%`)),
+      el('div', { class: 'progress' }, el('i', { style: { width: `${u.percent || 0}%` } })));
+  } else if (u.state === 'ready') {
+    clear(updateCard,
+      el('div', { class: 'update-card-head' }, icon('refresh'), el('b', { class: 'grow' }, 'Update ready'), notes),
+      el('span', { class: 'muted' }, `Pimpin ${u.version} is downloaded.`),
+      el('button', { class: 'btn primary sm', onclick: installUpdate }, 'Restart and update'));
+  } else {
+    updateCard.replaceChildren();
+  }
+  updateCard.classList.toggle('hidden', !updateCard.childElementCount);
 }
 
 // --------------------------------------------------------------- crashes --

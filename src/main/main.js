@@ -281,6 +281,10 @@ const handlers = {
       autoUpdater.downloadUpdate().catch((err) => setUpdate({ state: 'error', error: err.message }));
     } else if (updateState.url) shell.openExternal(updateState.url);
   },
+  'update:busy': async () => ({
+    games: instances.isAnyRunning(),
+    servers: (await servers.list()).some((s) => s.running),
+  }),
   'update:install': () => {
     if (autoUpdater && updateState.state === 'ready') autoUpdater.quitAndInstall();
   },
@@ -488,7 +492,8 @@ ipcMain.handle('rpc', async (_e, channel, args) => {
 app.on('second-instance', showWindow);
 
 // ---------------------------------------------------------------- updates --
-const REPO = 'Nos-and-Stealzers/Pimpinminecraftlauncher';
+// PIMPIN_UPDATE_REPO only exists to test the update screens against another repo
+const REPO = process.env.PIMPIN_UPDATE_REPO || 'Nos-and-Stealzers/Pimpinminecraftlauncher';
 
 /** Installer builds update themselves; portable, .deb, macOS and dev builds get a download link. */
 function canSelfUpdate() {

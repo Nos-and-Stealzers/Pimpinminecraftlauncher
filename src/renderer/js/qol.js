@@ -1,6 +1,6 @@
 // Quality-of-life: command palette (Ctrl+K), keyboard shortcuts, desktop
 // notifications, the update window, "What's new" and the first-run setup.
-import { el, icon, clear, modal, toast, errorToast, markdown } from './dom.js';
+import { el, icon, clear, modal, toast, errorToast, markdown, confirmModal } from './dom.js';
 import { api, state, updateSettings, refreshAccounts, refreshInstances, selectedInstance, getVersions } from './state.js';
 import { playInstance, newInstanceModal } from './components.js';
 import { THEMES, ACCENTS, themeName, accentName } from './appearance.js';
@@ -20,6 +20,16 @@ export function notifyDesktop(title, body) {
 }
 
 // --------------------------------------------------------------- updates --
+/** Installs a downloaded update, after a warning if a game or server would be closed. */
+export async function installUpdate() {
+  const busy = await api.call('update:busy');
+  if (busy.games || busy.servers) {
+    const what = [busy.games && 'Minecraft', busy.servers && 'your local servers'].filter(Boolean).join(' and ');
+    if (!(await confirmModal('Restart and update?', `This closes ${what}. Save your game first.`, { confirm: 'Restart and update' }))) return;
+  }
+  api.call('update:install').catch(errorToast);
+}
+
 export function updateModal() {
   const body = el('div', { class: 'update-body' });
   const actions = el('div', { class: 'row' });
@@ -46,7 +56,7 @@ export function updateModal() {
     clear(actions,
       el('button', { class: 'btn ghost', onclick: () => api.call('shell:openExternal', 'https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases') }, icon('external'), 'All releases'),
       el('span', { class: 'grow' }),
-      u.state === 'ready' ? el('button', { class: 'btn primary', onclick: () => api.call('update:install') }, icon('refresh'), 'Restart and update')
+      u.state === 'ready' ? el('button', { class: 'btn primary', onclick: installUpdate }, icon('refresh'), 'Restart and update')
         : u.state === 'available' ? el('button', { class: 'btn primary', onclick: () => api.call('update:download') }, icon('download'), 'Download update')
           : u.state === 'manual' ? el('button', { class: 'btn primary', onclick: () => api.call('update:download') }, icon('download'), `Download ${u.version}`)
             : el('button', { class: 'btn', disabled: u.state === 'checking' || u.state === 'downloading', onclick: () => api.call('update:check').then(draw).catch(errorToast) }, icon('refresh'), 'Check now'));
