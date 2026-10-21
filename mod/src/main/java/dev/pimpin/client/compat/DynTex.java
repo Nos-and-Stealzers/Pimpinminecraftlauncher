@@ -31,19 +31,19 @@ public final class DynTex {
     public final int width;
     public final int height;
 
-    private DynTex(String path, NativeImage image) {
+    private DynTex(String namespace, String path, NativeImage image) {
         //#if MC >= 1.21.11
-        this.id = Identifier.fromNamespaceAndPath("pimpin", path);
+        this.id = Identifier.fromNamespaceAndPath(namespace, path);
         //#elseif MC >= 1.21
-        this.id = ResourceLocation.fromNamespaceAndPath("pimpin", path);
+        this.id = ResourceLocation.fromNamespaceAndPath(namespace, path);
         //#else
-        this.id = new ResourceLocation("pimpin", path);
+        this.id = new ResourceLocation(namespace, path);
         //#endif
         this.image = image;
         this.width = image.getWidth();
         this.height = image.getHeight();
         //#if MC >= 1.21.5
-        this.texture = new DynamicTexture(() -> "pimpin:" + path, image);
+        this.texture = new DynamicTexture(() -> namespace + ":" + path, image);
         //#else
         this.texture = new DynamicTexture(image);
         //#endif
@@ -51,11 +51,18 @@ public final class DynTex {
     }
 
     public static DynTex create(String path, int w, int h) {
-        return new DynTex(path, new NativeImage(w, h, true));
+        return new DynTex("pimpin", path, new NativeImage(w, h, true));
     }
 
     public static DynTex read(String path, InputStream in) throws java.io.IOException {
-        return new DynTex(path, NativeImage.read(in));
+        return new DynTex("pimpin", path, NativeImage.read(in));
+    }
+
+    /** Puts our own image in place of a vanilla texture (until the next restart). */
+    public static DynTex replace(String vanillaPath, InputStream in) throws java.io.IOException {
+        DynTex tex = new DynTex("minecraft", vanillaPath, NativeImage.read(in));
+        tex.upload();
+        return tex;
     }
 
     public void set(int x, int y, int argb) {

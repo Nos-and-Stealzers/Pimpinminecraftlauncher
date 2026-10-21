@@ -10,27 +10,34 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define SOFT_SHADOWS
 #define SHADOW_SOFTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define SHADOW_DISTORT 0.85
+#define SSAO
+#define SSAO_STEPS 4 // [3 4 6 8]
+#define SSAO_STRENGTH 0.8 // [0.4 0.6 0.8 1.0]
 #define WAVING_PLANTS
 #define WAVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define WATER_WAVES
 #define WATER_WAVE_HEIGHT 0.4 // [0.2 0.3 0.4 0.6 0.8 1.0]
 #define WATER_SPEED 1.0 // [0.5 1.0 1.5 2.0]
-#define WATER_ALPHA 0.62 // [0.4 0.5 0.62 0.75 0.9]
+#define WATER_FOG 1.0 // [0.5 1.0 1.5 2.0]
 #define FOG_DENSITY 1.0 // [0.0 0.5 1.0 1.5 2.0]
-#define SUN_GLOW 1.0 // [0.0 0.5 1.0 1.5]
+#define AMBIENT_STRENGTH 1.0 // [0.7 0.85 1.0 1.15 1.3]
 #define MOON_BRIGHTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define STAR_BRIGHTNESS 1.0 // [0.0 0.5 1.0 2.0]
 #define CLOUD_BRIGHTNESS 1.0 // [0.6 0.8 1.0 1.2]
+#define END_SKY 1.0 // [0.5 1.0 1.5 2.0]
 #define BLOCKLIGHT_STRENGTH 1.0 // [0.6 0.8 1.0 1.2 1.5]
 #define EMISSIVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define EXPOSURE 1.0 // [0.6 0.8 1.0 1.2 1.4 1.6]
-#define SATURATION 1.06 // [0.8 0.9 1.0 1.06 1.15 1.25]
+#define SATURATION 1.0 // [0.8 0.9 1.0 1.1 1.2]
+#define NIGHT_DESAT 1.0 // [0.0 0.5 1.0]
 #define VIGNETTE 0.22 // [0.0 0.12 0.22 0.35]
 
 // referenced here so every toggle is detected as an option
 #ifdef SHADOWS
 #endif
 #ifdef SOFT_SHADOWS
+#endif
+#ifdef SSAO
 #endif
 #ifdef WAVING_PLANTS
 #endif

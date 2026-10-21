@@ -3,7 +3,7 @@
 // game scales entity UVs with the image, so HD works as long as the aspect
 // ratio matches). Designs are original Pimpin takes on each mob.
 const { hex, rng } = require('./lib');
-const { Model, coat, patches, fleece, shag } = require('./model');
+const { Model, coat, patches, fleece, spots, hem, shag } = require('./model');
 
 const K = (st) => (st === 'looks' ? 2 : 1);
 
@@ -305,9 +305,9 @@ function enderman(st, eyesOnly = false) {
 
 // --------------------------------------------------------------------- cow --
 const COWS = {
-  temperate: { hide: '#ece5d8', spot: '#3c2b24', muzzle: '#e3a49c', horn: '#d6cdbc', hoof: '#3a3130', spots: 3 },
-  warm: { hide: '#9b4b2f', spot: '#6a2c1c', muzzle: '#d8a089', horn: '#4f4440', hoof: '#2e2422', spots: 1 },
-  cold: { hide: '#8e6c4b', spot: '#5c432f', muzzle: '#a68e80', horn: '#bfb6a8', hoof: '#2e2826', spots: 2 },
+  temperate: { hide: '#ece5d8', spot: '#3c2b24', muzzle: '#e3a49c', horn: '#d6cdbc', hoof: '#3a3130', spots: 3, thr: 0.6 },
+  warm: { hide: '#9b4b2f', spot: '#6a2c1c', muzzle: '#d8a089', horn: '#4f4440', hoof: '#2e2422', spots: 1, thr: 0.7 },
+  cold: { hide: '#8e6c4b', spot: '#5c432f', muzzle: '#a68e80', horn: '#bfb6a8', hoof: '#2e2826', spots: 0, thr: 1 },
 };
 
 function cow(st, variant = 'temperate', tall = false) {
@@ -320,13 +320,13 @@ function cow(st, variant = 'temperate', tall = false) {
   const horn = m.pal.ramp(c.horn, 3, { contrast: 0.4, hue: 14 });
   const hoof = m.pal.ramp(c.hoof, 2, { contrast: 0.3 });
   const dark = m.pal.add([hex('#121014'), hex('#f4f2ec')]);
-  const sp = (F, n, size) => patches(F, spot, { seed: 61 + n, count: n, size });
+  const sp = (F) => spots(F, spot, { seed: 61, thr: c.thr, scale: 16 });
 
   m.box(0, 0, 8, 8, 6, (F) => {
     coat(F, hide, { seed: 60, fur: 0.4 });
-    if (F.name === 'top' && c.spots > 1) sp(F, 1, 2.5);
+    if (c.spots > 1 && F.name !== 'front') sp(F);
     if (F.name !== 'front') return;
-    if (c.spots > 1) patches(F, spot, { seed: 70, count: 1, size: 2.2 });
+    if (c.spots > 1) F.u(4, 0, 4, 2, (q, j) => spot.at(spot.mid + (P && j === 0 ? 1 : 0))); // patch over one eye
     for (const ex of [1, 6]) {
       F.u(ex, 3, 1, 1, dark.at(0));
       if (P) F.f(ex * 2 + (ex === 1 ? 0 : 1), 6, dark.at(1));
@@ -343,8 +343,8 @@ function cow(st, variant = 'temperate', tall = false) {
     if (F.side) F.u(0, 0, 1, 1, horn.at(2));
   });
   m.box(18, 4, 12, 18, 10, (F) => {
-    coat(F, hide, { seed: 62, fur: variant === 'cold' ? 1.2 : 0.6 });
-    if (c.spots) sp(F, c.spots + (F.w * F.h > 150 ? 1 : 0), 4.5);
+    coat(F, hide, { seed: 62, fur: variant === 'cold' ? 0.4 : 0.6 });
+    if (c.spots) sp(F);
   });
   m.box(52, 0, 4, 6, 1, (F) => {
     F.fill(muz.at(1));
@@ -371,20 +371,39 @@ function cow(st, variant = 'temperate', tall = false) {
     });
     if (variant === 'warm') {
       // long curved horns
-      m.rect(27, 0, 20, 4, (x, y) => horn.at(y < m.k * 2 ? 2 : 1));
-      m.rect(27, 0, 2, 4, horn.at(0));
-      m.rect(45, 0, 2, 4, horn.at(0));
+      m.rect(27, 0, 20, 4, (x, y) => horn.at(y < m.k ? 2 : y >= 3 * m.k ? 0 : 1));
+      m.rect(27, 2, 2, 2, (x, y) => dark.at(0));
+      m.rect(45, 2, 2, 2, (x, y) => dark.at(0));
     }
     if (variant === 'cold') {
-      m.rect(0, 32, 8, 16, (x, y) => horn.at(y % (4 * m.k) === 0 ? 2 : 1));
-      m.rect(8, 32, 16, 5, (x, y) => hide.at(hide.mid + (y < m.k ? 1 : (x + y) % (3 * m.k) === 0 ? -1 : 0)));
-      m.rect(10, 34, 6, 3, muz.at(1));
-      m.rect(11, 35, 1, 1, muz.at(0));
-      m.rect(14, 35, 1, 1, muz.at(0));
-      // shaggy coat panels with a ragged lower fringe
-      shag(m.face('top', 30, 32, 24, 9), hide, { seed: 64, hem: 0 });
-      shag(m.face('right', 20, 42, 10, 18), hide, { seed: 65 });
-      shag(m.face('left', 43, 42, 21, 18), hide, { seed: 66 });
+      // two curled horns (2×6×2 boxes): pale with a darker ridged tip
+      for (const v of [32, 40]) {
+        m.box(0, v, 2, 6, 2, (F) => {
+          F.fill(horn.at(1));
+          if (F.name === 'top') F.fill(horn.at(2));
+          if (F.side) {
+            F.u(0, 0, F.w, 1, horn.at(2));
+            F.u(0, 4, F.w, 2, horn.at(0));
+            if (F.P) F.u(0, 2, F.w, 1, (q) => (q % 2 ? horn.at(0) : horn.at(1)));
+          }
+        });
+      }
+      // broad snout (6×3×2)
+      m.box(8, 32, 6, 3, 2, (F) => {
+        F.fill(muz.at(1));
+        if (F.name === 'top') F.fill(muz.at(2));
+        if (F.name === 'front') {
+          F.u(0, 0, 6, 1, muz.at(2));
+          F.u(1, 1, 1, 1, dark.at(0));
+          F.u(4, 1, 1, 1, dark.at(0));
+          F.u(0, 2, 6, 1, muz.at(0));
+        }
+      });
+      // long winter coat over the body (12×18×10), open underneath
+      m.box(20, 32, 12, 18, 10, (F) => {
+        if (F.name === 'front') return;
+        shag(F, hide, { seed: 64, hem: F.side ? 2 : 0 });
+      });
     }
   }
   return m.toImage();
@@ -409,7 +428,7 @@ function pig(st, variant = 'temperate', tall = false) {
 
   m.box(0, 0, 8, 8, 8, (F) => {
     coat(F, skin, { seed: 80, fur: 0.4 });
-    if (mud && F.name === 'top') patches(F, mud, { seed: 81, count: 1, size: 2 });
+    if (mud && F.name === 'top') spots(F, mud, { seed: 83, thr: 0.6, scale: 10 });
     if (F.name !== 'front') return;
     F.u(1, 3, 1, 1, dark.at(1));
     F.u(2, 3, 1, 1, dark.at(0));
@@ -436,8 +455,7 @@ function pig(st, variant = 'temperate', tall = false) {
   });
   m.box(28, 8, 10, 16, 8, (F) => {
     coat(F, skin, { seed: 82, fur: 0.7 });
-    if (mud) patches(F, mud, { seed: 83, count: 2, size: 3.5 });
-    else patches(F, skin, { seed: 84, count: 1, size: 2.5, lift: -1 });
+    if (mud) spots(F, mud, { seed: 83, thr: 0.6, scale: 10 });
   });
   m.box(0, 16, 4, 6, 4, (F) => {
     coat(F, skin, { seed: 85, fur: 0.3 });
@@ -447,11 +465,12 @@ function pig(st, variant = 'temperate', tall = false) {
   });
   if (tall && variant === 'cold') {
     const wool = m.pal.ramp(c.coat, 4, { contrast: 0.35, hue: 18 });
-    const fluff = (x0, y0, w, h) => fleece(m.face('front', x0, y0, w, h), wool, { seed: x0 + y0, gaps: 0.2 });
-    fluff(16, 24, 12, 8);
-    fluff(36, 32, 20, 8);
-    fluff(28, 40, 8, 16);
-    fluff(46, 40, 18, 16);
+    fleece(m.face('front', 16, 24, 12, 8), wool);
+    m.box(28, 32, 10, 16, 8, (F) => {
+      if (F.name === 'front') return;
+      fleece(F, wool);
+      hem(F, 1, 4);
+    });
   }
   return m.toImage();
 }
@@ -492,10 +511,14 @@ function wool(st, kind = 'fur') {
     m.box(0, 0, 6, 6, 8, curls(100, -1));
     m.box(0, 16, 4, 4, 4, curls(101, -1));
     // sparse tufts on the body: little 2×2 clumps, not single specks
+    // a short cape of fluff along the back; the belly stays bare
     m.box(28, 8, 8, 16, 6, (F) => {
-      const r = rng(102 + F.W);
-      F.fill(-1);
-      for (let i = 0; i < (F.w * F.h) / 10; i++) F.u(r.i(F.w - 1), r.i(F.h - 1), 2, 2, w.at(w.mid - (r.chance(0.5) ? 1 : 0)));
+      if (F.name === 'bottom') return;
+      fleece(F, w, { lift: -1 });
+      if (F.side) {
+        F.u(0, Math.ceil(F.h / 3), F.w, F.h, -1);
+        hem({ ...F, h: Math.ceil(F.h / 3) + 1 }, 1, 3);
+      }
     });
     return m.toImage();
   }
@@ -557,12 +580,21 @@ function chicken(st, variant = 'temperate') {
   });
   if (variant === 'cold') {
     const fl = m.pal.ramp(c.fluff, 3, { contrast: 0.3, hue: 20 });
-    const fluff = (x0, y0, w, h) => fleece(m.face('front', x0, y0, w, h), fl, { seed: x0 + y0, gaps: 0.2 });
-    fluff(44, 0, 16, 7);
-    // ragged feather tips along the top edge
-    m.rect(44, 0, 16, 1, (x) => (Math.floor(x / m.k) % 3 === 1 ? fl.at(2) : -1));
-    fluff(38, 14, 10, 3);
-    fluff(50, 25, 14, 7);
+    // neck ruff (6×3×4, no underside)
+    m.box(44, 0, 6, 3, 4, (F) => {
+      if (F.name === 'bottom') return;
+      fleece(F, fl);
+      hem(F, 1, 2);
+    });
+    // fluffy tail tuft
+    const tail = m.face('front', 38, 14, 10, 3);
+    fleece(tail, fl);
+    hem({ ...tail, side: true }, 1, 3);
+    // back fluff (8×4×3)
+    m.box(50, 25, 8, 4, 3, (F) => {
+      fleece(F, fl);
+      hem(F, 1, 3);
+    });
   }
   return m.toImage();
 }

@@ -28,6 +28,7 @@ void main() {
     viewPos = vp.xyz;
     worldPos = playerPos + cameraPosition;
     gl_Position = gl_ProjectionMatrix * vp;
+    JITTER(gl_Position);
 #if defined SHADOWS && defined DIM_OVERWORLD && !defined PROGRAM_HAND
     vec3 wn = mat3(gbufferModelViewInverse) * viewNormal;
     if (blockId > 10000.5 && blockId < 10004.5) wn = normalize(mat3(gbufferModelViewInverse) * shadowLightPosition);

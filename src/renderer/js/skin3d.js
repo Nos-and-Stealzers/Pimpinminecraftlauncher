@@ -1,15 +1,9 @@
-// 3D effects without WebGL: a CSS-3D player model built from the real skin
-// texture (drag to spin, head follows the mouse), floating 3D blocks and a
-// perspective tilt for cards.
+// CSS-3D player model built from the real skin texture. Drag to turn it,
+// click to wave, the head follows the mouse.
 import { el } from './dom.js';
-import { api, state } from './state.js';
-import { faceTex } from './textures.js';
+import { api } from './state.js';
 
-const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-export const effectsOn = () => state.settings?.effects3d !== false;
-
-// ------------------------------------------------------------ skin model --
-// UV origins in the 64×64 skin texture: [u, v, w, h, d] for base and overlay.
+// [w, h, d] box, UV origin of the base and overlay layers, position on the 16×32 body
 const PARTS = {
   head: { box: [8, 8, 8], base: [0, 0], over: [32, 0], pos: [4, 0], pivot: '50% 100%', inflate: 1 },
   body: { box: [8, 12, 4], base: [16, 16], over: [16, 32], pos: [4, 8], pivot: '50% 50%', inflate: 0.5 },
@@ -19,7 +13,7 @@ const PARTS = {
   lleg: { box: [4, 12, 4], base: [16, 48], over: [0, 48], pos: [8, 20], pivot: '50% 0', inflate: 0.5 },
 };
 
-/** Inspect the texture: legacy 64×32 skins and slim (Alex) arms. */
+// legacy 64×32 skins, and slim (Alex) arms detected by the empty column at x=54
 function analyse(img) {
   const legacy = img.naturalHeight === 32;
   let slim = false;
@@ -33,7 +27,7 @@ function analyse(img) {
       const px = ctx.getImageData(54, 20, 2, 12).data;
       slim = [...px].filter((_, i) => i % 4 === 3).every((a) => a === 0);
     } catch {
-      /* tainted / unreadable: assume classic */
+      // unreadable canvas, treat it as a classic skin
     }
   }
   return { legacy, slim };
@@ -73,7 +67,7 @@ function buildModel(src, S, { legacy, slim }) {
   for (const [name, p] of Object.entries(PARTS)) {
     let [w, h, d] = p.box;
     let base = p.base;
-    let over = legacy && name !== 'head' ? null : p.over;
+    const over = legacy && name !== 'head' ? null : p.over;
     let mirror = false;
     let left = p.pos[0];
     if (slim && (name === 'rarm' || name === 'larm')) {
@@ -89,7 +83,6 @@ function buildModel(src, S, { legacy, slim }) {
     if (over) {
       const layer = cuboid(src, S, texH, [w, h, d], over, mirror);
       const k = p.inflate;
-      layer.classList.add('overlay');
       layer.style.transform = `${mirror ? 'scaleX(-1) ' : ''}scale3d(${(w + k) / w}, ${(h + k) / h}, ${(d + k) / d})`;
       part.append(layer);
     }
@@ -98,69 +91,52 @@ function buildModel(src, S, { legacy, slim }) {
   return model;
 }
 
-/**
- * Mount a 3D player into `root`. Resolves to a cleanup function. Falls back to
- * a floating block when the skin can't be loaded (offline).
- */
-export async function mountSkin(root, player, { pose = 'idle', spin: spinMode = 'sway', pedestal = 'glow' } = {}) {
-  const scale = pedestal === 'block' ? 6 : 8;
+/** Mounts the model into `root`. Resolves to a cleanup function, or null when the skin can't be loaded. */
+export async function mountSkin(root, player, scale = 6) {
   let src;
   try {
     src = await api.call('skin:get', player);
   } catch {
-    root.append(blockScene());
-    return () => {};
+    return null;
   }
   const img = new Image();
   img.src = src;
   await img.decode().catch(() => {});
-  const stage = el('div', { class: 'mc-stage', title: 'Drag to spin · click to wave' });
+  if (!root.isConnected) return null;
+
+  const stage = el('div', { class: 'mc-stage', title: 'Drag to turn, click to wave' });
   const spin = el('div', { class: 'mc-spin' });
   const model = buildModel(src, scale, analyse(img));
-  model.classList.add(`pose-${pose}`);
-  model.style.setProperty('--s', `${scale}px`);
   spin.append(model);
-  if (pedestal === 'block') {
-    stage.classList.add('on-block');
-    spin.append(el('div', { class: 'mc-pedestal', style: { top: `${32 * scale}px`, width: `${16 * scale}px` } }, cube3d('grass', 16 * scale, true)));
-  }
   stage.append(spin);
-  root.append(stage);
+  root.replaceChildren(stage);
 
   const head = model.querySelector('.part.head');
-  let yaw = -28;
-  let pitch = -8;
+  let yaw = -25;
   let vel = 0;
   let dragging = false;
+  let moved = false;
   let lastX = 0;
-  let idle = 0;
   let raf = 0;
   let look = { x: 0, y: 0 };
-  const still = reduced();
+  let lastBody = '';
+  let lastFace = '';
 
-  const apply = () => {
-    spin.style.transform = `rotateX(${pitch}deg) rotateY(${yaw}deg)`;
-    head.style.transform = `rotateY(${look.x}deg) rotateX(${look.y}deg)`;
-  };
-  const tick = (t) => {
+  const tick = () => {
     if (!stage.isConnected) return;
-    if (!dragging) {
+    if (!dragging && Math.abs(vel) > 0.02) {
       yaw += vel;
-      vel *= 0.94;
-      if (Math.abs(vel) < 0.02 && !still && spinMode === 'spin') {
-        yaw += 0.35;
-      } else if (Math.abs(vel) < 0.02 && !still && spinMode === 'sway') {
-        idle += 1;
-        // Ease back into a gentle sway after the user lets go.
-        const target = -28 + Math.sin(t / 2600) * 22;
-        yaw += (target - yaw) * Math.min(0.02, idle / 6000);
-      }
+      vel *= 0.92;
     }
-    apply();
+    const body = `rotateX(-6deg) rotateY(${yaw.toFixed(1)}deg)`;
+    const face = `rotateY(${look.x.toFixed(1)}deg) rotateX(${look.y.toFixed(1)}deg)`;
+    if (body !== lastBody) spin.style.transform = lastBody = body;
+    if (face !== lastFace) head.style.transform = lastFace = face;
     raf = requestAnimationFrame(tick);
   };
   stage.addEventListener('pointerdown', (e) => {
     dragging = true;
+    moved = false;
     lastX = e.clientX;
     vel = 0;
     stage.setPointerCapture(e.pointerId);
@@ -170,15 +146,15 @@ export async function mountSkin(root, player, { pose = 'idle', spin: spinMode = 
     if (!dragging) return;
     const dx = e.clientX - lastX;
     lastX = e.clientX;
+    if (Math.abs(dx) > 1) moved = true;
     yaw += dx * 0.6;
     vel = dx * 0.6;
-    idle = 0;
   });
   const release = (e) => {
     if (!dragging) return;
     dragging = false;
     stage.classList.remove('grab');
-    if (Math.abs(vel) < 0.5 && e.type === 'pointerup') {
+    if (!moved && e.type === 'pointerup') {
       model.classList.remove('wave');
       void model.offsetWidth;
       model.classList.add('wave');
@@ -188,74 +164,16 @@ export async function mountSkin(root, player, { pose = 'idle', spin: spinMode = 
   stage.addEventListener('pointercancel', release);
   model.addEventListener('animationend', (e) => e.animationName === 'mc-wave' && model.classList.remove('wave'));
 
-  // Head turns towards the mouse, like the title-screen panorama characters.
   const onMove = (e) => {
-    if (!stage.isConnected) return window.removeEventListener('pointermove', onMove);
     const r = stage.getBoundingClientRect();
     const dx = (e.clientX - (r.left + r.width / 2)) / window.innerWidth;
     const dy = (e.clientY - (r.top + r.height * 0.2)) / window.innerHeight;
     look = { x: Math.max(-40, Math.min(40, dx * 90)), y: Math.max(-25, Math.min(25, -dy * 60)) };
   };
   window.addEventListener('pointermove', onMove);
-  apply();
   raf = requestAnimationFrame(tick);
   return () => {
     cancelAnimationFrame(raf);
     window.removeEventListener('pointermove', onMove);
   };
-}
-
-// ---------------------------------------------------------------- blocks --
-/** A 3D block with six faces; `kind` picks the look (grass, diamond, …). */
-export function cube3d(kind = 'grass', size = 80, flat = false) {
-  const h = size / 2;
-  const faces = [
-    ['front', `translateZ(${h}px)`],
-    ['back', `rotateY(180deg) translateZ(${h}px)`],
-    ['right', `rotateY(90deg) translateZ(${h}px)`],
-    ['left', `rotateY(-90deg) translateZ(${h}px)`],
-    ['top', `rotateX(90deg) translateZ(${h}px)`],
-    ['bottom', `rotateX(-90deg) translateZ(${h}px)`],
-  ];
-  return el('div', { class: `cube3d b-${kind}${flat ? ' static' : ''}`, style: { width: `${size}px`, height: `${size}px` } },
-    faces.map(([f, t]) => el('div', { class: `cf ${f}`, style: { transform: t, backgroundImage: faceTex(kind, f), backgroundSize: '100% 100%' } })));
-}
-
-/** A small block that turns towards the viewer on hover — used as an icon. */
-export function blockIcon(kind, size = 24) {
-  return el('span', { class: 'block-icon' }, cube3d(kind, size, true));
-}
-
-/** Floating blocks for the hero when there's no skin to show. */
-export function blockScene() {
-  const kinds = [['grass', 110], ['diamond', 54], ['gold', 64], ['emerald', 36], ['tnt', 46], ['crafting', 40], ['amethyst', 30]];
-  return el('div', { class: 'block-scene' }, kinds.map(([k, s], i) => el('div', { class: `float f${i}` }, cube3d(k, s))));
-}
-
-// ------------------------------------------------------------------ tilt --
-const TILT = '.inst-card:not(.new), .feature, .card.news, .card.proj, .world-row, .srv-stat';
-
-/** Cards lean towards the cursor with a soft glare. Installed once. */
-export function installTilt() {
-  let current = null;
-  const reset = (card) => {
-    card.style.transform = '';
-    card.classList.remove('tilting');
-  };
-  document.addEventListener('pointermove', (e) => {
-    if (!effectsOn() || reduced()) return;
-    const card = e.target.closest?.(TILT);
-    if (current && current !== card) reset(current);
-    current = card;
-    if (!card) return;
-    const r = card.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    const max = r.width > 360 ? 3 : 7;
-    card.classList.add('tilting');
-    card.style.setProperty('--gx', `${x * 100}%`);
-    card.style.setProperty('--gy', `${y * 100}%`);
-    card.style.transform = `perspective(800px) rotateX(${(0.5 - y) * max}deg) rotateY(${(x - 0.5) * max}deg) translateY(-3px)`;
-  });
-  document.addEventListener('pointerleave', () => current && reset(current));
 }

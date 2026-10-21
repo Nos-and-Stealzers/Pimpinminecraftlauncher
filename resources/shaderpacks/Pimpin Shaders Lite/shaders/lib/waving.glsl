@@ -1,7 +1,8 @@
 // gentle wind for foliage, offsets in world space
 vec3 waveOffset(vec3 wp, float id, bool top, float sky) {
     float t = frameTimeCounter;
-    float wind = WAVE_STRENGTH * (0.65 + 0.9 * rainStrength) * (0.55 + 0.45 * sin(t * 0.37 + wp.x * 0.05 + wp.z * 0.03));
+    float gust = 0.6 + 0.4 * sin(t * 0.37 + wp.x * 0.05 + wp.z * 0.03) * sin(t * 0.21 + wp.z * 0.02);
+    float wind = WAVE_STRENGTH * (0.65 + 0.9 * rainStrength) * gust;
     wind *= smoothstep(0.15, 0.6, sky);
     if (isId(id, ID_LEAVES)) {
         return vec3(sin(t * 1.7 + wp.x * 1.3 + wp.z * 0.7 + wp.y),

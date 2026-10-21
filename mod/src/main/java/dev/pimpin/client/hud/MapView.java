@@ -1,6 +1,7 @@
 package dev.pimpin.client.hud;
 
 import dev.pimpin.client.compat.DynTex;
+import dev.pimpin.client.feature.Waypoints;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -8,6 +9,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
+
+import java.util.List;
 
 /**
  * One rendered map (the corner minimap or the big map). Two stages:
@@ -112,7 +115,7 @@ final class MapView {
      * @param zoom texels per block
      */
     DynTex frame(Minecraft mc, int resolution, float zoom, boolean round, boolean rotate, boolean shading,
-                 boolean players, boolean mobs, BlockPos death, int accent) {
+                 boolean players, boolean mobs, BlockPos death, List<Waypoints.Point> waypoints, int accent) {
         ensure(resolution);
         LocalPlayer me = mc.player;
         long now = System.nanoTime();
@@ -190,20 +193,14 @@ final class MapView {
                 else dot(su, sv, 1, 0xFF001A00, 0xFF7CFF6B, round, 0);
             }
         }
+        for (Waypoints.Point w : waypoints) {
+            if (!w.shown) continue;
+            double[] at = clampToEdge(w.x + 0.5 - px, w.z + 0.5 - pz, fx, fz, rx, rz, scale, round);
+            diamond((int) at[0], (int) at[1], w.color);
+        }
         if (death != null) {
-            double ox = death.getX() + 0.5 - px;
-            double oz = death.getZ() + 0.5 - pz;
-            double su = half + (ox * rx + oz * rz) * scale;
-            double sv = half - (ox * fx + oz * fz) * scale;
-            double du = su - half;
-            double dv = sv - half;
-            double lim = half - 5;
-            double len = round ? Math.sqrt(du * du + dv * dv) : Math.max(Math.abs(du), Math.abs(dv));
-            if (len > lim) {
-                su = half + du / len * lim;
-                sv = half + dv / len * lim;
-            }
-            cross((int) su, (int) sv);
+            double[] at = clampToEdge(death.getX() + 0.5 - px, death.getZ() + 0.5 - pz, fx, fz, rx, rz, scale, round);
+            cross((int) at[0], (int) at[1]);
         }
 
         // Player arrow: points up when the map turns with you, otherwise where you look.
@@ -233,6 +230,39 @@ final class MapView {
         for (int y = -r - 1; y <= r; y++) for (int x = -r - 1; x <= r; x++) put(u + x, v + y, outline);
         for (int y = -r; y < r; y++) for (int x = -r; x < r; x++) put(u + x, v + y, fill);
         if (ring != 0 && r >= 2) put(u, v, ring);
+    }
+
+    /** Map position of a world offset; markers off the map stick to its edge. */
+    private double[] clampToEdge(double ox, double oz, double fx, double fz, double rx, double rz, double scale, boolean round) {
+        double half = res / 2.0;
+        double du = (ox * rx + oz * rz) * scale;
+        double dv = -(ox * fx + oz * fz) * scale;
+        double lim = half - 5;
+        double len = round ? Math.sqrt(du * du + dv * dv) : Math.max(Math.abs(du), Math.abs(dv));
+        if (len > lim) {
+            du = du / len * lim;
+            dv = dv / len * lim;
+        }
+        return new double[]{half + du, half + dv};
+    }
+
+    private void diamond(int u, int v, int color) {
+        for (int y = -4; y <= 4; y++) {
+            int w = 4 - Math.abs(y);
+            for (int x = -w; x <= w; x++) put(u + x, v + y, 0xFF000000);
+        }
+        for (int y = -3; y <= 3; y++) {
+            int w = 3 - Math.abs(y);
+            for (int x = -w; x <= w; x++) put(u + x, v + y, color);
+        }
+    }
+
+    /** Where a world position lands on the north-up big map, in texels, or null when off it. */
+    double[] project(Minecraft mc, float zoom, double wx, double wz) {
+        double half = res / 2.0;
+        double u = half + (wx - mc.player.getX()) * zoom;
+        double v = half + (wz - mc.player.getZ()) * zoom;
+        return u < 0 || v < 0 || u >= res || v >= res ? null : new double[]{u, v};
     }
 
     private void cross(int u, int v) {

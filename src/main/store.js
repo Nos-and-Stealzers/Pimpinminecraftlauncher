@@ -48,17 +48,34 @@ async function readJson(file, fallback) {
   }
 }
 
-async function writeJson(file, data) {
-  await fsp.mkdir(path.dirname(file), { recursive: true });
+// Writes are queued per file. Two quick saves (the settings sliders do this)
+// otherwise race on the same .tmp and one of the renames fails.
+const pending = new Map(); // file -> last queued write
+
+function writeJson(file, data) {
+  const json = JSON.stringify(data, null, 2);
   const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fsp.rename(tmp, file);
+  const write = (pending.get(file) || Promise.resolve())
+    .catch(() => {}) // the previous write already reported its own error
+    .then(async () => {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      await fsp.writeFile(tmp, json);
+      await fsp.rename(tmp, file);
+    });
+  pending.set(file, write);
+  const done = () => {
+    if (pending.get(file) === write) pending.delete(file);
+  };
+  write.then(done, done);
+  return write;
 }
 
 const SETTINGS_FILE = path.join(ROOT, 'settings.json');
+const totalMb = () => Math.floor(os.totalmem() / 1024 / 1024);
 
 const DEFAULT_SETTINGS = {
-  memoryMax: Math.max(2048, Math.min(6144, Math.floor(os.totalmem() / 1024 / 1024 / 3 / 512) * 512)),
+  // a third of the RAM in 512 MB steps, kept between 2 and 6 GB
+  memoryMax: Math.max(2048, Math.min(6144, Math.floor(totalMb() / 3 / 512) * 512)),
   memoryMin: 1024,
   jvmArgs: '-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:MaxGCPauseMillis=50',
   javaPath: '',
@@ -79,8 +96,6 @@ const DEFAULT_SETTINGS = {
   animations: true,
   blur: true,
   blockIcons: false,
-  uiSounds: false,
-  soundVolume: 60,
   skinMode: '3d',
   skinPose: 'idle',
   skinSpin: 'sway',
@@ -99,16 +114,16 @@ const DEFAULT_SETTINGS = {
   activeAccount: null,
 };
 
-let settings = { ...DEFAULT_SETTINGS, ...readJsonSync(SETTINGS_FILE, {}) };
+const settings = { ...DEFAULT_SETTINGS, ...readJsonSync(SETTINGS_FILE, {}) };
 
 function getSettings() {
-  return { ...settings, root: ROOT, totalMemory: Math.floor(os.totalmem() / 1024 / 1024) };
+  return { ...settings, root: ROOT, totalMemory: totalMb() };
 }
 
 async function updateSettings(patch) {
-  const allowed = Object.keys(DEFAULT_SETTINGS);
+  // only known keys, anything else from the renderer is dropped
   for (const [k, v] of Object.entries(patch || {})) {
-    if (allowed.includes(k)) settings[k] = v;
+    if (Object.hasOwn(DEFAULT_SETTINGS, k)) settings[k] = v;
   }
   await writeJson(SETTINGS_FILE, settings);
   return getSettings();
@@ -125,9 +140,10 @@ function slugify(text) {
 }
 
 function uniqueDir(parent, name) {
-  let id = slugify(name);
+  const slug = slugify(name);
+  let id = slug;
   let n = 1;
-  while (fs.existsSync(path.join(parent, id))) id = `${slugify(name)}-${++n}`;
+  while (fs.existsSync(path.join(parent, id))) id = `${slug}-${++n}`;
   return id;
 }
 

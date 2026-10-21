@@ -186,10 +186,11 @@ public final class ModMenuScreen extends BaseScreen {
         if (md.getId().equals("pimpin")) {
             ty += 6;
             String[] tips = {
-                    "§d" + keyName(PimpinClient.menuKey) + "§7 opens this menu",
-                    "§d" + keyName(PimpinClient.zoomKey) + "§7 zoom (scroll to adjust)",
-                    "§d" + keyName(PimpinClient.minimapKey) + "§7 minimap, §d" + keyName(PimpinClient.minimapZoomKey) + "§7 minimap zoom",
-                    "§d" + keyName(PimpinClient.bigMapKey) + "§7 hold for the big map (scroll to zoom)",
+                    "§d" + Compat.keyName(PimpinClient.menuKey) + "§7 opens this menu",
+                    "§d" + Compat.keyName(PimpinClient.zoomKey) + "§7 zoom (scroll to adjust)",
+                    "§d" + Compat.keyName(PimpinClient.minimapKey) + "§7 minimap, §d" + Compat.keyName(PimpinClient.minimapZoomKey) + "§7 minimap zoom",
+                    "§d" + Compat.keyName(PimpinClient.bigMapKey) + "§7 hold for the big map (scroll to zoom)",
+                    "§d" + Compat.keyName(PimpinClient.waypointKey) + "§7 adds a waypoint where you stand",
             };
             for (String tip : tips) {
                 if (ty > y + h - 12) break;
@@ -199,9 +200,6 @@ public final class ModMenuScreen extends BaseScreen {
         }
     }
 
-    private static String keyName(net.minecraft.client.KeyMapping key) {
-        return key == null ? "?" : key.getTranslatedKeyMessage().getString();
-    }
 
     private void drawIcon(Draw g, ModContainer m, int x, int y, int size) {
         Optional<DynTex> icon = ICONS.computeIfAbsent(m.getMetadata().getId(), id -> loadIcon(m));

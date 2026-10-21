@@ -15,7 +15,7 @@ const MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2
 const LIBRARIES_URL = 'https://libraries.minecraft.net/';
 const RESOURCES_URL = 'https://resources.download.minecraft.net/';
 const LAUNCHER_NAME = 'pimpin-launcher';
-const LAUNCHER_VERSION = '0.1.0';
+const LAUNCHER_VERSION = require('../../package.json').version;
 
 const OS_NAME = { win32: 'windows', darwin: 'osx', linux: 'linux' }[process.platform] || 'linux';
 const CP_SEP = process.platform === 'win32' ? ';' : ':';
@@ -231,11 +231,42 @@ async function extractNatives(natives, target) {
   }
 }
 
-async function installAssets(version, gameDir, progress) {
+// Checking ~4000 asset files and hashing the client jar on every launch costs
+// half a second or more. Once a version has been fully checked we remember it
+// (and the jar's size/mtime) and skip the work until something changes.
+// Repair (verify: true) always does the full check.
+const stampFile = () => path.join(dirs.versions, 'verified.json');
+let stamps = null;
+
+async function getStamps() {
+  if (!stamps) stamps = await readJson(stampFile(), {});
+  return stamps;
+}
+
+async function stamp(key, value) {
+  const all = await getStamps();
+  all[key] = value;
+  await writeJson(stampFile(), all);
+}
+
+async function fileStamp(file) {
+  try {
+    const st = await fsp.stat(file);
+    return `${st.size}:${Math.round(st.mtimeMs)}`;
+  } catch {
+    return null;
+  }
+}
+
+async function installAssets(version, gameDir, progress, verify) {
   const idx = version.assetIndex;
   const indexFile = path.join(dirs.assets, 'indexes', `${idx.id}.json`);
-  await download(idx.url, indexFile, { sha1: idx.sha1 });
+  const key = `assets:${idx.id}:${idx.sha1}`;
+  const checked = !verify && (await getStamps())[key] && fs.existsSync(indexFile);
+  if (!checked) await download(idx.url, indexFile, { sha1: idx.sha1 });
   const index = await readJson(indexFile, { objects: {} });
+  // legacy versions copy assets into the game folder, so those always run the loop
+  if (checked && !index.virtual && !index.map_to_resources) return index;
   const objects = Object.entries(index.objects);
   let done = 0;
   await pool(objects, 24, async ([name, { hash, size }]) => {
@@ -255,20 +286,26 @@ async function installAssets(version, gameDir, progress) {
     done++;
     if (done % 25 === 0 || done === objects.length) progress({ stage: 'Assets', done, total: objects.length });
   });
+  await stamp(key, objects.length);
   return index;
 }
 
 /** Download everything needed to launch. Returns data used to build args. */
-async function installVersion(instance, gameDir, progress = () => {}) {
+async function installVersion(instance, gameDir, progress = () => {}, { verify = false } = {}) {
   progress({ stage: 'Resolving version', done: 0, total: 1 });
   const { version, vanilla, loaderVersion } = await resolveVersion(instance);
 
   const clientJar = path.join(dirs.versions, vanilla.id, `${vanilla.id}.jar`);
   progress({ stage: 'Game client', done: 0, total: 1 });
-  await download(vanilla.downloads.client.url, clientJar, {
-    sha1: vanilla.downloads.client.sha1,
-    size: vanilla.downloads.client.size,
-  });
+  const jarKey = `client:${vanilla.id}:${vanilla.downloads.client.sha1}`;
+  const jarStamp = await fileStamp(clientJar);
+  if (verify || !jarStamp || (await getStamps())[jarKey] !== jarStamp) {
+    await download(vanilla.downloads.client.url, clientJar, {
+      sha1: vanilla.downloads.client.sha1,
+      size: vanilla.downloads.client.size,
+    });
+    await stamp(jarKey, await fileStamp(clientJar));
+  }
 
   const libs = collectLibraries(version);
   let done = 0;
@@ -280,7 +317,7 @@ async function installVersion(instance, gameDir, progress = () => {}) {
   const nativesDir = path.join(dirs.natives, version.id);
   await extractNatives(libs.natives, nativesDir);
 
-  const assetIndex = await installAssets(version, gameDir, progress);
+  const assetIndex = await installAssets(version, gameDir, progress, verify);
 
   let logArg = null;
   const logging = version.logging?.client;
@@ -388,8 +425,37 @@ function buildArgs(ctx, { instance, account, settings, gameDir, server, world })
  * Install and start the game. Returns the child process.
  * `events` gets { progress, log } callbacks.
  */
+// The launcher calls prepare() when an instance is opened or likely to be played,
+// so pressing Play only has to build the command line and start Java.
+const prepared = new Map(); // key -> { at, promise }
+const PREPARED_TTL = 10 * 60 * 1000;
+
+function prepareKey(instance, gameDir) {
+  return [gameDir, instance.mcVersion, instance.loader, instance.loaderVersion || ''].join('|');
+}
+
+function prepare(instance, gameDir) {
+  const key = prepareKey(instance, gameDir);
+  const hit = prepared.get(key);
+  if (hit && Date.now() - hit.at < PREPARED_TTL) return hit.promise;
+  // launch() may pick this up while it is still downloading, so it can hook in for progress
+  const entry = { at: Date.now(), listeners: new Set() };
+  entry.promise = installVersion(instance, gameDir, (p) => entry.listeners.forEach((fn) => fn(p)));
+  entry.promise.catch(() => prepared.delete(key));
+  prepared.set(key, entry);
+  return entry.promise;
+}
+
 async function launch({ instance, account, settings, gameDir, server, world, javaPath }, events = {}) {
-  const ctx = await installVersion(instance, gameDir, events.progress);
+  const key = prepareKey(instance, gameDir);
+  const warm = prepared.get(key);
+  prepared.delete(key);
+  let ctx = null;
+  if (warm && Date.now() - warm.at < PREPARED_TTL) {
+    if (events.progress) warm.listeners.add(events.progress);
+    ctx = await warm.promise.catch(() => null);
+  }
+  if (!ctx) ctx = await installVersion(instance, gameDir, events.progress);
   const java = javaPath || ctx.java;
   const args = buildArgs(ctx, { instance, account, settings, gameDir, server, world });
   events.progress?.({ stage: 'Starting Minecraft', done: 1, total: 1 });
@@ -405,6 +471,7 @@ module.exports = {
   getLoaderGameVersions,
   getVanillaJson,
   launch,
+  prepare,
   installVersion,
   buildArgs,
   rulesAllow,

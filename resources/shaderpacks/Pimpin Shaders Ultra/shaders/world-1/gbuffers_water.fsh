@@ -2,7 +2,7 @@
 #define DIM_NETHER 1
 #define ULTRA 1
 #define PROGRAM_WATER 1
-/* DRAWBUFFERS:01 */
+/* DRAWBUFFERS:016 */
 #include "/lib/settings.glsl"
 #include "/lib/uniforms.glsl"
 #include "/lib/common.glsl"
@@ -10,5 +10,6 @@
 #include "/lib/shadow.glsl"
 #include "/lib/waving.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/lighting.glsl"
 #include "/program/water_fsh.glsl"

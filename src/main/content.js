@@ -17,17 +17,18 @@ const PLUGIN_LOADERS = ['paper', 'spigot', 'bukkit', 'purpur'];
 const FEATURES = [
   { id: 'pimpinclient', name: 'Pimpin Client', icon: 'sparkle', desc: 'Our own mod: HUD, keystrokes, a fast minimap + big map, zoom, FPS booster and a mod menu.', custom: true, projects: [] },
   { id: 'fps', name: 'FPS Boost', icon: 'bolt', desc: 'Sodium, Lithium, FerriteCore, Entity Culling & ImmediatelyFast.', projects: ['sodium', 'lithium', 'ferrite-core', 'entityculling', 'immediatelyfast'] },
-  { id: 'shaders', name: 'Shader Support', icon: 'sun', desc: 'Iris — load any shader pack from the library.', projects: ['iris'] },
+  { id: 'faststart', name: 'Fast Startup', icon: 'bolt', desc: 'ModernFix: the game starts faster and uses less memory.', projects: ['modernfix'] },
+  { id: 'shaders', name: 'Shader Support', icon: 'sun', desc: 'Iris, so you can use any shader pack from the library.', projects: ['iris'] },
   { id: 'zoom', name: 'Zoom', icon: 'search', desc: 'Smooth, scrollable zoom (Zoomify).', projects: ['zoomify'] },
   { id: 'minimap', name: 'Minimap', icon: 'map', desc: "Xaero's Minimap with waypoints.", projects: ['xaeros-minimap'] },
   { id: 'worldmap', name: 'World Map', icon: 'globe', desc: "Xaero's full-screen World Map.", projects: ['xaeros-world-map'] },
   { id: 'freelook', name: 'Freelook', icon: 'eye', desc: 'Look around without turning your player.', projects: ['freelook'] },
   { id: 'skinlayers', name: '3D Skin Layers', icon: 'user', desc: 'Renders the outer skin layer in 3D.', projects: ['3dskinlayers'] },
   { id: 'dynamiclights', name: 'Dynamic Lights', icon: 'flame', desc: 'Torches light up the world in your hand.', projects: ['lambdynamiclights'] },
-  { id: 'animations', name: 'Better Animations', icon: 'sparkle', desc: 'Not Enough Animations — first-person polish.', projects: ['not-enough-animations'] },
+  { id: 'animations', name: 'Better Animations', icon: 'sparkle', desc: 'Not Enough Animations: better first-person animations.', projects: ['not-enough-animations'] },
   { id: 'hud', name: 'Better HUD', icon: 'layout', desc: 'AppleSkin food info + BetterF3 debug screen.', projects: ['appleskin', 'betterf3'] },
-  { id: 'ctm', name: 'Connected Textures', icon: 'grid', desc: 'Continuity — seamless glass & bookshelves.', projects: ['continuity'] },
-  { id: 'dynamicfps', name: 'Background Saver', icon: 'moon', desc: 'Dynamic FPS — lowers FPS when tabbed out.', projects: ['dynamic-fps'] },
+  { id: 'ctm', name: 'Connected Textures', icon: 'grid', desc: 'Continuity: seamless glass and bookshelves.', projects: ['continuity'] },
+  { id: 'dynamicfps', name: 'Background Saver', icon: 'moon', desc: 'Dynamic FPS: lowers FPS when you tab out.', projects: ['dynamic-fps'] },
   { id: 'modmenu', name: 'Mod Menu', icon: 'menu', desc: 'In-game list of your mods and their settings.', projects: ['modmenu'] },
 ];
 
@@ -161,7 +162,7 @@ function loadersFor(type, holder) {
 function checkTarget(type, holder) {
   if (holder.kind === 'server' && type !== 'plugin') throw new Error('Servers can only install plugins.');
   if (holder.kind === 'server' && holder.loader === 'vanilla') throw new Error('Vanilla servers cannot run plugins. Switch the server to Paper or Purpur in its Settings tab.');
-  if (holder.kind !== 'server' && type === 'plugin') throw new Error('Plugins go on a server — open the Servers tab.');
+  if (holder.kind !== 'server' && type === 'plugin') throw new Error('Plugins go on a server. Open the Servers tab.');
   if (type === 'shader' && (!holder.loader || holder.loader === 'vanilla')) {
     throw new Error('Shaders need a Fabric or Quilt instance (Iris is installed for you automatically).');
   }
@@ -210,10 +211,11 @@ async function install(holder, { projectId, type, versionId }, onProgress) {
       seen.add(pid);
 
       const existing = meta.content.find((c) => c.projectId === pid);
-      if (existing && existing.versionId === version.id && !vid) return;
+      const folder = path.join(holder.dir, FOLDERS[kind]);
+      const onDisk = existing && (fs.existsSync(path.join(folder, existing.file)) || fs.existsSync(path.join(folder, `${existing.file}.disabled`)));
+      if (onDisk && existing.versionId === version.id && !vid) return;
 
       const file = version.files.find((f) => f.primary) || version.files[0];
-      const folder = path.join(holder.dir, FOLDERS[kind]);
       const dest = safeJoin(folder, file.filename);
       const project = await modrinth.getProject(pid).catch(() => null);
       onProgress?.({ stage: `Downloading ${project?.title || file.filename}`, done: 0, total: file.size });
@@ -377,7 +379,9 @@ async function setFeature(holder, featureId, enabled, onProgress) {
     for (const p of projects) {
       const meta = await holder.load();
       const rec = (meta.content || []).find((c) => c.projectId === p.id);
-      if (rec) {
+      const modsDir = path.join(holder.dir, 'mods');
+      // the record can outlive its jar if someone deleted it by hand; reinstall then
+      if (rec && (fs.existsSync(path.join(modsDir, rec.file)) || fs.existsSync(path.join(modsDir, `${rec.file}.disabled`)))) {
         await setEnabled(holder, { type: 'mod', file: rec.file, enabled: true });
         continue;
       }

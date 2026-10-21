@@ -60,6 +60,9 @@ public final class PimpinConfig {
     // Mod menu
     public boolean menuButtons = true;
 
+    // Loading screen
+    public boolean brandedLoading = true;
+
     /** Option values saved before the FPS boost, so it can be undone. */
     public static final class BoostBackup {
         public int viewDistance;

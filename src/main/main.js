@@ -12,6 +12,8 @@ const modrinth = require('./modrinth');
 const files = require('./files');
 const packs = require('./packs');
 const shaders = require('./shaders');
+const importer = require('./importer');
+const gameLogs = require('./logs');
 const { getJson, request } = require('./net');
 
 let win;
@@ -33,7 +35,7 @@ function createWindow() {
     minHeight: 640,
     frame: false,
     show: false,
-    backgroundColor: '#0b0914',
+    backgroundColor: '#16171a',
     title: 'Pimpin Launcher',
     icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),
     webPreferences: {
@@ -225,6 +227,8 @@ const handlers = {
   'instances:screenshots': (id) => instances.screenshots(id),
   'instances:deleteScreenshot': (id, name) => instances.deleteScreenshot(id, name),
   'instances:crashInfo': (id) => instances.crashInfo(id),
+  'instances:repair': (id) => instances.repair(id),
+  'instances:warm': (id) => instances.warm(id),
   'instances:export': async (id) => {
     const inst = await instances.get(id);
     const res = await dialog.showSaveDialog(win, { title: `Export ${inst.name}`, defaultPath: `${inst.name}.pimpin.zip`, filters: [{ name: 'Pimpin instance', extensions: ['zip'] }] });
@@ -233,11 +237,17 @@ const handlers = {
     shell.showItemInFolder(res.filePath);
     return res.filePath;
   },
-  'instances:import': async () => {
-    const res = await dialog.showOpenDialog(win, { title: 'Import an instance', properties: ['openFile'], filters: [{ name: 'Pimpin instance', extensions: ['zip'] }] });
-    if (res.canceled || !res.filePaths[0]) return null;
-    return instances.importZip(res.filePaths[0]);
+  'instances:import': async (file) => {
+    if (!file) {
+      const res = await dialog.showOpenDialog(win, { title: 'Import an instance', properties: ['openFile'], filters: [{ name: 'Modpack or Pimpin export', extensions: ['mrpack', 'zip'] }] });
+      if (res.canceled || !res.filePaths[0]) return null;
+      file = res.filePaths[0];
+    }
+    return importer.importFile(String(file), progressFor({ id: 'import' }));
   },
+  'logs:list': (id) => gameLogs.listLogs(instances.dirOf(id)),
+  'logs:read': (id, name) => gameLogs.readLog(instances.dirOf(id), String(name)),
+  'logs:upload': (lines) => gameLogs.upload(lines),
   'content:updateAll': async () => {
     const summary = { updated: 0, instances: 0, skipped: [] };
     for (const inst of await instances.list()) {
@@ -373,9 +383,10 @@ const handlers = {
       const holder = await holderFor(target);
       const own = content.clientJar(inst.mcVersion, inst.loader) ? ['pimpinclient'] : [];
       const extras = { pretty: ['skinlayers', 'animations', 'ctm', 'dynamiclights'], balanced: ['skinlayers', 'ctm'], fps: ['dynamicfps'] }[mode] || [];
-      for (const f of ['fps', ...own, ...extras]) {
+      for (const f of ['fps', 'faststart', ...own, ...extras]) {
         const res = await content.setFeature(holder, f, true, progressFor(target)).catch((err) => ({ failed: [err.message] }));
-        failed.push(...(res.failed || []));
+        // ModernFix isn't out for every version; the combo works fine without it
+        if (f !== 'faststart') failed.push(...(res.failed || []));
       }
       if (mode === 'pretty' || mode === 'balanced') {
         try {

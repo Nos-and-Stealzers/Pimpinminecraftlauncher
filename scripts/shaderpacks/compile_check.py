@@ -2,7 +2,7 @@
 import os, re, subprocess, sys, tempfile, itertools, concurrent.futures as cf
 
 GLSLANG = os.environ.get("GLSLANG", "glslangValidator")  # github.com/KhronosGroup/glslang/releases
-PACKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "resources", "shaderpacks")
+PACKS = os.environ.get("SHADERPACK_OUT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "resources", "shaderpacks")
 TMP = os.path.join(tempfile.gettempdir(), "pimpin-shader-check")
 os.makedirs(TMP, exist_ok=True)
 

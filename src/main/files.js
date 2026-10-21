@@ -12,10 +12,16 @@ const PROTECTED = new Set(['pimpin-instance.json', 'pimpin-server.json']);
 const MAX_TEXT = 2 * 1024 * 1024;
 
 const extOf = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
-const isText = (name) => TEXT_EXT.has(extOf(name)) || name === 'eula.txt' || name === 'options.txt';
 
-function resolve(dir, sub = '', name) {
+// `name` is optional: without it this resolves the folder itself.
+function resolve(dir, sub, name) {
   return name === undefined ? safeJoin(dir, sub || '.') : safeJoin(dir, sub || '.', name);
+}
+
+// Launcher metadata in the top folder. Checked on the resolved path so a sub
+// like '.' or 'mods/..' can't sneak past, and case-insensitively for Windows.
+function isProtected(dir, sub, name) {
+  return PROTECTED.has(String(name).toLowerCase()) && resolve(dir, sub) === path.resolve(dir);
 }
 
 function checkName(name) {
@@ -41,19 +47,24 @@ async function list(dir, sub = '') {
     }
     const isDir = st.isDirectory();
     const ext = isDir ? '' : extOf(e.name);
+    const image = !isDir && IMAGE_EXT.has(ext);
     out.push({
       name: e.name,
       dir: isDir,
       size: isDir ? 0 : st.size,
       mtime: st.mtimeMs,
       ext,
-      text: !isDir && isText(e.name) && st.size <= MAX_TEXT,
-      image: !isDir && IMAGE_EXT.has(ext),
-      url: !isDir && IMAGE_EXT.has(ext) ? pathToFileURL(full).href : null,
-      protected: !sub && PROTECTED.has(e.name),
+      text: !isDir && TEXT_EXT.has(ext) && st.size <= MAX_TEXT,
+      image,
+      url: image ? pathToFileURL(full).href : null,
+      protected: isProtected(dir, sub, e.name),
     });
   }
-  out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.dir ? -1 : 1));
+  // folders first, then natural order so "world 2" sorts before "world 10"
+  out.sort((a, b) => {
+    if (a.dir !== b.dir) return a.dir ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
   return { path: sub || '', entries: out };
 }
 
@@ -67,20 +78,20 @@ async function read(dir, sub, name) {
 }
 
 async function write(dir, sub, name, text) {
-  if (!sub && PROTECTED.has(name)) throw new Error('This file is managed by Pimpin.');
+  if (isProtected(dir, sub, name)) throw new Error('This file is managed by Pimpin.');
   const file = resolve(dir, sub, checkName(name));
   await fsp.writeFile(file, String(text ?? ''));
 }
 
 async function remove(dir, sub, name) {
-  if (!sub && PROTECTED.has(name)) throw new Error('This file is managed by Pimpin and cannot be deleted.');
+  if (isProtected(dir, sub, name)) throw new Error('This file is managed by Pimpin and cannot be deleted.');
   const target = resolve(dir, sub, checkName(name));
   if (target === path.resolve(dir)) throw new Error('Invalid path');
   await fsp.rm(target, { recursive: true, force: true });
 }
 
 async function rename(dir, sub, from, to) {
-  if (!sub && (PROTECTED.has(from) || PROTECTED.has(to))) throw new Error('This file is managed by Pimpin.');
+  if (isProtected(dir, sub, from) || isProtected(dir, sub, to)) throw new Error('This file is managed by Pimpin.');
   const src = resolve(dir, sub, checkName(from));
   const dest = resolve(dir, sub, checkName(to));
   if (fs.existsSync(dest)) throw new Error(`"${to}" already exists`);
@@ -102,7 +113,8 @@ function freeName(folder, name) {
   return `${base} (${n})${ext}`;
 }
 
-/** Copy files/folders from anywhere on the PC into the browsed folder. */
+// Copy files/folders from anywhere on the PC into the browsed folder.
+// Name clashes get a " (2)" suffix instead of overwriting.
 async function importPaths(dir, sub, paths) {
   const folder = resolve(dir, sub);
   await fsp.mkdir(folder, { recursive: true });
@@ -111,8 +123,10 @@ async function importPaths(dir, sub, paths) {
     if (typeof src !== 'string' || !path.isAbsolute(src)) continue;
     const st = await fsp.stat(src).catch(() => null);
     if (!st) continue;
-    // Never copy a folder into itself.
-    if (st.isDirectory() && !path.relative(src, folder).startsWith('..')) continue;
+    // Never copy a folder into itself. relative() gives an absolute path when
+    // the two are on different drives, which is fine to copy.
+    const rel = path.relative(src, folder);
+    if (st.isDirectory() && !rel.startsWith('..') && !path.isAbsolute(rel)) continue;
     const name = freeName(folder, path.basename(src));
     await fsp.cp(src, path.join(folder, name), { recursive: true, errorOnExist: false });
     added.push(name);
@@ -120,22 +134,24 @@ async function importPaths(dir, sub, paths) {
   return added;
 }
 
-/** Total size of a folder, used for the summary line. */
-async function folderSize(dir, sub = '') {
-  let total = 0;
-  let count = 0;
-  const walk = async (p) => {
-    for (const e of await fsp.readdir(p, { withFileTypes: true }).catch(() => [])) {
-      const full = path.join(p, e.name);
-      if (e.isDirectory()) await walk(full);
-      else {
-        count++;
-        total += (await fsp.stat(full).catch(() => ({ size: 0 }))).size;
+// For the summary line under the file list. Unreadable bits are skipped.
+async function folderSize(dir, sub) {
+  let bytes = 0;
+  let files = 0;
+  const walk = async (folder) => {
+    for (const e of await fsp.readdir(folder, { withFileTypes: true }).catch(() => [])) {
+      const full = path.join(folder, e.name);
+      if (e.isDirectory()) {
+        await walk(full);
+        continue;
       }
+      files++;
+      const st = await fsp.stat(full).catch(() => null);
+      if (st) bytes += st.size;
     }
   };
   await walk(resolve(dir, sub));
-  return { bytes: total, files: count };
+  return { bytes, files };
 }
 
 module.exports = { list, read, write, remove, rename, mkdir, importPaths, folderSize, resolve };

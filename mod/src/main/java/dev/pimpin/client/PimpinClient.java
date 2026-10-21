@@ -6,6 +6,8 @@ import dev.pimpin.client.compat.Hud;
 import dev.pimpin.client.compat.Keys;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
+import dev.pimpin.client.feature.LoadingScreen;
+import dev.pimpin.client.feature.Waypoints;
 import dev.pimpin.client.feature.Zoom;
 import dev.pimpin.client.hud.Minimap;
 import dev.pimpin.client.hud.PimpinHud;
@@ -34,6 +36,7 @@ public final class PimpinClient implements ClientModInitializer {
     public static KeyMapping minimapZoomKey;
     public static KeyMapping bigMapKey;
     public static KeyMapping boostKey;
+    public static KeyMapping waypointKey;
 
     @Override
     public void onInitializeClient() {
@@ -44,6 +47,7 @@ public final class PimpinClient implements ClientModInitializer {
         minimapZoomKey = Keys.register("minimap_zoom", InputConstants.KEY_N);
         bigMapKey = Keys.register("big_map", InputConstants.KEY_J);
         boostKey = Keys.register("boost", InputConstants.UNKNOWN.getValue());
+        waypointKey = Keys.register("waypoint", InputConstants.KEY_B);
 
         ClientTickEvents.END_CLIENT_TICK.register(PimpinClient::tick);
         Hud.register(PimpinHud::render);
@@ -52,6 +56,7 @@ public final class PimpinClient implements ClientModInitializer {
             PimpinConfig.save();
         });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+            if (screen instanceof TitleScreen) LoadingScreen.gameReady();
             if (!PimpinConfig.get().menuButtons) return;
             if (screen instanceof TitleScreen || screen instanceof PauseScreen) {
                 //#if MC >= 26.1
@@ -82,6 +87,11 @@ public final class PimpinClient implements ClientModInitializer {
         }
         while (boostKey.consumeClick()) {
             FpsBooster.toggle(client);
+        }
+        while (waypointKey.consumeClick()) {
+            if (client.player == null) continue;
+            Waypoints.Point w = Waypoints.addHere(client);
+            Compat.actionBar(client, "§b" + w.name + "§7 added at " + w.x + " " + w.y + " " + w.z);
         }
         Zoom.tick(client);
         FpsBooster.tick(client);

@@ -319,4 +319,80 @@ function over(dst, src, dx = 0, dy = 0) {
   return dst;
 }
 
-module.exports = { rng, ramp, hex, mixc, toHsv, fromHsv, Px, blob, lump, cells, noise, despeckle, upscale, over, Image, rgba };
+/**
+ * Checker-dither the seam between two neighbouring shades (rough materials
+ * in the 32× style): where a pixel borders one exactly one shade darker
+ * below/right, every other pixel along the seam takes the darker shade.
+ */
+function dither(px, { keep = () => false, step = 1 } = {}) {
+  const src = px.clone();
+  for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+    const v = src.get(x, y);
+    if (v < 0 || keep(v) || (x + y) % 2) continue;
+    const below = src.get(x, y + 1);
+    const right = src.get(x + 1, y);
+    if (below === v - step && !keep(below)) px.set(x, y, below);
+    else if (right === v - step && !keep(right)) px.set(x, y, right);
+  }
+  return px;
+}
+
+/**
+ * Shade a set of "region" masks into an index canvas the same way for every
+ * item and small object: edges facing the light (up/left) one step lighter,
+ * edges facing away one step darker, and a 1px outline around the whole
+ * silhouette. regions: [{ has(x,y), m: material {at, mid}, flat? }] painted in order.
+ */
+function shadeRegions(px, regions, outline, { hi = 1, lo = 1 } = {}) {
+  const any = (x, y) => regions.some((r) => r.has(x, y));
+  for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+    const reg = [...regions].reverse().find((r) => r.has(x, y));
+    if (!reg) {
+      if (outline != null && (any(x - 1, y) || any(x + 1, y) || any(x, y - 1) || any(x, y + 1))) px.set(x, y, outline);
+      continue;
+    }
+    const { m } = reg;
+    const base = reg.base ?? m.mid;
+    if (reg.flat) {
+      px.set(x, y, m.at(base));
+      continue;
+    }
+    const lit = !reg.has(x - 1, y) || !reg.has(x, y - 1);
+    const dark = !reg.has(x + 1, y) || !reg.has(x, y + 1);
+    px.set(x, y, m.at(lit && !dark ? base + hi : dark && !lit ? base - lo : base));
+  }
+  return px;
+}
+
+/** A palette builder shared by blocks and items: add ramps, get materials back. */
+function palette() {
+  const c = [];
+  return {
+    c,
+    add(colors, mid = Math.floor((colors.length - 1) / 2)) {
+      const o = c.length;
+      c.push(...colors.map(rgba));
+      const n = colors.length;
+      return { o, n, mid, at: (l) => o + Math.max(0, Math.min(n - 1, Math.round(l))) };
+    },
+    ramp(base, n, opts = {}) {
+      return this.add(ramp(base, n, opts), opts.mid ?? Math.floor((n - 1) / 2));
+    },
+  };
+}
+
+/** Composite b over a (both RGBA Images of the same size), returns a. */
+function layer(a, b) {
+  for (let i = 0; i < a.data.length; i += 4) if (b.data[i + 3]) a.data.set(b.data.slice(i, i + 4), i);
+  return a;
+}
+
+/** Stack frames (Images of S×S) into one vertical animation strip. */
+function strip(frames) {
+  const S = frames[0].w;
+  const out = new Image(S, S * frames.length);
+  frames.forEach((f, i) => out.data.set(f.data, i * S * S * 4));
+  return out;
+}
+
+module.exports = { rng, ramp, hex, mixc, toHsv, fromHsv, Px, blob, lump, cells, noise, despeckle, dither, shadeRegions, palette, layer, strip, upscale, over, Image, rgba };

@@ -6,5 +6,6 @@
   "key.pimpin.minimap": "Toggle minimap",
   "key.pimpin.minimap_zoom": "Minimap zoom",
   "key.pimpin.big_map": "Big map (hold, scroll to zoom)",
-  "key.pimpin.boost": "Toggle FPS boost"
+  "key.pimpin.boost": "Toggle FPS boost",
+  "key.pimpin.waypoint": "Add waypoint"
 }

@@ -55,7 +55,24 @@ async function list() {
     const meta = await readJson(path.join(dirs.instances, id, META), null);
     if (meta) out.push({ ...meta, id, running: running.has(id), content: undefined, contentCount: (meta.content || []).length });
   }
-  return out.sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0));
+  out.sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0));
+  // Get the instance people are most likely to play ready ahead of time.
+  const next = out.find((m) => m.lastPlayed && !m.running);
+  if (next) warm(next);
+  return out;
+}
+
+/** Re-checks every game file (hashes included) and re-downloads anything broken. */
+async function repair(id) {
+  if (running.has(id)) throw new Error('Close the game first.');
+  const meta = await get(id);
+  await minecraft.installVersion(meta, dirOf(id), (p) => emit('game:progress', { id, ...p }), { verify: true });
+  emit('game:progress', { id, stage: 'Done', done: 1, total: 1 });
+  return { ok: true };
+}
+
+function warm(meta) {
+  minecraft.prepare(meta, dirOf(meta.id)).catch(() => {});
 }
 
 async function create({ name, mcVersion, loader = 'fabric', loaderVersion = null, icon = 'violet', essentials = false, iconUrl = null }) {
@@ -128,9 +145,14 @@ async function launch(id, { server, world } = {}) {
   logs.set(id, []);
   emit('game:state', { id, state: 'preparing' });
   try {
-    const account = await auth.getLaunchAccount(settings.activeAccount);
+    // Account refresh may hit the network; do it while the game files are checked.
+    const accountReady = auth.getLaunchAccount(settings.activeAccount);
+    accountReady.catch(() => {});
     // Keep the bundled Pimpin Client jar in step with this launcher build.
     await content.refreshPimpinClient(holder(meta)).catch((err) => pushLog(id, `[Pimpin] Could not update Pimpin Client: ${err.message}`));
+    const gameReady = minecraft.prepare(meta, dirOf(id));
+    gameReady.catch(() => {});
+    const account = await accountReady;
     const { child, loaderVersion } = await minecraft.launch(
       {
         instance: meta,
@@ -411,6 +433,8 @@ module.exports = {
   getLogs,
   isAnyRunning,
   holder: async (id) => holder(await get(id)),
+  warm: async (id) => warm(await get(id)),
+  repair,
   dirOf,
   installModpack,
   duplicate,

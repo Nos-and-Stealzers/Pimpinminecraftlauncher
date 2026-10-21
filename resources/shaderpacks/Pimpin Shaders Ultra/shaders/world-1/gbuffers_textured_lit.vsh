@@ -9,4 +9,5 @@
 #include "/lib/shadow.glsl"
 #include "/lib/waving.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/program/simple_vsh.glsl"

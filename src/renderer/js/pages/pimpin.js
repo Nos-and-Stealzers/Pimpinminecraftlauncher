@@ -2,27 +2,24 @@
 // game-settings presets for an instance.
 import { el, icon, clear, errorToast, toast, confirmModal } from '../dom.js';
 import { api, state, refreshInstances } from '../state.js';
-import { cube3d } from '../fx3d.js';
+import { lightbox } from './library.js';
 
 const COMBOS = [
   {
     mode: 'fps',
     name: 'Max FPS',
-    block: 'emerald',
     icon: 'bolt',
     text: 'Pimpin Performance pack, FPS game settings, plus FPS Boost (Sodium & co.) and Background Saver on Fabric/Quilt.',
   },
   {
     mode: 'balanced',
     name: 'Balanced',
-    block: 'gold',
     icon: 'sun',
     text: 'Pimpin Pretty pack, balanced game settings and Pimpin Shaders Lite, plus FPS Boost, 3D skin layers and connected textures on Fabric/Quilt.',
   },
   {
     mode: 'pretty',
     name: 'Max Pretty',
-    block: 'diamond',
     icon: 'sparkle',
     text: 'Pimpin Pretty pack, pretty game settings and Pimpin Shaders Ultra, plus 3D skin layers, better animations, connected textures and dynamic lights.',
   },
@@ -38,7 +35,7 @@ export async function drawPimpin(root, inst) {
 
   const guard = () => {
     if (!running()) return true;
-    toast('Close the game first — Minecraft saves its options when it quits.', 'err');
+    toast('Close the game first. Minecraft overwrites its options when it quits.', 'err');
     return false;
   };
 
@@ -61,9 +58,9 @@ export async function drawPimpin(root, inst) {
     clear(packsRow, status.map((p, i) => {
       const actions = el('div', { class: 'row wrap' });
       const main = el('button', { class: `btn ${p.active ? '' : 'primary'}` }, icon(p.active ? 'check' : p.installed ? 'play' : 'download'), p.active ? 'Turned on' : p.installed ? 'Turn on' : 'Install & turn on');
-      main.addEventListener('click', () => guard() && busy(main, 'Working…', async () => {
+      main.addEventListener('click', () => guard() && busy(main, 'Working', async () => {
         status = p.active ? await api.call('packs:toggle', inst.id, p.id, false) : await api.call('packs:install', inst.id, p.id);
-        toast(p.active ? `${p.name} turned off` : `${p.name} is on — it loads the next time you play`);
+        toast(p.active ? `${p.name} turned off` : `${p.name} is on. It loads the next time you play.`);
         drawPacks();
       }));
       if (p.active) main.title = 'Click to turn it off';
@@ -103,19 +100,19 @@ export async function drawPimpin(root, inst) {
       const actions = el('div', { class: 'row wrap' });
       const main = el('button', { class: `btn ${p.active ? '' : 'primary'}` }, icon(p.active ? 'check' : p.installed ? 'play' : 'download'), p.active ? 'Turned on' : p.installed ? 'Turn on' : 'Install & turn on');
       if (p.active) main.title = 'Click to turn shaders off';
-      main.addEventListener('click', () => guard() && busy(main, 'Working…', async () => {
+      main.addEventListener('click', () => guard() && busy(main, 'Working', async () => {
         if (p.active) {
           shaderStatus = await api.call('shaders:toggle', inst.id, p.id, false);
           toast(`${p.name} turned off`);
         } else if (p.installed) {
           shaderStatus = await api.call('shaders:toggle', inst.id, p.id, true);
-          toast(`${p.name} is on. It loads the next time you play`);
+          toast(`${p.name} is on. It loads the next time you play.`);
         } else {
           const res = await api.call('shaders:install', inst.id, p.id);
           shaderStatus = res.status;
           await refreshInstances();
           if (res.failed.length) toast(`${p.name} installed, but: ${res.failed.join('; ')}`, 'err', 9000);
-          else toast(`${p.name} is on, with Iris. It loads the next time you play`);
+          else toast(`${p.name} is on, with Iris. It loads the next time you play.`);
         }
         drawShaders();
       }));
@@ -141,7 +138,7 @@ export async function drawPimpin(root, inst) {
         onclick: () => api.call('shaders:export', p.id).then((f) => f && toast('Shader pack saved')).catch(errorToast),
       }, icon('upload'), 'Export'));
       return el('div', { class: `card pack-card shader-card${p.active ? ' on' : ''}` },
-        el('div', { class: 'shader-shots' }, SHOTS.map((shot) => el('img', { src: `img/shaders/${p.id}-${shot}.jpg`, alt: `${p.name}, ${shot}`, title: shot[0].toUpperCase() + shot.slice(1), loading: 'lazy' }))),
+        el('div', { class: 'shader-shots' }, SHOTS.map((shot) => el('img', { src: `img/shaders/${p.id}-${shot}.jpg`, alt: `${p.name}, ${shot}`, title: shot[0].toUpperCase() + shot.slice(1), loading: 'lazy', onclick: () => lightbox(`img/shaders/${p.id}-${shot}.jpg`) }))),
         el('div', { class: 'pack-body' },
           el('div', { class: 'row' },
             el('h3', { class: 'grow' }, p.name),
@@ -163,7 +160,7 @@ export async function drawPimpin(root, inst) {
           class: 'btn sm',
           onclick: async (e) => {
             if (!guard()) return;
-            await busy(e.currentTarget, 'Applying…', async () => {
+            await busy(e.currentTarget, 'Applying', async () => {
               await api.call('game:applyPreset', inst.id, p.id);
               toast(`${p.name} applied to ${inst.name}`);
             });
@@ -172,12 +169,12 @@ export async function drawPimpin(root, inst) {
   };
 
   const combos = el('div', { class: 'combo-grid' }, COMBOS.map((c) => {
-    const btn = el('button', { class: 'btn primary' }, icon(c.icon), `Go ${c.name}`);
+    const btn = el('button', { class: 'btn sm' }, `Apply ${c.name}`);
     btn.addEventListener('click', async () => {
       if (!guard()) return;
       const extra = inst.loader === 'vanilla' ? '\n\nThis is a Vanilla instance, so only the pack and game settings are applied. Switch to Fabric for the mods.' : '';
-      if (!(await confirmModal(c.name, `${c.text}${extra}`, { confirm: `Go ${c.name}` }))) return;
-      await busy(btn, 'Setting up…', async () => {
+      if (!(await confirmModal(c.name, `${c.text}${extra}`, { confirm: 'Apply' }))) return;
+      await busy(btn, 'Setting up', async () => {
         const res = await api.call('packs:combo', inst.id, c.mode);
         status = res.status;
         drawPacks();
@@ -185,31 +182,30 @@ export async function drawPimpin(root, inst) {
         drawShaders();
         await refreshInstances();
         if (res.failed.length) toast(`Done, but some parts aren't available for ${inst.mcVersion}: ${res.failed.join('; ')}`, 'err', 9000);
-        else toast(`${c.name} is ready — press Play!`);
+        else toast(`${c.name} applied`);
       });
     });
-    return el('div', { class: `card combo combo-${c.mode}` },
-      el('div', { class: 'combo-block' }, cube3d(c.block, 46, true)),
-      el('div', { class: 'grow' }, el('h3', {}, c.name), el('p', { class: 'muted' }, c.text)),
+    return el('div', { class: 'card combo' },
+      el('div', { class: 'head' }, el('div', { class: 'ico' }, icon(c.icon)), el('h3', {}, c.name)),
+      el('p', { class: 'muted' }, c.text),
       btn);
   }));
 
   root.append(
-    el('div', { class: 'pimpin-banner' },
+    el('div', { class: 'pimpin-intro' },
       el('div', { class: 'grow' },
-        el('div', { class: 'hero-eyebrow' }, 'Pimpin Specials'),
-        el('h2', {}, 'Our own packs, made for ', el('span', { class: 'grad' }, `Minecraft ${inst.mcVersion}`)),
-        el('p', { class: 'muted' }, 'Original resource packs and shaders made for the launcher, plus one-click setups. Packs, shaders and settings apply the next time you press Play.')),
-      el('div', { class: 'banner-blocks' }, ['grass', 'diamond', 'gold'].map((b) => cube3d(b, 40, true)))),
+        el('h2', {}, 'Pimpin Specials'),
+        el('p', { class: 'muted' }, `Resource packs, shaders and game settings made for this launcher, built for Minecraft ${inst.mcVersion}. Changes apply the next time you press Play.`))),
+    el('h2', { class: 'section', style: { marginTop: 0 } }, 'Setups', el('small', {}, 'Pack, shader and settings in one go')),
     combos,
-    el('h2', { class: 'section' }, icon('palette'), 'Resource packs', el('small', {}, 'Use one or both — the one turned on last wins where they overlap')),
+    el('h2', { class: 'section' }, 'Resource packs', el('small', {}, 'Use one or both. The one turned on last wins where they overlap.')),
     packsRow,
-    el('h2', { class: 'section' }, icon('sun'), 'Shaders', el('small', {}, 'Runs with Iris on Fabric/Quilt (installed for you) or OptiFine')),
+    el('h2', { class: 'section' }, 'Shaders', el('small', {}, 'Runs with Iris on Fabric or Quilt (installed for you) or OptiFine')),
     shadersRow,
-    el('h2', { class: 'section' }, icon('sliders'), 'Game settings', el('small', {}, 'Writes options.txt for this instance')),
+    el('h2', { class: 'section' }, 'Game settings', el('small', {}, 'Writes options.txt for this instance')),
     presetsRow,
   );
-  clear(packsRow, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Drawing textures…'));
+  clear(packsRow, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading packs'));
   try {
     status = await api.call('packs:status', inst.id);
     await drawPacks();

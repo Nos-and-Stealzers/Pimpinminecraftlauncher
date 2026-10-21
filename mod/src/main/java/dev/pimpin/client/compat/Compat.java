@@ -88,4 +88,8 @@ public final class Compat {
         s = s.replace('_', ' ');
         return s.isEmpty() ? "Unknown" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
+
+    public static String keyName(net.minecraft.client.KeyMapping key) {
+        return key == null ? "?" : key.getTranslatedKeyMessage().getString();
+    }
 }

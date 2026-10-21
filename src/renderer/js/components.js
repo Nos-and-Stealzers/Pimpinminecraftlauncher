@@ -4,18 +4,10 @@ import { el, icon, modal, popover, closePopover, toast, errorToast, microsoftLog
 import {
   api, state, notify, refreshAccounts, refreshInstances, selectInstance, getVersions, activeAccount, headUrl, LOADER_LABEL, ICON_KEYS,
 } from './state.js';
-import { cube3d } from './fx3d.js';
-
-const ICON_BLOCKS = { violet: 'amethyst', crimson: 'redstone', emerald: 'emerald', ocean: 'diamond', gold: 'gold', grass: 'grass', night: 'obsidian', pack: 'bookshelf' };
-
 export function instIcon(inst, size = '') {
   const cls = `inst-icon ${size} ic-${inst?.icon || 'violet'}`;
   const url = inst?.iconUrl && safeUrl(inst.iconUrl);
   if (url) return el('div', { class: cls }, el('img', { src: url, alt: '' }));
-  if (state.settings?.blockIcons) {
-    const px = size === 'lg' ? 36 : size === 'sm' ? 18 : 24;
-    return el('div', { class: `${cls} as-block` }, cube3d(ICON_BLOCKS[inst?.icon] || 'amethyst', px, true));
-  }
   const letter = (inst?.name || '?').trim().charAt(0).toUpperCase();
   return el('div', { class: cls }, letter);
 }
@@ -27,7 +19,7 @@ export function instSubtitle(inst) {
 // ------------------------------------------------------------------ play --
 export async function playInstance(id, opts = {}) {
   if (!activeAccount()) {
-    toast('Add an account first — click "Sign in" in the top-right corner.', 'info');
+    toast('Sign in or add an offline account first.', 'info');
     document.querySelector('.account-btn')?.click();
     return;
   }
@@ -37,7 +29,7 @@ export async function playInstance(id, opts = {}) {
   notify('game');
   try {
     await api.call('instances:launch', id, opts);
-    toast(`Launching ${inst?.name || 'Minecraft'}…`);
+    toast(`Launching ${inst?.name || 'Minecraft'}`);
   } catch (err) {
     state.game[id] = { state: 'stopped' };
     notify('game');
@@ -133,7 +125,7 @@ function openAccountMenu(anchor) {
           },
         },
         microsoftLogo(),
-        el('div', { class: 'grow' }, el('b', {}, 'Sign in with Microsoft'), el('span', {}, 'Play online on any server')),
+        el('div', { class: 'grow' }, el('b', {}, 'Sign in with Microsoft'), el('span', {}, 'Needed for online servers')),
       ),
       el('div', { class: 'pop-sep' }),
       el('div', { class: 'pop-title' }, 'Offline account'),
@@ -182,15 +174,15 @@ export async function newInstanceModal(preset = {}) {
   let showSnapshots = false;
   let loaderGames = {};
 
-  const name = el('input', { class: 'input', placeholder: 'My awesome instance', maxlength: 40 });
-  const versionSel = el('select', { class: 'select' }, el('option', {}, 'Loading…'));
+  const name = el('input', { class: 'input', placeholder: 'My instance', maxlength: 40 });
+  const versionSel = el('select', { class: 'select' }, el('option', {}, 'Loading'));
   const loaderVerSel = el('select', { class: 'select' });
   const loaderVerField = el('label', { class: 'field' }, 'Loader version', loaderVerSel);
   const essentials = el('input', { type: 'checkbox', checked: true });
   const essentialsRow = el(
     'label',
     { class: 'set-row card', style: { padding: '14px 16px', cursor: 'pointer' } },
-    el('div', { class: 'grow' }, el('b', {}, 'Include Pimpin Essentials'), el('span', {}, 'FPS Boost (Sodium & friends), Zoom and Mod Menu — like Feather & Lunar out of the box.')),
+    el('div', { class: 'grow' }, el('b', {}, 'Add Pimpin Essentials'), el('span', {}, 'Sodium and other FPS mods, zoom and Mod Menu.')),
     el('span', { class: 'switch' }, essentials, el('span')),
   );
   const snapToggle = el('input', { type: 'checkbox' });
@@ -221,7 +213,7 @@ export async function newInstanceModal(preset = {}) {
     loaderVerField.classList.toggle('hidden', loader === 'vanilla');
     essentialsRow.classList.toggle('hidden', loader === 'vanilla');
     if (loader === 'vanilla') return;
-    loaderVerSel.replaceChildren(el('option', {}, 'Loading…'));
+    loaderVerSel.replaceChildren(el('option', {}, 'Loading'));
     try {
       const vs = await api.call('loaders:versions', loader, versionSel.value);
       loaderVerSel.replaceChildren(

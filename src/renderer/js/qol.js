@@ -3,8 +3,7 @@
 import { el, icon, clear, modal, toast, errorToast, markdown } from './dom.js';
 import { api, state, updateSettings, refreshAccounts, refreshInstances, selectedInstance, getVersions } from './state.js';
 import { playInstance, newInstanceModal } from './components.js';
-import { PRESETS } from './appearance.js';
-import { cube3d } from './fx3d.js';
+import { THEMES, ACCENTS, themeName, accentName } from './appearance.js';
 
 const openLink = (u) => api.call('shell:openExternal', u);
 
@@ -28,17 +27,17 @@ export function updateModal() {
   const draw = (u) => {
     const status = {
       idle: 'Not checked yet.',
-      checking: 'Checking for updates…',
+      checking: 'Checking for updates',
       'up-to-date': "You're on the latest version.",
       available: `Pimpin ${u.version} is available.`,
-      downloading: `Downloading Pimpin ${u.version}… ${u.percent || 0}%`,
-      ready: `Pimpin ${u.version} is downloaded — restart to install it.`,
+      downloading: `Downloading Pimpin ${u.version}: ${u.percent || 0}%`,
+      ready: `Pimpin ${u.version} is downloaded. Restart to install it.`,
       manual: `Pimpin ${u.version} is available. This copy can't update itself, so download the new version.`,
       error: `Couldn't check for updates: ${u.error}`,
     }[u.state] || '';
     clear(body,
       el('div', { class: 'update-head' },
-        el('div', { class: 'update-cube' }, cube3d(u.state === 'ready' || u.state === 'up-to-date' ? 'emerald' : 'diamond', 40, true)),
+        icon(u.state === 'up-to-date' ? 'check' : 'download'),
         el('div', { class: 'grow' },
           el('b', {}, `You have Pimpin ${u.current || state.info?.version}`),
           el('div', { class: 'muted' }, status),
@@ -47,7 +46,7 @@ export function updateModal() {
     clear(actions,
       el('button', { class: 'btn ghost', onclick: () => api.call('shell:openExternal', 'https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases') }, icon('external'), 'All releases'),
       el('span', { class: 'grow' }),
-      u.state === 'ready' ? el('button', { class: 'btn primary', onclick: () => api.call('update:install') }, icon('refresh'), 'Restart & update')
+      u.state === 'ready' ? el('button', { class: 'btn primary', onclick: () => api.call('update:install') }, icon('refresh'), 'Restart and update')
         : u.state === 'available' ? el('button', { class: 'btn primary', onclick: () => api.call('update:download') }, icon('download'), 'Download update')
           : u.state === 'manual' ? el('button', { class: 'btn primary', onclick: () => api.call('update:download') }, icon('download'), `Download ${u.version}`)
             : el('button', { class: 'btn', disabled: u.state === 'checking' || u.state === 'downloading', onclick: () => api.call('update:check').then(draw).catch(errorToast) }, icon('refresh'), 'Check now'));
@@ -69,7 +68,7 @@ export async function whatsNew() {
     modal({
       title: `Welcome to Pimpin ${v}`,
       wide: true,
-      body: [el('p', { class: 'muted', style: { marginTop: 0 } }, 'The launcher just updated. Here is what changed:'), el('div', { class: 'notes' }, markdown(rel.notes || 'Bug fixes and polish.', openLink))],
+      body: [el('p', { class: 'muted', style: { marginTop: 0 } }, 'Changes in this version:'), el('div', { class: 'notes' }, markdown(rel.notes || 'Bug fixes.', openLink))],
     });
   } catch {
     toast(`Updated to Pimpin ${v}`);
@@ -91,25 +90,26 @@ export async function onboarding(navigate) {
     await updateSettings({ onboarded: true });
     m.close();
   };
-  const m = modal({ title: 'Welcome to Pimpin', wide: true, body, actions: [foot], onClose: () => updateSettings({ onboarded: true }).catch(() => {}) });
+  const m = modal({ title: 'Set up Pimpin Launcher', wide: true, body, actions: [foot], onClose: () => updateSettings({ onboarded: true }).catch(() => {}) });
   const dots = () => el('div', { class: 'steps' }, [0, 1, 2, 3].map((i) => el('i', { class: i === step ? 'on' : i < step ? 'done' : '' })));
-  const nav = (next, label = 'Next') => clear(foot, dots(), el('span', { class: 'grow' }), el('button', { class: 'btn ghost', onclick: finish }, 'Skip setup'),
+  const nav = (next, label = 'Next') => clear(foot, dots(), el('span', { class: 'grow' }), el('button', { class: 'btn ghost', onclick: finish }, 'Skip'),
     step ? el('button', { class: 'btn', onclick: () => { step--; draw(); } }, 'Back') : null,
     el('button', { class: 'btn primary', onclick: next }, label, icon('chevronRight')));
 
   const draw = async () => {
     if (step === 0) {
       clear(body, el('div', { class: 'onboard-hero' },
-        el('div', { class: 'onboard-blocks' }, ['grass', 'diamond', 'tnt', 'gold'].map((b) => cube3d(b, 46, true))),
-        el('h2', {}, 'Your Minecraft, pimped out.'),
-        el('p', { class: 'muted' }, "Let's get you playing in about a minute: sign in, pick a look, and we'll make your first game with the best FPS mods, our own Pimpin Client and our resource packs.")));
-      nav(() => { step = 1; draw(); }, "Let's go");
+        el('img', { src: 'img/logo.svg', alt: '' }),
+        el('div', {},
+          el('h2', {}, 'Welcome to Pimpin Launcher'),
+          el('p', { class: 'muted' }, 'Three quick steps: add an account, pick a theme, and create your first instance. Everything here can be changed later.'))));
+      nav(() => { step = 1; draw(); }, 'Start');
     } else if (step === 1) {
       const name = el('input', { class: 'input', placeholder: 'Player name for offline play', maxlength: 16 });
       const accounts = state.accounts.accounts;
       clear(body,
         el('h3', {}, 'Who is playing?'),
-        accounts.length ? el('p', { class: 'muted' }, `Signed in as ${accounts.map((a) => a.name).join(', ')}. You can add more accounts from the top-right menu.`) : el('p', { class: 'muted' }, 'Sign in with your Microsoft account to play online, or pick a name to play offline.'),
+        accounts.length ? el('p', { class: 'muted' }, `Signed in as ${accounts.map((a) => a.name).join(', ')}. More accounts can be added from the menu in the top right.`) : el('p', { class: 'muted' }, 'A Microsoft account is needed for online servers. Offline accounts work for single-player and LAN.'),
         el('div', { class: 'onboard-choices' },
           el('button', {
             class: 'choice',
@@ -123,7 +123,7 @@ export async function onboarding(navigate) {
                 errorToast(err);
               }
             },
-          }, icon('user'), el('b', {}, 'Microsoft account'), el('span', {}, 'Play online, servers and Realms')),
+          }, icon('user'), el('b', {}, 'Microsoft account'), el('span', {}, 'Online servers and Realms')),
           el('div', { class: 'choice' }, icon('globe'), el('b', {}, 'Offline'), el('span', {}, 'Single-player and LAN'), name,
             el('button', {
               class: 'btn sm',
@@ -141,32 +141,35 @@ export async function onboarding(navigate) {
             }, 'Use this name'))));
       nav(() => { step = 2; draw(); }, accounts.length ? 'Next' : 'Skip for now');
     } else if (step === 2) {
-      const looks = [['modern', 'Pimpin Modern', 'amethyst'], ['og', 'OG Minecraft', 'grass'], ['nether', 'Nether', 'netherrack'], ['end', 'The End', 'purpur']];
-      clear(body, el('h3', {}, 'Pick a look'), el('p', { class: 'muted' }, 'Change it any time in Settings.'),
-        el('div', { class: 'onboard-choices four' }, looks.map(([k, label, b]) =>
-          el('button', { class: `choice${state.settings.uiStyle === PRESETS[k].uiStyle && state.settings.background === PRESETS[k].background ? ' on' : ''}`, onclick: async () => { await updateSettings(PRESETS[k]); draw(); } },
-            el('div', { class: 'choice-block' }, cube3d(b, 36, true)), el('b', {}, label)))));
+      const THEME_NOTE = { modern: 'Dark grey, easy on the eyes', midnight: 'True black, for OLED screens', light: 'Light grey and white' };
+      clear(body, el('h3', {}, 'Theme'), el('p', { class: 'muted' }, 'Settings has more options.'),
+        el('div', { class: 'onboard-choices' }, THEMES.map(([k, label]) =>
+          el('button', { class: `choice${themeName() === k ? ' on' : ''}`, onclick: async () => { await updateSettings({ uiStyle: k }); draw(); } },
+            el('b', {}, label), el('span', {}, THEME_NOTE[k])))),
+        el('div', { class: 'field', style: { marginTop: '16px' } }, 'Accent colour',
+          el('div', { class: 'accent-pick' }, Object.entries(ACCENTS).map(([k, hex]) =>
+            el('button', { class: accentName() === k ? 'on' : '', title: k, style: { background: hex }, onclick: async () => { await updateSettings({ accent: k }); draw(); } })))));
       nav(() => { step = 3; draw(); });
     } else {
-      const version = el('select', { class: 'select' }, el('option', {}, 'Loading…'));
+      const version = el('select', { class: 'select' }, el('option', {}, 'Loading'));
       getVersions().then(({ latest, versions }) => {
         const releases = versions.filter((v) => v.type === 'release').map((v) => v.id);
-        clear(version, releases.map((v) => el('option', { value: v }, v === '1.21.4' ? `${v} — Pimpin Client` : v === latest.release ? `${v} — latest` : v)));
+        clear(version, releases.map((v) => el('option', { value: v }, v === '1.21.4' ? `${v} (Pimpin Client)` : v === latest.release ? `${v} (latest)` : v)));
         version.value = releases.includes('1.21.4') ? '1.21.4' : latest.release;
       }).catch(() => {});
       const setups = [
-        ['fps', 'bolt', 'Max FPS', 'Sodium & co., Pimpin Client, Performance pack and FPS settings'],
-        ['pretty', 'sparkle', 'Max Pretty', 'Shaders, Pimpin Client, Pretty pack and 3D skin layers'],
-        ['vanilla', 'box', 'Plain Vanilla', 'The game exactly as Mojang made it'],
+        ['fps', 'bolt', 'Max FPS', 'Sodium and other FPS mods, Pimpin Client, the Performance pack and FPS settings'],
+        ['pretty', 'sparkle', 'Max Pretty', 'Shaders, Pimpin Client, the Pretty pack and 3D skin layers'],
+        ['vanilla', 'box', 'Vanilla', 'No mods'],
       ];
-      clear(body, el('h3', {}, 'Make your first game'),
+      clear(body, el('h3', {}, 'First instance'),
         el('div', { class: 'onboard-choices' }, setups.map(([k, ic, label, desc]) =>
           el('button', { class: `choice${setup === k ? ' on' : ''}`, onclick: () => { setup = k; draw(); } }, icon(ic), el('b', {}, label), el('span', {}, desc)))),
         el('label', { class: 'field', style: { marginTop: '14px', maxWidth: '320px' } }, 'Minecraft version', version));
       nav(async () => {
         const btn = foot.querySelector('.btn.primary');
         btn.disabled = true;
-        btn.replaceChildren(el('span', { class: 'spin xs' }), 'Setting up…');
+        btn.replaceChildren(el('span', { class: 'spin xs' }), 'Setting up');
         try {
           const inst = await api.call('instances:create', {
             name: setup === 'vanilla' ? `Vanilla ${version.value}` : `Pimpin ${version.value}`,
@@ -182,13 +185,13 @@ export async function onboarding(navigate) {
           await refreshInstances();
           await finish();
           navigate('home');
-          toast('All set — press PLAY!');
+          toast('Ready. Press Play.');
         } catch (err) {
           errorToast(err);
           btn.disabled = false;
-          btn.replaceChildren('Create & finish');
+          btn.replaceChildren('Create and finish');
         }
-      }, 'Create & finish');
+      }, 'Create and finish');
     }
   };
   draw();
@@ -204,7 +207,7 @@ function commands(navigate) {
     { label: 'Settings', hint: 'Ctrl+,', icon: 'settings', run: () => navigate('settings') },
     { label: 'New instance', hint: 'Ctrl+N', icon: 'plus', run: () => newInstanceModal() },
     { label: 'New server', icon: 'plus', run: () => navigate('servers', { create: true }) },
-    { label: 'Import an instance (.zip)', icon: 'upload', run: () => importInstance(navigate) },
+    { label: 'Import a modpack or instance', sub: '.mrpack or Pimpin .zip', icon: 'upload', run: () => importInstance(navigate) },
     { label: 'Update all mods in every instance', icon: 'refresh', run: () => updateAllMods() },
     { label: 'Check for launcher updates', icon: 'download', run: () => updateModal() },
     { label: 'Browse mods', icon: 'puzzle', run: () => navigate('library', { type: 'mod' }) },
@@ -212,12 +215,13 @@ function commands(navigate) {
     { label: 'Browse resource packs', icon: 'palette', run: () => navigate('library', { type: 'resourcepack' }) },
     { label: 'Open the data folder', icon: 'folder', run: () => api.call('shell:openRoot') },
     { label: 'Keyboard shortcuts', hint: 'F1', icon: 'info', run: () => shortcutsHelp() },
-    ...Object.entries({ modern: 'Pimpin Modern', og: 'OG Minecraft', nether: 'Nether', end: 'The End' }).map(([k, n]) => ({ label: `Theme: ${n}`, icon: 'palette', run: () => updateSettings(PRESETS[k]).then(() => toast(`${n} theme on`)) })),
+    ...THEMES.map(([k, n]) => ({ label: `Theme: ${n}`, icon: 'palette', run: () => updateSettings({ uiStyle: k }) })),
   ];
   for (const i of state.instances) {
     cmds.push({ label: `Play ${i.name}`, sub: `${i.mcVersion} · ${i.loader}`, icon: 'play', run: () => updateSettings({ lastInstance: i.id }).then(() => playInstance(i.id)) });
     cmds.push({ label: `Open ${i.name}`, sub: 'Instance', icon: 'layers', run: () => navigate('instances', { id: i.id }) });
-    cmds.push({ label: `Pimpin Specials for ${i.name}`, sub: 'Packs, combos & settings', icon: 'sparkle', run: () => navigate('instances', { id: i.id, tab: 'pimpin' }) });
+    cmds.push({ label: `Pimpin Specials for ${i.name}`, sub: 'Packs, shaders and game settings', icon: 'sparkle', run: () => navigate('instances', { id: i.id, tab: 'pimpin' }) });
+    cmds.push({ label: `Logs for ${i.name}`, sub: 'Instance', icon: 'terminal', run: () => navigate('instances', { id: i.id, tab: 'console' }) });
   }
   for (const s of state.servers) cmds.push({ label: `Open server ${s.name}`, sub: `${s.software || 'paper'} ${s.mcVersion}`, icon: 'server', run: () => navigate('servers', { id: s.id }) });
   return cmds;
@@ -230,7 +234,7 @@ export function commandPalette(navigate) {
   const all = commands(navigate);
   let sel = 0;
   let shown = all;
-  const input = el('input', { class: 'input palette-input', placeholder: 'Type a command, instance or server…' });
+  const input = el('input', { class: 'input palette-input', placeholder: 'Search commands, instances and servers' });
   const list = el('div', { class: 'palette-list' });
   const score = (c, q) => {
     const t = `${c.label} ${c.sub || ''}`.toLowerCase();
@@ -278,9 +282,9 @@ export function commandPalette(navigate) {
 
 // ------------------------------------------------------------- shortcuts --
 const SHORTCUTS = [
-  ['Ctrl + K', 'Command palette — find anything'],
+  ['Ctrl + K', 'Search commands, instances and servers'],
   ['Ctrl + Enter / F5', 'Play the selected instance'],
-  ['Ctrl + 1 … 4', 'Home, Library, Instances, Servers'],
+  ['Ctrl + 1 to 4', 'Home, Library, Instances, Servers'],
   ['Ctrl + ,', 'Settings'],
   ['Ctrl + N', 'New instance'],
   ['Ctrl + F', 'Search the library'],
@@ -328,9 +332,10 @@ export function installShortcuts(navigate, current) {
 }
 
 // --------------------------------------------------------------- helpers --
-export async function importInstance(navigate) {
+/** Pick a file, or pass a path (drag and drop). Takes .mrpack and Pimpin .zip exports. */
+export async function importInstance(navigate, file) {
   try {
-    const inst = await api.call('instances:import');
+    const inst = await api.call('instances:import', file);
     if (!inst) return;
     await refreshInstances();
     toast(`Imported ${inst.name}`);
@@ -341,7 +346,7 @@ export async function importInstance(navigate) {
 }
 
 export async function updateAllMods() {
-  toast('Checking every instance for mod updates…', 'info');
+  toast('Checking every instance for mod updates', 'info');
   try {
     const r = await api.call('content:updateAll');
     const msg = r.updated ? `Updated ${r.updated} mod${r.updated > 1 ? 's' : ''} in ${r.instances} instance${r.instances > 1 ? 's' : ''}` : 'Everything is already up to date';
