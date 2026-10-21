@@ -54,7 +54,7 @@ export function updateModal() {
           u.state === 'downloading' ? el('div', { class: 'progress' }, el('i', { style: { width: `${u.percent || 0}%` } })) : null)),
       u.notes ? [el('h3', { class: 'notes-title' }, `What's new in ${u.version}`), el('div', { class: 'notes' }, markdown(u.notes, openLink))] : null);
     clear(actions,
-      el('button', { class: 'btn ghost', onclick: () => api.call('shell:openExternal', 'https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases') }, icon('external'), 'All releases'),
+      el('button', { class: 'btn ghost', onclick: () => api.call('shell:openExternal', 'https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases') }, icon('external'), 'All releases'),
       el('span', { class: 'grow' }),
       u.state === 'ready' ? el('button', { class: 'btn primary', onclick: installUpdate }, icon('refresh'), 'Restart and update')
         : u.state === 'available' ? el('button', { class: 'btn primary', onclick: () => api.call('update:download') }, icon('download'), 'Download update')

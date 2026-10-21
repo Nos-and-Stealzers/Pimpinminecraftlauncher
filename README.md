@@ -53,7 +53,7 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
 
 ## Download
 
-Every push to `main` publishes a new release with installers on the [Releases page](https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases). Installed copies update themselves.
+Every push to `main` publishes a new release with installers to the public [pimpin-launcher-releases](https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases) repo (this source repo is private, so launchers couldn't check it). Installed copies check there and update themselves; the workflow needs the `RELEASES_TOKEN` secret (a token that can write releases to that repo).
 
 | Platform | File |
 | --- | --- |

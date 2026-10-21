@@ -493,7 +493,9 @@ app.on('second-instance', showWindow);
 
 // ---------------------------------------------------------------- updates --
 // PIMPIN_UPDATE_REPO only exists to test the update screens against another repo
-const REPO = process.env.PIMPIN_UPDATE_REPO || 'Nos-and-Stealzers/Pimpinminecraftlauncher';
+// Installers are published to a public repo (the source repo is private), so
+// launchers can check for updates without a login.
+const REPO = process.env.PIMPIN_UPDATE_REPO || 'Nos-and-Stealzers/pimpin-launcher-releases';
 
 /** Installer builds update themselves; portable, .deb, macOS and dev builds get a download link. */
 function canSelfUpdate() {

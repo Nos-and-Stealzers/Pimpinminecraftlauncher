@@ -98,3 +98,26 @@ jobs:
             **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. On Debian/Ubuntu you can install the `.deb` instead.
 
             Already installed with the Setup exe or AppImage? The launcher updates itself — no need to download again.
+      # Launchers check this public repo for updates (the source repo is private).
+      - name: Publish to the public downloads repo
+        if: steps.tag.outputs.prerelease == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: Nos-and-Stealzers/pimpin-launcher-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Pimpin Launcher ${{ steps.tag.outputs.name }}
+          make_latest: true
+          files: |
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
+          body: |
+            **Windows 10/11:** download `PimpinLauncher-Setup-*.exe` and run it (or `PimpinLauncher-Portable-*.exe`, no install needed).
+            The app isn't code-signed yet, so SmartScreen may warn you: click **More info → Run anyway**.
+
+            **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. On Debian/Ubuntu you can install the `.deb` instead.
+
+            Already installed with the Setup exe or AppImage? The launcher updates itself.
