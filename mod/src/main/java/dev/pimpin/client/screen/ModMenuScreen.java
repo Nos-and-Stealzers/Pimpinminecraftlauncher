@@ -191,6 +191,8 @@ public final class ModMenuScreen extends BaseScreen {
                     "§d" + Compat.keyName(PimpinClient.minimapKey) + "§7 minimap, §d" + Compat.keyName(PimpinClient.minimapZoomKey) + "§7 minimap zoom",
                     "§d" + Compat.keyName(PimpinClient.bigMapKey) + "§7 hold for the big map (scroll to zoom)",
                     "§d" + Compat.keyName(PimpinClient.waypointKey) + "§7 adds a waypoint where you stand",
+                    "§7Quality of life settings: native toggle sprint, effect timers (off by default)",
+                    "§d" + Compat.keyName(PimpinClient.toggleSprintKey) + "§7 switches sprint mode; use vanilla Sprint to sprint",
             };
             for (String tip : tips) {
                 if (ty > y + h - 12) break;

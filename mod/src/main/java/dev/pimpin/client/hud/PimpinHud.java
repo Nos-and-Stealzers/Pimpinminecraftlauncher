@@ -5,6 +5,7 @@ import dev.pimpin.client.compat.Compat;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.Zoom;
+import dev.pimpin.client.feature.ToggleSprint;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -108,11 +109,19 @@ public final class PimpinHud {
         int w = (int) (sw / s);
         int h = (int) (sh / s);
         int lineH = font.lineHeight + 2;
+        // Read effects at render time: no stale durations after expiration/respawn/travel.
+        List<String> displayLines = new ArrayList<>(lines);
+        String sprint = ToggleSprint.indicator(client);
+        if (sprint != null) displayLines.add(sprint);
+        int reserved = (c.keystrokes ? 78 : 0) + 50;
+        if (c.minimap && c.minimapCorner == c.hudCorner) reserved += (int) ((c.minimapSize + 28) / s);
+        int available = Math.max(0, (h - reserved) / lineH - displayLines.size());
+        displayLines.addAll(EffectsHud.lines(client, Math.min(w - 24, 240), available));
         int panelW = 0;
-        for (String l : lines) panelW = Math.max(panelW, font.width(l));
+        for (String l : displayLines) panelW = Math.max(panelW, font.width(l));
         panelW += 10;
         int keysH = c.keystrokes ? 74 : 0;
-        int panelH = lines.isEmpty() ? 0 : lines.size() * lineH + 6;
+        int panelH = displayLines.isEmpty() ? 0 : displayLines.size() * lineH + 6;
         int blockW = Math.max(panelW, c.keystrokes ? 70 : 0);
         boolean right = c.hudCorner == 1 || c.hudCorner == 3;
         boolean bottom = c.hudCorner >= 2;
@@ -129,13 +138,13 @@ public final class PimpinHud {
 
         g.push();
         g.scale(s);
-        if (!lines.isEmpty()) {
+        if (!displayLines.isEmpty()) {
             if (c.hudBackground) {
                 g.fill(x, y, x + panelW, y + panelH, 0x88000000);
                 g.fill(x, y, x + 2, y + panelH, c.accent);
             }
             int ty = y + 4;
-            for (String l : lines) {
+            for (String l : displayLines) {
                 g.text(font, l, x + 6, ty, 0xFFFFFFFF);
                 ty += lineH;
             }

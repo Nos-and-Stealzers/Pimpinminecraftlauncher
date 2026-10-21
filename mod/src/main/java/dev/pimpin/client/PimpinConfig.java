@@ -28,6 +28,11 @@ public final class PimpinConfig {
     public boolean showDeath = true;
     public boolean keystrokes = true;
     public boolean armorHud = true;
+    public boolean effectHud = false;
+    public int effectHudRows = 8;
+    // Temporarily use vanilla accessibility toggle sprint during a world session.
+    public boolean toggleSprint = false;
+    public Boolean sprintNativeBackup = null;
     public int hudCorner = 0; // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     public float hudScale = 1.0f;
     public int accent = 0xFFB56CFF;
@@ -95,6 +100,7 @@ public final class PimpinConfig {
         instance.mapZoom = Math.max(0, Math.min(4, instance.mapZoom));
         instance.minimapCorner = Math.floorMod(instance.minimapCorner, 4);
         instance.hudCorner = Math.floorMod(instance.hudCorner, 4);
+        instance.effectHudRows = Math.max(4, Math.min(12, instance.effectHudRows));
     }
 
     public static void save() {

@@ -1,8 +1,9 @@
 // Electron entry point: creates the custom frameless window and exposes the
 // launcher backend to the UI through a single whitelisted RPC channel.
 const path = require('path');
-const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard } = require('electron');
 const store = require('./store');
+const screenshots = require('./screenshots').createScreenshots({ instancesRoot: store.dirs.instances, nativeImage, clipboard });
 const auth = require('./auth');
 const minecraft = require('./minecraft');
 const instances = require('./instances');
@@ -245,8 +246,13 @@ const handlers = {
   'instances:logs': (id) => instances.getLogs(id),
   'instances:duplicate': (id) => instances.duplicate(id),
   'instances:worlds': (id) => instances.worlds(id),
-  'instances:screenshots': (id) => instances.screenshots(id),
-  'instances:deleteScreenshot': (id, name) => instances.deleteScreenshot(id, name),
+  'instances:screenshots': async (id) => (await screenshots.list(id)).screenshots,
+  'screenshots:list': (id) => screenshots.list(id),
+  'screenshots:favorite': (id, name, on) => screenshots.favorite(id, name, on),
+  'screenshots:delete': (id, name) => screenshots.remove(id, name),
+  'screenshots:copy': (id, name) => screenshots.copy(id, name),
+  'screenshots:export': (id, name) => screenshots.exportWithDialog(id, name, (options) => dialog.showSaveDialog(win, options)),
+  'instances:deleteScreenshot': (id, name) => screenshots.remove(id, name),
   'instances:crashInfo': (id) => instances.crashInfo(id),
   'instances:repair': (id) => instances.repair(id),
   'instances:warm': (id) => instances.warm(id),

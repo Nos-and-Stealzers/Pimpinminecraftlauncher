@@ -149,6 +149,7 @@ loom {
         client {
             runDir = "../../run/${mc}"
             if (project.hasProperty('devReload')) vmArg '-Dpimpin.dev.reloadOnTitle=true'
+            if (project.hasProperty('clientQolTest')) vmArg '-Dpimpin.dev.clientQolTest=true'
             if (project.hasProperty('quickPlay')) {
                 programArgs '--quickPlaySingleplayer', project.property('quickPlay'), '--width', '1280', '--height', '720'
             }

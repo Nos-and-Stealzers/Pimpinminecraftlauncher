@@ -6,6 +6,7 @@ import dev.pimpin.client.compat.Compat;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.Waypoints;
+import dev.pimpin.client.feature.ToggleSprint;
 import dev.pimpin.client.hud.Minimap;
 import dev.pimpin.client.compat.Draw;
 import net.minecraft.client.gui.components.Button;
@@ -17,9 +18,9 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/** Pimpin Client settings, in four tabs of on/off and cycling buttons. */
+/** Pimpin Client settings, in five tabs of on/off and cycling buttons. */
 public final class PimpinSettingsScreen extends BaseScreen {
-    private static final String[] TABS = {"HUD", "Minimap", "Zoom & FPS", "General"};
+    private static final String[] TABS = {"HUD", "Minimap", "Zoom & FPS", "General", "Quality of life"};
     private static final String[] CORNERS = {"Top left", "Top right", "Bottom left", "Bottom right"};
     private static final int[] ACCENTS = {0xFFB56CFF, 0xFFFF4FB8, 0xFF55FF55, 0xFF55FFFF, 0xFFFFAA00, 0xFFFF5555, 0xFFFFFFFF};
     private static final String[] ACCENT_NAMES = {"Violet", "Pink", "Green", "Aqua", "Gold", "Red", "White"};
@@ -115,15 +116,25 @@ public final class PimpinSettingsScreen extends BaseScreen {
                 Integer[] limits = {10, 15, 30, 60};
                 r.add(cycle("Background FPS", () -> String.valueOf(c.backgroundFpsLimit), () -> c.backgroundFpsLimit = limits[next(limits, c.backgroundFpsLimit)]));
             }
-            default -> {
+            case 3 -> {
                 r.add(toggle("Pimpin button on menus", () -> c.menuButtons, v -> c.menuButtons = v));
                 r.add(toggle("Pimpin loading screen", () -> c.brandedLoading, v -> c.brandedLoading = v));
                 r.add(cycle("Controls", () -> "Open", () -> Compat.setScreen(minecraft, keyBinds())));
                 r.add(cycle("Mod menu", () -> "Open", () -> Compat.setScreen(minecraft, new ModMenuScreen(this))));
                 r.add(cycle("Reset all settings", () -> "Click", () -> {
                     if (c.boostActive) FpsBooster.disable(minecraft);
+                    ToggleSprint.restore(minecraft);
                     PimpinConfig.reset();
                 }));
+            }
+            default -> {
+                r.add(toggle("Native toggle sprint", () -> c.toggleSprint, v -> {
+                    c.toggleSprint = v;
+                    ToggleSprint.tick(minecraft);
+                }));
+                r.add(toggle("Active effects HUD", () -> c.effectHud, v -> c.effectHud = v));
+                r.add(cycle("Effect rows", () -> String.valueOf(c.effectHudRows), () -> c.effectHudRows = c.effectHudRows >= 12 ? 4 : c.effectHudRows + 4));
+                r.add(cycle("Controls", () -> "Open", () -> Compat.setScreen(minecraft, keyBinds())));
             }
         }
         return r;
@@ -182,6 +193,13 @@ public final class PimpinSettingsScreen extends BaseScreen {
     @Override
     protected void draw(Draw g, int mouseX, int mouseY, float delta) {
         g.centered(font, "§d✦ §fPimpin Client", width / 2, 10, 0xFFFFFFFF);
+        if (tab == 4) {
+            int y = 112;
+            for (String tip : new String[]{"Uses vanilla Sprint key; not auto-run.", "Native controls still decide when sprinting is allowed.", "Previous sprint mode is restored on leaving the world.", "Effects use HUD position, size and background settings.", "HUD must be on. Green: beneficial, red: harmful.", "Timers are server ticks; Infinite means no expiry.", "Optional mode key starts unbound; assign in Controls."}) {
+                g.centered(font, tip, width / 2, y, 0xFFCCCCCC);
+                y += 12;
+            }
+        }
     }
 
     @Override
