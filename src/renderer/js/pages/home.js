@@ -1,251 +1,241 @@
-// Home: hero with the big PLAY button, client feature toggles and news.
+// Home: the selected instance with Play, your skin, worlds and other
+// instances to jump back into, one-click client features and news.
 import { el, icon, clear, errorToast, toast, fmtDuration, timeAgo, switchEl } from '../dom.js';
-import { api, state, subscribe, selectedInstance, activeAccount, refreshInstances, LOADER_LABEL } from '../state.js';
+import { api, state, subscribe, selectedInstance, selectInstance, activeAccount, refreshInstances, headUrl, LOADER_LABEL } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, openInstancePicker, newInstanceModal } from '../components.js';
-import { mountSkin, blockScene, effectsOn } from '../fx3d.js';
+import { importInstance } from '../qol.js';
+import { mountSkin } from '../skin3d.js';
 
 let newsCache = null;
 
 export function render(page, _params, navigate) {
-  const hero = el('div');
+  const top = el('div');
+  const jump = el('div');
   const features = el('div');
   const news = el('div');
-  page.append(hero, features, news);
+  page.append(top, jump, features, news);
 
+  let playRefs = null;
+  let skinKey = null;
+  let skinCleanup = null;
   let featureFor = null;
+  const skinPanel = el('div', { class: 'card home-skin' });
+
   const draw = (topic) => {
-    renderHero(hero, navigate, topic);
     const sel = selectedInstance();
-    if (topic !== 'game-progress' && (sel?.id !== featureFor || topic === 'instances-content')) {
-      featureFor = sel?.id;
+    if (topic === 'game-progress') return updateProgress(playRefs, sel && state.game[sel.id]);
+    if (!sel) {
+      clear(top, welcome(navigate));
+      jump.replaceChildren();
+      features.replaceChildren();
+      featureFor = null;
+      return;
+    }
+    playRefs = playButton(sel);
+    clear(top, el('div', { class: 'home-top' }, instancePanel(sel, playRefs.btn, navigate), skinPanel));
+    updateProgress(playRefs, state.game[sel.id]);
+
+    const acc = activeAccount();
+    const key = `${acc?.id}|${state.settings.skinMode}`;
+    if (key !== skinKey) {
+      skinKey = key;
+      skinCleanup?.();
+      skinCleanup = null;
+      drawSkin(skinPanel, acc).then((fn) => (skinCleanup = fn));
+    }
+    drawJump(jump, sel);
+    if (sel.id !== featureFor || topic === 'instances-content') {
+      featureFor = sel.id;
       if (state.settings.showFeatures === false) features.replaceChildren();
-      else renderFeatures(features, sel, navigate);
+      else drawFeatures(features, sel, navigate);
     }
   };
   draw();
-  if (state.settings.showNews !== false) renderNews(news);
+  if (state.settings.showNews !== false) drawNews(news);
   const unsub = subscribe((topic) => {
     if (['instances', 'instances-content', 'game', 'game-progress', 'accounts', 'settings'].includes(topic)) draw(topic);
   });
-  return unsub;
+  return () => {
+    unsub();
+    skinCleanup?.();
+  };
 }
 
-function heroArt(acc) {
-  const art = el('div', { class: 'hero-art' }, el('div', { class: 'grid' }));
-  if (!acc) {
-    if (effectsOn()) art.append(blockScene());
-    else art.append(el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }), el('div', { class: 'cube' }));
-    return art;
-  }
-  const id = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
-  const skin = el('div', { class: 'skin' }, el('div', { class: 'pedestal' }));
-  art.append(skin);
-  const mode = state.settings.skinMode || '3d';
-  if (mode === 'off') return art;
-  if (state.settings.skinPedestal === 'block') skin.classList.add('block-pedestal');
-  if (mode === '3d') {
-    skin.classList.add('live');
-    mountSkin(skin, id, { pose: state.settings.skinPose, spin: state.settings.skinSpin, pedestal: state.settings.skinPedestal });
-  } else {
-    skin.append(el('img', { src: `https://mc-heads.net/body/${encodeURIComponent(id)}/right`, alt: '', onerror: (e) => e.target.parentElement.remove() }));
-  }
-  return art;
+function welcome(navigate) {
+  return el('div', { class: 'card home-welcome' },
+    el('img', { src: 'img/logo.svg', alt: '', style: { width: '56px', height: '56px' } }),
+    el('div', { class: 'grow' },
+      el('h1', {}, 'No instances yet'),
+      el('p', {}, 'An instance is one Minecraft setup: a game version, a mod loader and its own mods, worlds and settings. Java and game files are downloaded when you first press Play.'),
+      el('div', { class: 'row wrap' },
+        el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance'),
+        el('button', { class: 'btn', onclick: () => navigate('library', { type: 'modpack' }) }, icon('library'), 'Browse modpacks'),
+        el('button', { class: 'btn ghost', onclick: () => importInstance(navigate) }, icon('upload'), 'Import file'))));
 }
 
-let heroKey = '';
-let heroRefs = null;
-
-function playButton(sel, g) {
-  if (g?.state === 'running') {
-    return { btn: el('button', { class: 'play-btn running', onclick: () => stopInstance(sel.id) }, icon('stop'), el('span', { class: 'label' }, 'PLAYING', el('small', {}, 'Click to force close'))) };
-  }
+function playButton(sel) {
+  const g = state.game[sel.id];
+  if (g?.state === 'running') return { btn: el('button', { class: 'play-btn running', title: 'Force close the game', onclick: () => stopInstance(sel.id) }, icon('stop'), 'Stop') };
   if (g?.state === 'preparing') {
-    const stage = el('small', {}, 'Preparing');
+    const label = el('span', {}, 'Preparing');
     const fill = el('span', { class: 'fill' });
-    return { btn: el('button', { class: 'play-btn busy' }, el('span', { class: 'spin' }), el('span', { class: 'label' }, 'LAUNCHING', stage), fill), stage, fill };
+    return { btn: el('button', { class: 'play-btn busy' }, el('span', { class: 'spin xs' }), label, fill), label, fill };
   }
-  return { btn: el('button', { class: 'play-btn', onclick: () => playInstance(sel.id) }, icon('play'), 'PLAY') };
+  return { btn: el('button', { class: 'play-btn', onclick: () => playInstance(sel.id) }, icon('play'), 'Play') };
 }
 
-function updateProgress(g) {
-  if (!heroRefs?.stage) return;
+function updateProgress(refs, g) {
+  if (!refs?.label) return;
   const p = g?.progress || {};
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-  heroRefs.stage.textContent = `${p.stage || 'Preparing'}${p.total > 1 ? ` · ${pct}%` : ''}`;
-  heroRefs.fill.style.width = `${pct}%`;
+  refs.label.textContent = `${p.stage || 'Preparing'}${p.total > 1 ? ` ${pct}%` : ''}`;
+  refs.fill.style.width = `${pct}%`;
 }
 
-function renderHero(root, navigate, topic) {
-  const sel = selectedInstance();
-  const acc = activeAccount();
-  const g = sel ? state.game[sel.id] : null;
-  const key = JSON.stringify([sel?.id, sel?.name, sel?.icon, sel?.mcVersion, sel?.loader, sel?.playTime, sel?.contentCount, acc?.id, g?.state, effectsOn(), ...['skinMode', 'skinPose', 'skinSpin', 'skinPedestal', 'blockIcons'].map((k) => state.settings[k])]);
-  // Progress ticks only touch the button; rebuilding would restart animations.
-  if (key === heroKey && root.childElementCount) {
-    updateProgress(g);
-    return;
-  }
-  heroKey = key;
-
-  if (!sel) {
-    heroRefs = null;
-    clear(
-      root,
-      el(
-        'div',
-        { class: 'hero' },
-        heroArt(acc),
-        el('div', { class: 'hero-eyebrow' }, 'Welcome to Pimpin'),
-        el('h1', { class: 'hero-title' }, 'Your Minecraft, ', el('span', { class: 'grad' }, 'pimped out.')),
-        el('p', { class: 'muted', style: { margin: '0 0 24px', maxWidth: '520px', lineHeight: 1.5 } }, 'Create an instance to get started. Pick a version, choose Fabric for mods & shaders, and we handle Java, libraries and assets for you.'),
-        el('div', { class: 'hero-actions' }, el('button', { class: 'play-btn', onclick: () => newInstanceModal() }, icon('plus'), 'CREATE')),
-      ),
-    );
-    return;
-  }
-
-  heroRefs = playButton(sel, g);
-  updateProgress(g);
-  const picker = el('div', { class: 'instance-picker', title: 'Switch instance' }, instIcon(sel, 'sm'), el('div', { class: 'meta' }, el('b', {}, sel.name), el('span', {}, instSubtitle(sel))), icon('chevron'));
-  picker.addEventListener('click', () => openInstancePicker(picker));
-
-  const worldCard = el('div', { class: 'card stat world-stat' }, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v dim' }, '—'));
-  api.call('instances:worlds', sel.id).then((worlds) => {
-    const w = worlds[0];
-    if (!w) {
-      clear(worldCard, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v dim', style: { fontSize: '15px' } }, 'No worlds yet'));
-      return;
-    }
-    clear(
-      worldCard,
-      w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico ph' }, icon('globe')),
-      el('div', { class: 'grow' }, el('div', { class: 'k' }, 'Jump back in'), el('div', { class: 'v world-name' }, w.folder)),
-      el('button', { class: 'btn sm primary', title: `Play ${w.folder}`, disabled: Boolean(g?.state), onclick: () => playInstance(sel.id, { world: w.folder }) }, icon('play')),
-    );
-  }).catch(() => {});
-
-  clear(
-    root,
-    el(
-      'div',
-      { class: 'hero' },
-      heroArt(acc),
-      el('div', { class: 'hero-eyebrow' }, acc ? `Welcome back, ${acc.name}` : 'Ready when you are'),
-      el('h1', { class: 'hero-title' }, el('span', { class: 'grad' }, sel.name)),
-      el(
-        'div',
-        { class: 'hero-meta' },
-        el('span', { class: 'chip accent' }, icon('box'), `Minecraft ${sel.mcVersion}`),
-        el('span', { class: 'chip' }, icon('puzzle'), LOADER_LABEL[sel.loader] || sel.loader),
-        sel.contentCount ? el('span', { class: 'chip' }, icon('layers'), `${sel.contentCount} mods & packs`) : null,
-        sel.modpack ? el('span', { class: 'chip' }, icon('library'), 'Modpack') : null,
-        g?.state === 'running' ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null,
-      ),
-      el(
-        'div',
-        { class: 'hero-actions' },
-        heroRefs.btn,
-        picker,
-        el('button', { class: 'btn icon hero-gear', title: 'Instance settings', onclick: () => navigate('instances', { id: sel.id }) }, icon('settings')),
-      ),
-    ),
-    el(
-      'div',
-      { class: 'quick-stats' },
-      el('div', { class: 'card stat' }, el('div', { class: 'k' }, 'Play time'), el('div', { class: 'v' }, fmtDuration(sel.playTime))),
-      el('div', { class: 'card stat' }, el('div', { class: 'k' }, 'Last played'), el('div', { class: 'v' }, timeAgo(sel.lastPlayed))),
-      worldCard,
-    ),
-  );
+function instancePanel(sel, play, navigate) {
+  const running = state.game[sel.id]?.state === 'running';
+  const switcher = el('button', { class: 'btn', title: 'Pick another instance' }, 'Switch', icon('chevron'));
+  switcher.addEventListener('click', () => openInstancePicker(switcher, { align: 'left' }));
+  const loader = `${LOADER_LABEL[sel.loader] || sel.loader}${sel.loaderVersion ? ` ${sel.loaderVersion}` : ''}`;
+  return el('div', { class: 'card home-inst' },
+    el('div', { class: 'head' },
+      instIcon(sel, 'lg'),
+      el('div', { class: 'grow' },
+        el('h1', {}, sel.name),
+        el('div', { class: 'meta' },
+          `Minecraft ${sel.mcVersion}`, el('span', { class: 'sep' }, '·'), loader,
+          sel.modpack ? [el('span', { class: 'sep' }, '·'), 'Modpack'] : null,
+          running ? el('span', { class: 'chip ok', style: { marginLeft: '6px' } }, el('span', { class: 'dot' }), 'Running') : null))),
+    el('div', { class: 'home-actions' },
+      play,
+      switcher,
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn icon ghost', title: 'Open folder', onclick: () => api.call('instances:open', sel.id) }, icon('folder')),
+      el('button', { class: 'btn icon ghost', title: 'Instance settings', onclick: () => navigate('instances', { id: sel.id, tab: 'settings' }) }, icon('settings'))),
+    el('div', { class: 'home-stats' },
+      stat('Played', fmtDuration(sel.playTime)),
+      stat('Last played', timeAgo(sel.lastPlayed)),
+      stat('Installed', sel.contentCount ? `${sel.contentCount} mods & packs` : 'Nothing yet')));
 }
 
-async function renderFeatures(root, sel, navigate) {
-  if (!sel) return root.replaceChildren();
-  const head = el('h2', { class: 'section' }, icon('wand'), 'Client features', el('small', {}, `One-click mods for ${sel.name}`), el('span', { class: 'grow' }), el('button', { class: 'btn sm', onclick: () => navigate('instances', { id: sel.id, tab: 'pimpin' }) }, icon('sparkle'), 'Pimpin packs'), el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod' }) }, 'Browse all mods', icon('external')));
+const stat = (k, v) => el('div', {}, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v));
+
+async function drawSkin(panel, acc) {
+  const stage = el('div', { class: 'stage-wrap' });
+  clear(panel, stage,
+    el('div', { class: 'who' },
+      acc ? el('img', { class: 'avatar', src: headUrl(acc), alt: '' }) : el('div', { class: 'avatar' }),
+      el('div', { class: 'grow' }, el('b', {}, acc ? acc.name : 'Not signed in'), el('span', {}, acc ? (acc.type === 'msa' ? 'Microsoft account' : 'Offline account') : 'Use the menu in the top right'))));
+  const mode = state.settings.skinMode || '3d';
+  if (!acc || mode === 'off') {
+    stage.append(el('div', { class: 'empty' }, icon('user')));
+    return null;
+  }
+  const player = acc.type === 'offline' ? acc.name : acc.id.replace(/-/g, '');
+  const flat = () => stage.replaceChildren(el('img', { class: 'flat', src: `https://mc-heads.net/body/${encodeURIComponent(player)}/right`, alt: '', onerror: (e) => e.target.remove() }));
+  if (mode === '2d') {
+    flat();
+    return null;
+  }
+  const cleanup = await mountSkin(stage, player, 5);
+  if (!cleanup) flat();
+  return cleanup;
+}
+
+async function drawJump(root, sel) {
+  const others = state.instances.filter((i) => i.id !== sel.id && i.lastPlayed).slice(0, 4);
+  const worldsRow = el('div', { class: 'tile-row' });
+  clear(root,
+    el('h2', { class: 'section' }, 'Jump back in'),
+    worldsRow,
+    others.length ? [el('h2', { class: 'section' }, 'Other instances'), el('div', { class: 'tile-row' }, others.map((i) =>
+      el('div', { class: 'card tile', title: `Switch to ${i.name}`, onclick: () => selectInstance(i.id) },
+        instIcon(i, 'sm'),
+        el('div', { class: 'grow' }, el('b', {}, i.name), el('span', {}, `${instSubtitle(i)} · ${timeAgo(i.lastPlayed)}`)),
+        el('button', { class: 'mini-play', title: `Play ${i.name}`, onclick: (e) => { e.stopPropagation(); selectInstance(i.id).then(() => playInstance(i.id)); } }, icon('play')))))] : null);
+
+  let worlds = [];
+  try {
+    worlds = await api.call('instances:worlds', sel.id);
+  } catch {
+    // the saves folder can be missing on fresh instances
+  }
+  const busy = Boolean(state.game[sel.id]?.state);
+  if (!worlds.length) {
+    clear(worldsRow, el('div', { class: 'dim', style: { gridColumn: '1 / -1' } }, `No worlds in ${sel.name} yet. Worlds you create in-game show up here.`));
+    return;
+  }
+  clear(worldsRow, worlds.slice(0, 4).map((w) =>
+    el('div', { class: 'card tile', title: busy ? 'The game is already running' : `Play ${w.folder}`, onclick: () => !busy && playInstance(sel.id, { world: w.folder }) },
+      w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico' }, icon('globe')),
+      el('div', { class: 'grow' }, el('b', {}, w.folder), el('span', {}, `Played ${timeAgo(w.lastPlayed).toLowerCase()}`)),
+      busy ? null : el('span', { class: 'mini-play' }, icon('play')))));
+}
+
+async function drawFeatures(root, sel, navigate) {
+  const head = el('h2', { class: 'section' }, 'Client features', el('small', {}, sel.name), el('span', { class: 'grow' }),
+    el('button', { class: 'btn sm ghost', onclick: () => navigate('library', { type: 'mod', instanceId: sel.id }) }, 'Browse mods', icon('chevronRight')));
   if (sel.loader === 'vanilla') {
-    clear(
-      root,
-      head,
-      el('div', { class: 'card', style: { padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' } },
-        el('div', { class: 'grow' }, el('b', {}, 'This is a Vanilla instance'), el('div', { class: 'muted', style: { marginTop: '4px' } }, 'Switch it to Fabric to unlock FPS Boost, shaders, zoom, minimaps and the full mod library.')),
-        el('button', {
-          class: 'btn primary',
-          onclick: async () => {
-            try {
-              await api.call('instances:update', sel.id, { loader: 'fabric' });
-              await refreshInstances();
-              renderFeatures(root, { ...sel, loader: 'fabric' }, navigate);
-              toast(`${sel.name} now uses Fabric`);
-            } catch (err) {
-              errorToast(err);
-            }
-          },
-        }, icon('puzzle'), 'Switch to Fabric'),
-      ),
-    );
+    const toFabric = el('button', { class: 'btn' }, icon('puzzle'), 'Switch to Fabric');
+    toFabric.addEventListener('click', async () => {
+      try {
+        await api.call('instances:update', sel.id, { loader: 'fabric' });
+        await refreshInstances();
+        toast(`${sel.name} now uses Fabric`);
+      } catch (err) {
+        errorToast(err);
+      }
+    });
+    clear(root, head, el('div', { class: 'card set-row', style: { padding: '14px 16px' } },
+      el('div', { class: 'grow' }, el('b', {}, 'Vanilla instance'), el('span', {}, 'FPS mods, shaders, zoom and minimaps need Fabric.')), toFabric));
     return;
   }
-  clear(root, head, el('div', { class: 'row muted', style: { padding: '10px 2px' } }, el('span', { class: 'spin' }), 'Loading features…'));
+  clear(root, head, el('div', { class: 'row muted' }, el('span', { class: 'spin xs' }), 'Loading'));
   try {
     const list = await api.call('features:list', { kind: 'instance', id: sel.id });
     clear(root, head, featureGrid(sel, list));
   } catch (err) {
-    clear(root, head, el('div', { class: 'card empty' }, 'Could not load features: ', err.message));
+    clear(root, head, el('div', { class: 'card empty' }, `Could not load features: ${err.message}`));
   }
 }
 
-export function featureGrid(sel, list) {
-  return el(
-    'div',
-    { class: 'feature-grid' },
-    list.map((f) => {
-      const card = el('div', { class: `feature${f.enabled ? ' on' : ''}${f.custom ? ' own' : ''}${f.note ? ' unavailable' : ''}` });
-      const sw = switchEl(f.enabled, async (on, label, input) => {
-        label.classList.add('busy');
-        input.disabled = true;
-        try {
-          const res = await api.call('features:set', { kind: 'instance', id: sel.id }, f.id, on);
-          card.classList.toggle('on', on);
-          if (res.failed?.length) toast(`Some parts are not available for ${sel.mcVersion}: ${res.failed.join('; ')}`, 'err', 8000);
-          else toast(`${f.name} ${on ? 'enabled' : 'disabled'}`);
-        } catch (err) {
-          input.checked = !on;
-          errorToast(err);
-        } finally {
-          label.classList.remove('busy');
-          input.disabled = false;
-        }
-      });
-      if (f.note && !f.enabled) sw.querySelector('input').disabled = true;
-      card.append(
-        el('div', { class: 'feature-top' }, el('div', { class: 'ico' }, icon(f.icon)), f.custom ? el('span', { class: 'chip accent own-chip' }, 'Pimpin') : null, sw),
-        el('div', { class: 'txt' }, el('b', {}, f.name), el('span', {}, f.note ? `${f.desc} (${f.note})` : f.desc)));
-      return card;
-    }),
-  );
+export function featureGrid(inst, list) {
+  return el('div', { class: 'feature-grid' }, list.map((f) => {
+    const card = el('div', { class: `feature${f.enabled ? ' on' : ''}${f.note ? ' unavailable' : ''}` });
+    const sw = switchEl(f.enabled, async (on, label, input) => {
+      label.classList.add('busy');
+      input.disabled = true;
+      try {
+        const res = await api.call('features:set', { kind: 'instance', id: inst.id }, f.id, on);
+        card.classList.toggle('on', on);
+        if (res.failed?.length) toast(`Not available for ${inst.mcVersion}: ${res.failed.join('; ')}`, 'err', 8000);
+        else toast(`${f.name} ${on ? 'on' : 'off'}`);
+      } catch (err) {
+        input.checked = !on;
+        errorToast(err);
+      } finally {
+        label.classList.remove('busy');
+        input.disabled = false;
+      }
+    });
+    if (f.note && !f.enabled) sw.querySelector('input').disabled = true;
+    card.append(
+      el('div', { class: 'ico' }, icon(f.icon)),
+      el('div', { class: 'txt' }, el('b', {}, f.name, f.custom ? el('span', { class: 'chip accent' }, 'Pimpin') : null), el('span', {}, f.note ? `${f.desc} (${f.note})` : f.desc)),
+      sw);
+    return card;
+  }));
 }
 
-async function renderNews(root) {
-  const head = el('h2', { class: 'section' }, icon('globe'), 'Minecraft news');
-  clear(root, head);
+async function drawNews(root) {
   try {
     newsCache = newsCache || (await api.call('news:get'));
     if (!newsCache.length) return;
-    root.append(
-      el(
-        'div',
-        { class: 'news-grid' },
-        newsCache.slice(0, 8).map((n) =>
-          el(
-            'div',
-            { class: 'card news', onclick: () => n.link && api.call('shell:openExternal', n.link) },
-            n.image ? el('img', { src: n.image, alt: '', loading: 'lazy' }) : null,
-            el('div', { class: 'body' }, el('div', { class: 'date' }, n.date), el('b', {}, n.title), el('p', {}, n.text)),
-          ),
-        ),
-      ),
-    );
+    clear(root, el('h2', { class: 'section' }, 'Minecraft news'), el('div', { class: 'news-grid' }, newsCache.slice(0, 4).map((n) =>
+      el('div', { class: 'card news', onclick: () => n.link && api.call('shell:openExternal', n.link) },
+        n.image ? el('img', { src: n.image, alt: '', loading: 'lazy' }) : null,
+        el('div', { class: 'body' }, el('div', { class: 'date' }, n.date), el('b', {}, n.title), el('p', {}, n.text))))));
   } catch {
-    root.append(el('div', { class: 'card empty' }, 'News is unavailable offline.'));
+    clear(root, el('h2', { class: 'section' }, 'Minecraft news'), el('div', { class: 'dim' }, 'News needs an internet connection.'));
   }
 }

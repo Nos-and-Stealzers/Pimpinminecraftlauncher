@@ -1,5 +1,6 @@
-// Instances: grid of game profiles and a detail view with client features,
-// installed content, live console and per-instance settings.
+// Instances: the list (search, sort, group, grid or table) and the detail
+// view with features, Pimpin Specials, content, worlds, screenshots, files,
+// logs and per-instance settings.
 import { el, icon, clear, errorToast, toast, confirmModal, timeAgo, fmtDuration, switchEl, seg } from '../dom.js';
 import { api, state, subscribe, refreshInstances, selectInstance, getVersions, LOADER_LABEL, ICON_KEYS } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from '../components.js';
@@ -10,141 +11,226 @@ import { drawPimpin } from './pimpin.js';
 import { importInstance, updateAllMods } from '../qol.js';
 
 const tabMem = {};
+const PREFS_KEY = 'pimpin.instanceList';
+const prefs = { sort: 'played', group: 'none', view: 'grid', closed: [], ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
 
 export function render(page, params, navigate) {
   if (params.id) return renderDetail(page, params.id, navigate, params.tab);
   return renderList(page, params, navigate);
 }
 
+// "1.21.4" > "1.9" > "24w14a"; snapshots sort below releases
+function versionKey(v) {
+  const m = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(v || '');
+  return m ? Number(m[1]) * 1e6 + Number(m[2]) * 1e3 + Number(m[3] || 0) : 0;
+}
+
+const SORTS = {
+  played: ['Last played', (a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0)],
+  name: ['Name', (a, b) => a.name.localeCompare(b.name)],
+  time: ['Play time', (a, b) => (b.playTime || 0) - (a.playTime || 0)],
+  version: ['Game version', (a, b) => versionKey(b.mcVersion) - versionKey(a.mcVersion) || a.name.localeCompare(b.name)],
+  created: ['Date created', (a, b) => (b.created || 0) - (a.created || 0)],
+};
+const GROUPS = {
+  none: ['No groups', () => ''],
+  loader: ['Loader', (i) => LOADER_LABEL[i.loader] || i.loader],
+  version: ['Game version', (i) => /^\d+\.\d+/.exec(i.mcVersion)?.[0] || 'Snapshots'],
+  source: ['Source', (i) => (i.modpack ? 'Modpacks' : 'Made here')],
+};
+
+function quickPlay(i) {
+  const running = state.game[i.id]?.state === 'running';
+  const preparing = state.game[i.id]?.state === 'preparing';
+  return el('button', {
+    class: `mini-play quick${running ? ' running' : ''}`,
+    title: running ? 'Stop' : preparing ? 'Launching' : 'Play',
+    disabled: preparing,
+    onclick: (e) => {
+      e.stopPropagation();
+      if (running) stopInstance(i.id);
+      else selectInstance(i.id).then(() => playInstance(i.id));
+    },
+  }, preparing ? el('span', { class: 'spin xs' }) : icon(running ? 'stop' : 'play'));
+}
+
+function instCard(i, navigate) {
+  const running = state.game[i.id]?.state === 'running';
+  return el('div', { class: `card inst-card${running ? ' running' : ''}`, onclick: () => navigate('instances', { id: i.id }) },
+    el('div', { class: 'top' }, instIcon(i), el('div', { class: 'grow' }, el('b', {}, i.name), el('span', {}, instSubtitle(i)))),
+    el('div', { class: 'bottom' },
+      running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : el('span', {}, i.lastPlayed ? `${timeAgo(i.lastPlayed)} · ${fmtDuration(i.playTime)}` : 'Never played'),
+      i.contentCount ? el('span', { title: 'Mods and packs' }, icon('puzzle'), ` ${i.contentCount}`) : null,
+      quickPlay(i)));
+}
+
+function instTable(list, navigate) {
+  return el('table', { class: 'inst-table' },
+    el('thead', {}, el('tr', {}, ['Name', 'Version', 'Loader', 'Mods', 'Play time', 'Last played', ''].map((h) => el('th', {}, h)))),
+    el('tbody', {}, list.map((i) =>
+      el('tr', { onclick: () => navigate('instances', { id: i.id }) },
+        el('td', { class: 'name' }, el('div', { class: 'row' }, instIcon(i, 'xs'), i.name, state.game[i.id]?.state === 'running' ? el('span', { class: 'dot', title: 'Running' }) : null)),
+        el('td', {}, i.mcVersion),
+        el('td', {}, LOADER_LABEL[i.loader] || i.loader),
+        el('td', {}, String(i.contentCount || 0)),
+        el('td', {}, fmtDuration(i.playTime)),
+        el('td', {}, timeAgo(i.lastPlayed)),
+        el('td', {}, quickPlay(i))))));
+}
+
 function renderList(page, params, navigate) {
-  const grid = el('div', { class: 'inst-grid' });
-  const draw = () => {
-    clear(
-      grid,
-      state.instances.map((i) => {
-        const running = state.game[i.id]?.state === 'running';
-        const card = el(
-          'div',
-          { class: `card inst-card${running ? ' running' : ''}`, onclick: () => navigate('instances', { id: i.id }) },
-          el('div', { class: `glow ic-${i.icon || 'violet'}` }),
-          el('div', { class: 'top' }, instIcon(i), el('div', { class: 'grow' }, el('b', {}, i.name), el('span', {}, instSubtitle(i)))),
-          el('div', { class: 'bottom' },
-            running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : el('span', { class: 'dim' }, icon('clock'), ` ${timeAgo(i.lastPlayed)} · ${fmtDuration(i.playTime)}`),
-            i.contentCount ? el('span', { class: 'chip' }, icon('puzzle'), String(i.contentCount)) : null),
-        );
-        const quick = el('button', { class: `btn sm ${running ? '' : 'primary'} quick` }, icon(running ? 'stop' : 'play'), running ? 'Stop' : 'Play');
-        quick.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (running) stopInstance(i.id);
-          else selectInstance(i.id).then(() => playInstance(i.id));
-        });
-        card.append(quick);
-        return card;
-      }),
-      el('div', { class: 'card inst-card new', onclick: () => newInstanceModal() }, icon('plus'), el('b', {}, 'New instance'), el('span', { class: 'dim' }, 'Vanilla, Fabric or Quilt')),
-    );
+  const body = el('div');
+  const search = el('input', { class: 'input', placeholder: 'Search instances' });
+  const pickSel = (opts, key) => {
+    const s = el('select', { class: 'select auto' }, Object.entries(opts).map(([k, [label]]) => el('option', { value: k }, label)));
+    s.value = opts[prefs[key]] ? prefs[key] : Object.keys(opts)[0];
+    s.addEventListener('change', () => { prefs[key] = s.value; savePrefs(); draw(); });
+    return s;
   };
+
+  const draw = () => {
+    if (!state.instances.length) {
+      clear(body, el('div', { class: 'card empty' }, icon('layers'), el('h3', {}, 'No instances'),
+        el('div', {}, 'Create one, install a modpack from the library, or drop a .mrpack file onto this window.'),
+        el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance')));
+      return;
+    }
+    const q = search.value.trim().toLowerCase();
+    const list = state.instances
+      .filter((i) => !q || `${i.name} ${i.mcVersion} ${i.loader}`.toLowerCase().includes(q))
+      .sort((SORTS[prefs.sort] || SORTS.played)[1]);
+    if (!list.length) {
+      clear(body, el('div', { class: 'card empty' }, icon('search'), el('h3', {}, 'No matches'), el('div', {}, `Nothing called "${search.value.trim()}".`)));
+      return;
+    }
+    const groupOf = (GROUPS[prefs.group] || GROUPS.none)[1];
+    const groups = new Map();
+    for (const i of list) {
+      const g = groupOf(i);
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(i);
+    }
+    const keys = [...groups.keys()];
+    if (prefs.group === 'version') keys.sort((a, b) => versionKey(b) - versionKey(a));
+    else keys.sort();
+    const block = (items) => (prefs.view === 'table' ? instTable(items, navigate) : el('div', { class: 'inst-grid' }, items.map((i) => instCard(i, navigate))));
+    if (keys.length === 1 && !keys[0]) return clear(body, block(list));
+    clear(body, keys.map((k) => {
+      const closed = prefs.closed.includes(`${prefs.group}:${k}`);
+      const head = el('button', { class: `group-head${closed ? ' closed' : ''}`, onclick: () => {
+        const id = `${prefs.group}:${k}`;
+        prefs.closed = closed ? prefs.closed.filter((x) => x !== id) : [...prefs.closed, id];
+        savePrefs();
+        draw();
+      } }, icon('chevron'), k, el('span', { class: 'count' }, String(groups.get(k).length)));
+      return [head, closed ? null : block(groups.get(k))];
+    }));
+  };
+  search.addEventListener('input', draw);
+
   page.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', { class: 'page-title' }, 'Instances'), el('p', { class: 'page-sub' }, 'Each instance has its own version, mods, shaders, worlds and settings.')),
+      el('div', {}, el('h1', { class: 'page-title' }, 'Instances'), el('p', { class: 'page-sub' }, 'Each instance keeps its own version, mods, worlds and settings.')),
       el('div', { class: 'row' },
         el('button', { class: 'btn', title: 'Update the mods in every instance', onclick: () => updateAllMods() }, icon('refresh'), 'Update all'),
-        el('button', { class: 'btn', onclick: () => importInstance(navigate) }, icon('upload'), 'Import'),
-        el('button', { class: 'btn', onclick: () => navigate('library', { type: 'modpack' }) }, icon('library'), 'Install modpack'),
-        el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance')),
-    ),
-    grid,
+        el('button', { class: 'btn', title: 'Import a .mrpack modpack or a Pimpin .zip export', onclick: () => importInstance(navigate) }, icon('upload'), 'Import'),
+        el('button', { class: 'btn primary', onclick: () => newInstanceModal() }, icon('plus'), 'New instance'))),
+    el('div', { class: 'toolbar' },
+      el('div', { class: 'search' }, icon('search'), search),
+      el('span', { class: 'label' }, 'Sort'), pickSel(SORTS, 'sort'),
+      el('span', { class: 'label' }, 'Group'), pickSel(GROUPS, 'group'),
+      el('span', { class: 'grow' }),
+      seg([{ value: 'grid', label: 'Grid', icon: 'grid' }, { value: 'table', label: 'List', icon: 'menu' }], prefs.view, (v) => { prefs.view = v; savePrefs(); draw(); })),
+    body,
   );
   draw();
   if (params.create) newInstanceModal();
   return subscribe((t) => (t === 'instances' || t === 'game') && draw());
 }
 
+// --------------------------------------------------------------- detail --
 function renderDetail(page, id, navigate, initialTab) {
   let inst = state.instances.find((i) => i.id === id);
   if (!inst) {
-    page.append(el('div', { class: 'card empty' }, 'Instance not found.'));
+    page.append(el('div', { class: 'card empty' }, el('h3', {}, 'Instance not found'), el('button', { class: 'btn', onclick: () => navigate('instances') }, 'All instances')));
     return null;
   }
   let tab = initialTab || tabMem[id] || 'features';
   const head = el('div');
   const tabs = el('div', { class: 'tabs' });
   const body = el('div');
-  let offLog = null;
+  let offTab = null;
+
+  const remove = async () => {
+    if (!(await confirmModal('Delete instance?', `"${inst.name}" and all of its worlds, mods and settings will be deleted.`, { confirm: 'Delete', danger: true }))) return;
+    try {
+      await api.call('instances:delete', id);
+      await refreshInstances();
+      navigate('instances');
+      toast('Instance deleted');
+    } catch (err) {
+      errorToast(err);
+    }
+  };
+
+  // get the game files checked now so Play starts right away
+  api.call('instances:warm', id).catch(() => {});
+
+  const duplicate = async () => {
+    try {
+      const copy = await api.call('instances:duplicate', id);
+      await refreshInstances();
+      toast(`Created ${copy.name}`);
+      navigate('instances', { id: copy.id });
+    } catch (err) {
+      errorToast(err);
+    }
+  };
 
   const drawHead = () => {
     inst = state.instances.find((i) => i.id === id) || inst;
-    const g = state.game[id];
-    const running = g?.state === 'running';
-    const preparing = g?.state === 'preparing';
-    clear(
-      head,
-      el('button', { class: 'back', onclick: () => navigate('instances') }, icon('back'), 'All instances'),
+    const g = state.game[id]?.state;
+    clear(head,
+      el('button', { class: 'back', onclick: () => navigate('instances') }, icon('back'), 'Instances'),
       el('div', { class: 'detail-head' },
         instIcon(inst, 'lg'),
         el('div', { class: 'grow' },
           el('h1', {}, inst.name),
           el('div', { class: 'chips' },
-            el('span', { class: 'chip accent' }, `Minecraft ${inst.mcVersion}`),
+            el('span', { class: 'chip' }, `Minecraft ${inst.mcVersion}`),
             el('span', { class: 'chip' }, `${LOADER_LABEL[inst.loader]}${inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}`),
-            el('span', { class: 'chip' }, icon('clock'), fmtDuration(inst.playTime)),
-            running ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null)),
+            el('span', { class: 'chip', title: 'Play time' }, icon('clock'), fmtDuration(inst.playTime)),
+            g === 'running' ? el('span', { class: 'chip ok' }, el('span', { class: 'dot' }), 'Running') : null)),
         el('div', { class: 'row' },
-          el('button', { class: 'btn icon', title: 'Open folder', onclick: () => api.call('instances:open', id) }, icon('folder')),
-          el('button', { class: 'btn icon', title: 'Export as .zip (share or back up)', onclick: () => api.call('instances:export', id).then((f) => f && toast('Instance exported')).catch(errorToast) }, icon('archive')),
-          el('button', {
-            class: 'btn icon',
-            title: 'Duplicate instance',
-            onclick: async () => {
-              try {
-                const copy = await api.call('instances:duplicate', id);
-                await refreshInstances();
-                toast(`Created ${copy.name}`);
-                navigate('instances', { id: copy.id });
-              } catch (err) {
-                errorToast(err);
-              }
-            },
-          }, icon('layers')),
-          el('button', {
-            class: 'btn icon danger',
-            title: 'Delete instance',
-            onclick: async () => {
-              if (!(await confirmModal('Delete instance?', `"${inst.name}" and all of its worlds, mods and settings will be permanently deleted.`, { confirm: 'Delete', danger: true }))) return;
-              try {
-                await api.call('instances:delete', id);
-                await refreshInstances();
-                navigate('instances');
-                toast('Instance deleted');
-              } catch (err) {
-                errorToast(err);
-              }
-            },
-          }, icon('trash')),
-          running
-            ? el('button', { class: 'btn', style: { height: '44px', padding: '0 22px' }, onclick: () => stopInstance(id) }, icon('stop'), 'Stop')
-            : el('button', { class: 'btn primary', style: { height: '44px', padding: '0 26px', fontSize: '14px' }, disabled: preparing, onclick: () => { selectInstance(id); playInstance(id); } }, preparing ? el('span', { class: 'spin' }) : icon('play'), preparing ? 'Launching…' : 'Play')),
-      ),
-    );
+          el('button', { class: 'btn icon ghost', title: 'Open folder', onclick: () => api.call('instances:open', id) }, icon('folder')),
+          el('button', { class: 'btn icon ghost', title: 'Export as .zip', onclick: () => api.call('instances:export', id).then((f) => f && toast('Instance exported')).catch(errorToast) }, icon('archive')),
+          el('button', { class: 'btn icon ghost', title: 'Duplicate', onclick: duplicate }, icon('copy')),
+          el('button', { class: 'btn icon ghost danger', title: 'Delete', onclick: remove }, icon('trash')),
+          g === 'running'
+            ? el('button', { class: 'play-btn running', onclick: () => stopInstance(id) }, icon('stop'), 'Stop')
+            : el('button', { class: `play-btn${g === 'preparing' ? ' busy' : ''}`, disabled: g === 'preparing', onclick: () => selectInstance(id).then(() => playInstance(id)) },
+                g === 'preparing' ? el('span', { class: 'spin xs' }) : icon('play'), g === 'preparing' ? 'Launching' : 'Play'))));
   };
 
   const drawTabs = () => {
     const defs = [
-      ['features', 'Client features', 'wand'],
+      ['features', 'Features', 'wand'],
       ['pimpin', 'Pimpin Specials', 'sparkle'],
       ['content', 'Content', 'puzzle'],
       ['worlds', 'Worlds', 'globe'],
-      ['screenshots', 'Screenshots', 'monitor'],
+      ['screenshots', 'Screenshots', 'image'],
       ['files', 'Files', 'folder'],
-      ['console', 'Console', 'terminal'],
+      ['console', 'Logs', 'terminal'],
       ['settings', 'Settings', 'settings'],
     ];
-    clear(tabs, defs.map(([k, l, ic]) => el('button', { class: tab === k ? 'on' : '', onclick: () => { tab = k; tabMem[id] = k; drawTabs(); drawBody(); } }, icon(ic), l)));
+    clear(tabs, defs.map(([k, l, ic]) => el('button', { class: tab === k ? 'on' : '', onclick: () => { tab = k; tabMem[id] = k; drawTabs(); drawBody(); } }, icon(ic), l,
+      k === 'content' && inst.contentCount ? el('span', { class: 'count' }, String(inst.contentCount)) : null)));
   };
 
   const drawBody = () => {
-    offLog?.();
-    offLog = null;
+    offTab?.();
+    offTab = null;
     clear(body);
     if (tab === 'features') drawFeatures(body, inst, navigate);
     if (tab === 'content') drawContent(body, inst, navigate);
@@ -152,8 +238,8 @@ function renderDetail(page, id, navigate, initialTab) {
     if (tab === 'screenshots') drawScreenshots(body, inst);
     if (tab === 'pimpin') drawPimpin(body, inst);
     if (tab === 'files') fileBrowser(body, { kind: 'instance', id: inst.id }, { rootLabel: inst.name });
-    if (tab === 'console') offLog = drawConsole(body, inst);
-    if (tab === 'settings') drawSettings(body, inst, () => { drawHead(); });
+    if (tab === 'console') offTab = drawLogs(body, inst);
+    if (tab === 'settings') drawSettings(body, inst, drawHead);
   };
 
   page.append(head, tabs, body);
@@ -163,20 +249,22 @@ function renderDetail(page, id, navigate, initialTab) {
   const unsub = subscribe((t) => (t === 'instances' || t === 'game') && drawHead());
   return () => {
     unsub();
-    offLog?.();
+    offTab?.();
   };
 }
 
 async function drawFeatures(root, inst, navigate) {
   if (inst.loader === 'vanilla') {
-    root.append(el('div', { class: 'card empty' }, icon('puzzle'), el('h3', {}, 'Client features need Fabric or Quilt'), el('div', {}, 'Change the loader in the Settings tab to unlock one-click mods and shaders.')));
+    root.append(el('div', { class: 'card empty' }, icon('puzzle'), el('h3', {}, 'Features need Fabric or Quilt'), el('div', {}, 'Change the loader in the Settings tab.')));
     return;
   }
-  root.append(el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+  root.append(el('div', { class: 'row muted' }, el('span', { class: 'spin xs' }), 'Loading'));
   try {
     const list = await api.call('features:list', { kind: 'instance', id: inst.id });
     clear(root,
-      el('p', { class: 'muted', style: { marginTop: 0 } }, 'Flip a switch and the right mods (plus their dependencies) are downloaded for ', el('b', {}, `Minecraft ${inst.mcVersion}`), '. Want something else? ', el('a', { href: '#', style: { color: 'var(--a1)' }, onclick: (e) => { e.preventDefault(); navigate('library', { type: 'mod', instanceId: inst.id }); } }, 'Browse the full library'), '.'),
+      el('div', { class: 'filter-row' },
+        el('span', { class: 'muted grow' }, `Each switch installs the right mods and their dependencies for Minecraft ${inst.mcVersion}.`),
+        el('button', { class: 'btn sm', onclick: () => navigate('library', { type: 'mod', instanceId: inst.id }) }, icon('library'), 'Browse all mods')),
       featureGrid(inst, list));
   } catch (err) {
     clear(root, el('div', { class: 'card empty' }, err.message));
@@ -191,82 +279,114 @@ async function drawContent(root, inst, navigate) {
   let filter = 'all';
   let query = '';
   let items = [];
+  let updates = new Map(); // projectId -> update
+  let checking = false;
   const list = el('div', { class: 'content-list' });
-  const updBtn = el('button', { class: 'btn sm' }, icon('refresh'), 'Check for updates');
-  const searchIn = el('input', { class: 'input', placeholder: 'Filter installed…', style: { height: '34px', width: '220px' } });
+  const updSlot = el('span', { class: 'row' });
+  const searchIn = el('input', { class: 'input', placeholder: 'Filter installed', style: { width: '220px' } });
+
+  const applyUpdates = async (picked, btn) => {
+    btn.disabled = true;
+    btn.replaceChildren(el('span', { class: 'spin xs' }), 'Updating');
+    try {
+      await api.call('content:applyUpdates', target, picked);
+      for (const u of picked) updates.delete(u.projectId);
+      toast(picked.length === 1 ? `Updated ${picked[0].title} to ${picked[0].newVersionNumber}` : `Updated ${picked.length} mods`);
+      await load(false);
+    } catch (err) {
+      errorToast(err);
+      btn.disabled = false;
+    }
+  };
+
+  const drawUpdateSlot = () => {
+    if (checking) return clear(updSlot, el('span', { class: 'dim row' }, el('span', { class: 'spin xs' }), 'Checking for updates'));
+    if (!updates.size) {
+      return clear(updSlot, el('button', { class: 'btn sm', onclick: () => check(true) }, icon('refresh'), 'Check for updates'));
+    }
+    const all = el('button', { class: 'btn sm primary' }, icon('download'), `Update all (${updates.size})`);
+    all.addEventListener('click', () => applyUpdates([...updates.values()], all));
+    clear(updSlot, all);
+  };
 
   const draw = () => {
     const shown = items.filter((i) => (filter === 'all' || i.type === filter) && (!query || i.title.toLowerCase().includes(query) || i.file.toLowerCase().includes(query)));
     if (!shown.length) {
-      clear(list, el('div', { class: 'card empty' }, icon('box'), el('h3', {}, 'Nothing here yet'), el('div', {}, 'Add mods, shaders and resource packs from the library.')));
+      clear(list, el('div', { class: 'card empty' }, icon('box'), el('h3', {}, items.length ? 'No matches' : 'Nothing installed'),
+        el('div', {}, items.length ? 'Try another filter.' : 'Add mods, shaders and resource packs from the library, or drop jar files into the Files tab.')));
       return;
     }
-    clear(
-      list,
-      shown.map((i) =>
-        el('div', { class: `content-row${i.enabled ? '' : ' off'}` },
-          i.icon ? el('img', { src: i.icon, alt: '', loading: 'lazy' }) : el('div', { class: 'ph' }, icon(i.type === 'shader' ? 'sun' : i.type === 'resourcepack' ? 'palette' : 'puzzle')),
-          el('div', { class: 'grow' }, el('b', {}, i.title), el('span', {}, `${TYPE_LABEL[i.type]} · ${i.versionNumber || i.file}`)),
-          switchEl(i.enabled, async (on) => {
+    clear(list, shown.map((i) => {
+      const upd = i.projectId && updates.get(i.projectId);
+      let updBtn = null;
+      if (upd) {
+        updBtn = el('button', { class: 'chip accent click', title: `${upd.versionNumber || 'installed'} → ${upd.newVersionNumber}` }, icon('download'), upd.newVersionNumber);
+        updBtn.addEventListener('click', () => applyUpdates([upd], updBtn));
+      }
+      return el('div', { class: `content-row${i.enabled ? '' : ' off'}` },
+        i.icon ? el('img', { src: i.icon, alt: '', loading: 'lazy' }) : el('div', { class: 'ph' }, icon(i.type === 'shader' ? 'sun' : i.type === 'resourcepack' ? 'palette' : 'puzzle')),
+        el('div', { class: 'grow' }, el('b', {}, i.title), el('span', {}, `${TYPE_LABEL[i.type]} · ${i.file}`)),
+        updBtn,
+        el('span', { class: 'ver', title: i.versionNumber || '' }, i.versionNumber || ''),
+        switchEl(i.enabled, async (on) => {
+          try {
+            await api.call('content:toggle', target, { type: i.type, file: i.file, enabled: on });
+            i.enabled = on;
+            draw();
+          } catch (err) {
+            errorToast(err);
+          }
+        }),
+        el('button', {
+          class: 'btn ghost icon sm danger',
+          title: 'Remove',
+          onclick: async () => {
             try {
-              await api.call('content:toggle', target, { type: i.type, file: i.file, enabled: on });
-              i.enabled = on;
+              await api.call('content:remove', target, { type: i.type, file: i.file });
+              items = items.filter((x) => x !== i);
               draw();
+              toast(`Removed ${i.title}`);
             } catch (err) {
               errorToast(err);
             }
-          }),
-          el('button', {
-            class: 'btn ghost icon sm danger',
-            title: 'Remove',
-            onclick: async () => {
-              try {
-                await api.call('content:remove', target, { type: i.type, file: i.file });
-                items = items.filter((x) => x !== i);
-                draw();
-                toast(`Removed ${i.title}`);
-              } catch (err) {
-                errorToast(err);
-              }
-            },
-          }, icon('trash')),
-        ),
-      ),
-    );
+          },
+        }, icon('trash')));
+    }));
   };
 
-  const load = async () => {
+  const check = async (loud) => {
+    if (!items.some((i) => i.projectId && i.type === 'mod')) {
+      if (loud) toast('No mods from Modrinth to check');
+      return;
+    }
+    checking = true;
+    drawUpdateSlot();
+    try {
+      const found = await api.call('content:checkUpdates', target);
+      updates = new Map(found.map((u) => [u.projectId, u]));
+      if (loud && !found.length) toast('Everything is up to date');
+    } catch (err) {
+      if (loud) errorToast(err);
+    } finally {
+      checking = false;
+      drawUpdateSlot();
+      draw();
+    }
+  };
+
+  const load = async (withCheck = true) => {
     items = await api.call('content:list', target);
     draw();
     if (items.some((i) => !i.projectId)) {
-      api.call('content:identify', target).then(async (n) => {
-        if (n) {
-          items = await api.call('content:list', target);
-          draw();
-        }
-      }).catch(() => {});
+      const n = await api.call('content:identify', target).catch(() => 0);
+      if (n) {
+        items = await api.call('content:list', target);
+        draw();
+      }
     }
+    if (withCheck) check(false);
   };
 
-  updBtn.addEventListener('click', async () => {
-    updBtn.disabled = true;
-    updBtn.replaceChildren(el('span', { class: 'spin', style: { width: '14px', height: '14px' } }), 'Checking…');
-    try {
-      const updates = await api.call('content:checkUpdates', target);
-      if (!updates.length) {
-        toast('Everything is up to date');
-      } else if (await confirmModal(`${updates.length} update${updates.length > 1 ? 's' : ''} available`, updates.map((u) => `${u.title}: ${u.versionNumber} → ${u.newVersionNumber}`).join('\n'), { confirm: 'Update all' })) {
-        await api.call('content:applyUpdates', target, updates);
-        toast(`Updated ${updates.length} item${updates.length > 1 ? 's' : ''}`);
-        await load();
-      }
-    } catch (err) {
-      errorToast(err);
-    } finally {
-      updBtn.disabled = false;
-      updBtn.replaceChildren(icon('refresh'), 'Check for updates');
-    }
-  });
   searchIn.addEventListener('input', () => {
     query = searchIn.value.toLowerCase();
     draw();
@@ -280,23 +400,23 @@ async function drawContent(root, inst, navigate) {
         { value: 'shader', label: 'Shaders' },
         { value: 'resourcepack', label: 'Resource packs' },
       ], filter, (v) => { filter = v; draw(); }),
-      searchIn,
+      el('div', { class: 'search' }, icon('search'), searchIn),
       el('span', { class: 'grow' }),
-      updBtn,
+      updSlot,
       el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, filter === 'all' ? 'mods' : TYPE_FOLDER[filter]) }, icon('folder'), 'Folder'),
-      el('button', { class: 'btn sm primary', onclick: () => navigate('library', { type: filter === 'all' ? 'mod' : filter, instanceId: inst.id }) }, icon('plus'), 'Add content'),
-    ),
+      el('button', { class: 'btn sm primary', onclick: () => navigate('library', { type: filter === 'all' ? 'mod' : filter, instanceId: inst.id }) }, icon('plus'), 'Add content')),
     list,
   );
-  clear(list, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+  drawUpdateSlot();
+  clear(list, el('div', { class: 'row muted' }, el('span', { class: 'spin xs' }), 'Loading'));
   load().catch(errorToast);
 }
 
 async function drawWorlds(root, inst) {
-  const list = el('div', { class: 'world-list' }, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+  const list = el('div', { class: 'world-list' }, el('div', { class: 'row muted' }, el('span', { class: 'spin xs' }), 'Loading'));
   root.append(
     el('div', { class: 'filter-row' },
-      el('span', { class: 'muted grow' }, 'Press play on a world to load straight into it (Minecraft 1.20 and newer).'),
+      el('span', { class: 'muted grow' }, 'Play loads straight into the world (Minecraft 1.20 and newer).'),
       el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'saves') }, icon('folder'), 'Saves folder')),
     list,
   );
@@ -309,9 +429,9 @@ async function drawWorlds(root, inst) {
     clear(list, worlds.map((w) =>
       el('div', { class: 'card world-row' },
         w.icon ? el('img', { class: 'world-ico', src: w.icon, alt: '' }) : el('div', { class: 'world-ico' }, icon('globe')),
-        el('div', { class: 'grow' }, el('b', {}, w.folder), el('span', {}, `Played ${timeAgo(w.lastPlayed)}`)),
+        el('div', { class: 'grow' }, el('b', {}, w.folder), el('span', {}, `Played ${timeAgo(w.lastPlayed).toLowerCase()}`)),
         el('button', { class: 'btn sm ghost icon', title: 'Show in folder', onclick: () => api.call('shell:showItem', inst.id, 'saves', w.folder) }, icon('folder')),
-        el('button', { class: 'btn sm primary', onclick: () => { selectInstance(inst.id); playInstance(inst.id, { world: w.folder }); } }, icon('play'), 'Play'))));
+        el('button', { class: 'btn sm primary', onclick: () => selectInstance(inst.id).then(() => playInstance(inst.id, { world: w.folder })) }, icon('play'), 'Play'))));
   } catch (err) {
     clear(list, el('div', { class: 'card empty' }, err.message));
   }
@@ -328,7 +448,7 @@ async function drawScreenshots(root, inst) {
   const load = async () => {
     const shots = await api.call('instances:screenshots', inst.id);
     if (!shots.length) {
-      clear(grid, el('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, icon('monitor'), el('h3', {}, 'No screenshots yet'), el('div', {}, 'Your best moments will show up here.')));
+      clear(grid, el('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, icon('image'), el('h3', {}, 'No screenshots yet')));
       return;
     }
     clear(grid, shots.map((sh) =>
@@ -350,13 +470,18 @@ async function drawScreenshots(root, inst) {
   load().catch(errorToast);
 }
 
+// ----------------------------------------------------------------- logs --
+const levelOf = (line) => (/ERROR|Exception|FATAL|SEVERE|\tat /.test(line) ? 'err' : /WARN/.test(line) ? 'warn' : '');
+const MAX_SHOWN = 3000;
+
+/** A scrolling log box. `add` appends and keeps the view pinned to the bottom. Used by the server console too. */
 export function consoleView(lines) {
   const box = el('div', { class: 'console' });
   const add = (line) => {
-    const cls = /\[Pimpin\]/.test(line) ? 'l-pimpin' : /ERROR|Exception|FATAL|SEVERE/.test(line) ? 'l-err' : /WARN/.test(line) ? 'l-warn' : '';
+    const lvl = /\[Pimpin\]/.test(line) ? 'pimpin' : levelOf(line);
     const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    box.append(el('div', { class: cls }, line));
-    while (box.childElementCount > 3000) box.firstChild.remove();
+    box.append(el('div', { class: lvl ? `l-${lvl}` : '' }, line));
+    while (box.childElementCount > MAX_SHOWN) box.firstChild.remove();
     if (stick) box.scrollTop = box.scrollHeight;
   };
   for (const l of lines) add(l);
@@ -364,23 +489,107 @@ export function consoleView(lines) {
   return { box, add };
 }
 
-function drawConsole(root, inst) {
-  const { box, add } = consoleView([]);
+function drawLogs(root, inst) {
+  let source = 'live';
+  let level = 'all';
+  let query = '';
+  let lines = [];
+  const box = el('div', { class: 'console' });
+  const stats = el('span', { class: 'log-stats' });
+  const sourceSel = el('select', { class: 'select auto' }, el('option', { value: 'live' }, 'This session'));
+  const searchIn = el('input', { class: 'input', placeholder: 'Find in log', style: { width: '200px' } });
+
+  const passes = (line) => (level === 'all' || (level === 'warn' ? levelOf(line) !== '' : levelOf(line) === 'err')) && (!query || line.toLowerCase().includes(query));
+  const row = (line) => {
+    const lvl = /\[Pimpin\]/.test(line) ? 'pimpin' : levelOf(line);
+    const div = el('div', { class: lvl ? `l-${lvl}` : '' });
+    if (!query) div.textContent = line;
+    else {
+      // highlight every match, case-insensitive
+      const low = line.toLowerCase();
+      let at = 0;
+      for (let i = low.indexOf(query); i !== -1; i = low.indexOf(query, at)) {
+        div.append(line.slice(at, i), el('mark', {}, line.slice(i, i + query.length)));
+        at = i + query.length;
+      }
+      div.append(line.slice(at));
+    }
+    return div;
+  };
+  const drawStats = () => {
+    const warn = lines.filter((l) => levelOf(l) === 'warn').length;
+    const err = lines.filter((l) => levelOf(l) === 'err').length;
+    stats.textContent = `${lines.length} lines · ${warn} warnings · ${err} errors`;
+  };
+  const draw = () => {
+    const shown = lines.filter(passes);
+    box.replaceChildren(...shown.slice(-MAX_SHOWN).map(row));
+    if (!shown.length) box.append(el('div', { class: 'dim' }, lines.length ? 'No lines match.' : source === 'live' ? 'No output yet. Press Play to start the game.' : 'This log is empty.'));
+    drawStats();
+    requestAnimationFrame(() => (box.scrollTop = box.scrollHeight));
+  };
+  const loadSource = async () => {
+    try {
+      lines = source === 'live' ? await api.call('instances:logs', inst.id) : await api.call('logs:read', inst.id, source);
+    } catch (err) {
+      lines = [];
+      errorToast(err);
+    }
+    draw();
+  };
+
+  api.call('logs:list', inst.id).then((files) => {
+    for (const f of files) sourceSel.append(el('option', { value: f.name }, f.name === 'latest.log' ? 'latest.log (last run)' : f.name));
+  }).catch(() => {});
+  sourceSel.addEventListener('change', () => { source = sourceSel.value; loadSource(); });
+  let t;
+  searchIn.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(() => { query = searchIn.value.trim().toLowerCase(); draw(); }, 150);
+  });
+
+  const upload = el('button', { class: 'btn sm', title: 'Upload to mclo.gs and copy the link' }, icon('upload'), 'Upload');
+  upload.addEventListener('click', async () => {
+    upload.disabled = true;
+    try {
+      const { url } = await api.call('logs:upload', lines);
+      navigator.clipboard.writeText(url);
+      toast(`Uploaded to ${url} (link copied)`, 'ok', 8000);
+    } catch (err) {
+      errorToast(err);
+    } finally {
+      upload.disabled = false;
+    }
+  });
+
   root.append(
     el('div', { class: 'filter-row' },
-      el('span', { class: 'muted grow' }, 'Live output from the game. Crash reports are saved in the instance folder.'),
-      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'crash-reports').catch(() => api.call('instances:open', inst.id)) }, icon('folder'), 'Crash reports'),
-      el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, 'logs').catch(() => {}) }, icon('folder'), 'Logs'),
-      el('button', { class: 'btn sm', onclick: () => { navigator.clipboard.writeText(box.innerText); toast('Log copied to clipboard'); } }, icon('layout'), 'Copy log')),
+      sourceSel,
+      seg([{ value: 'all', label: 'All' }, { value: 'warn', label: 'Warnings' }, { value: 'err', label: 'Errors' }], level, (v) => { level = v; draw(); }),
+      el('div', { class: 'search' }, icon('search'), searchIn),
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn sm', onclick: () => { navigator.clipboard.writeText(lines.filter(passes).join('\n')); toast('Copied'); } }, icon('copy'), 'Copy'),
+      upload,
+      el('button', { class: 'btn sm ghost icon', title: 'Logs folder', onclick: () => api.call('instances:open', inst.id, 'logs').catch(() => {}) }, icon('folder'))),
     box,
+    el('div', { class: 'filter-row', style: { marginTop: '8px' } }, stats, el('span', { class: 'grow' }),
+      el('button', { class: 'btn sm ghost', onclick: () => api.call('instances:open', inst.id, 'crash-reports').catch(() => api.call('instances:open', inst.id)) }, icon('folder'), 'Crash reports')),
   );
-  api.call('instances:logs', inst.id).then((lines) => {
-    if (!lines.length) add('[Pimpin] No output yet — press Play to start the game.');
-    lines.forEach(add);
+  loadSource();
+  return api.on('game:log', (e) => {
+    if (e.id !== inst.id || source !== 'live') return;
+    lines.push(e.line);
+    if (!passes(e.line)) return drawStats();
+    if (box.firstChild?.classList?.contains('dim')) box.replaceChildren();
+    const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.append(row(e.line));
+    while (box.childElementCount > MAX_SHOWN) box.firstChild.remove();
+    if (stick) box.scrollTop = box.scrollHeight;
+    drawStats();
   });
-  return api.on('game:log', (e) => e.id === inst.id && add(e.line));
 }
 
+// ------------------------------------------------------------- settings --
 async function drawSettings(root, inst, onSaved) {
   const name = el('input', { class: 'input', value: inst.name, maxlength: 40 });
   let iconKey = inst.icon;
@@ -397,7 +606,7 @@ async function drawSettings(root, inst, onSaved) {
   const total = state.settings.totalMemory;
   const useCustomMem = el('input', { type: 'checkbox', checked: Boolean(inst.memoryMax) });
   const mem = el('input', { type: 'range', min: 1024, max: Math.max(2048, total - 1024), step: 256, value: inst.memoryMax || state.settings.memoryMax });
-  const memVal = el('div', { class: 'mem-val' });
+  const memVal = el('span', { class: 'mem-val' });
   const syncMem = () => {
     memVal.textContent = `${(mem.value / 1024).toFixed(1)} GB`;
     mem.disabled = !useCustomMem.checked;
@@ -410,12 +619,28 @@ async function drawSettings(root, inst, onSaved) {
   const java = el('input', { class: 'input', placeholder: 'Automatic (recommended)', value: inst.javaPath || '' });
   const width = el('input', { class: 'input', type: 'number', placeholder: String(state.settings.width), value: inst.width || '' });
   const height = el('input', { class: 'input', type: 'number', placeholder: String(state.settings.height), value: inst.height || '' });
+  const notes = el('textarea', { class: 'input prose', rows: 4, placeholder: 'Server addresses, seeds, which mods need configuring, anything.' }, inst.notes || '');
 
-  const save = el('button', { class: 'btn primary' }, icon('check'), 'Save changes');
+  const repair = el('button', { class: 'btn' }, 'Repair game files');
+  repair.addEventListener('click', async () => {
+    repair.disabled = true;
+    repair.textContent = 'Checking files...';
+    try {
+      await api.call('instances:repair', inst.id);
+      toast('Game files checked');
+    } catch (err) {
+      errorToast(err);
+    } finally {
+      repair.disabled = false;
+      repair.textContent = 'Repair game files';
+    }
+  });
+
+  const save = el('button', { class: 'btn primary' }, icon('check'), 'Save');
   save.addEventListener('click', async () => {
     try {
       const changedGame = version.value !== inst.mcVersion || loader !== inst.loader;
-      if (changedGame && inst.loader !== 'vanilla' && !(await confirmModal('Change version or loader?', 'Installed mods may not work with the new version. Use "Check for updates" in the Content tab afterwards, or remove mods that break.', { confirm: 'Change it' }))) return;
+      if (changedGame && inst.loader !== 'vanilla' && !(await confirmModal('Change version or loader?', 'Installed mods may not work with the new version. Check for updates in the Content tab afterwards, or remove mods that break.', { confirm: 'Change it' }))) return;
       const updated = await api.call('instances:update', inst.id, {
         name: name.value.trim() || inst.name,
         icon: iconKey,
@@ -426,6 +651,7 @@ async function drawSettings(root, inst, onSaved) {
         javaPath: java.value.trim() || null,
         width: Number(width.value) || null,
         height: Number(height.value) || null,
+        notes: notes.value.trim() || null,
       });
       Object.assign(inst, updated);
       await refreshInstances();
@@ -438,20 +664,24 @@ async function drawSettings(root, inst, onSaved) {
 
   root.append(
     el('div', { class: 'card settings-card' },
-      el('h3', {}, icon('edit'), 'General'),
-      el('div', { class: 'form-grid' }, el('label', { class: 'field' }, 'Name', name), el('label', { class: 'field' }, 'Icon', iconRow))),
+      el('h3', {}, 'General'),
+      el('div', { class: 'form-grid' }, el('label', { class: 'field' }, 'Name', name), el('div', { class: 'field' }, 'Icon', iconRow)),
+      el('label', { class: 'field' }, 'Notes', notes)),
     el('div', { class: 'card settings-card' },
-      el('h3', {}, icon('box'), 'Game'),
+      el('h3', {}, 'Game'),
       el('div', { class: 'form-grid' },
         el('label', { class: 'field' }, 'Minecraft version', version),
-        el('label', { class: 'field' }, 'Mod loader', seg([{ value: 'fabric', label: 'Fabric' }, { value: 'quilt', label: 'Quilt' }, { value: 'vanilla', label: 'Vanilla' }], loader, (v) => (loader = v))))),
+        el('div', { class: 'field' }, 'Mod loader', seg([{ value: 'fabric', label: 'Fabric' }, { value: 'quilt', label: 'Quilt' }, { value: 'vanilla', label: 'Vanilla' }], loader, (v) => (loader = v))))),
     el('div', { class: 'card settings-card' },
-      el('h3', {}, icon('cpu'), 'Java & performance'),
-      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Custom memory'), el('span', {}, `Override the global ${(state.settings.memoryMax / 1024).toFixed(1)} GB for this instance`)), el('label', { class: 'switch' }, useCustomMem, el('span'))),
+      el('h3', {}, 'Java and memory'),
+      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Custom memory'), el('span', {}, `Instead of the global ${(state.settings.memoryMax / 1024).toFixed(1)} GB`)), el('label', { class: 'switch' }, useCustomMem, el('span'))),
       el('div', { class: 'set-row' }, mem, memVal),
       el('label', { class: 'field' }, 'JVM arguments', jvm),
       el('label', { class: 'field' }, 'Java executable', el('div', { class: 'row' }, java, el('button', { class: 'btn', onclick: async () => { const p = await api.call('dialog:pickJava'); if (p) java.value = p; } }, 'Browse'))),
       el('div', { class: 'form-grid', style: { gridTemplateColumns: '1fr 1fr' } }, el('label', { class: 'field' }, 'Window width', width), el('label', { class: 'field' }, 'Window height', height))),
+    el('div', { class: 'card settings-card' },
+      el('h3', {}, 'Troubleshooting'),
+      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Repair game files'), el('span', {}, 'Checks the game, libraries and assets and downloads anything missing or broken.')), repair)),
     el('div', { class: 'row', style: { justifyContent: 'flex-end' } }, save),
   );
 }

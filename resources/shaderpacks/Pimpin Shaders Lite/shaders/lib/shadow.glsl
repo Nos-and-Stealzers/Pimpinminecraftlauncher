@@ -1,4 +1,4 @@
-// shadow lookup: hardware filtered with a few taps
+// shadow lookup: a rotated Vogel disk of hardware-filtered taps
 uniform sampler2DShadow shadowtex0;
 
 vec2 distortShadow(vec2 p) {
@@ -19,12 +19,10 @@ vec3 sampleShadow(vec3 clip, float fallback, float noise) {
     if (fade >= 1.0 || c.z >= 1.0) return vec3(fallback);
     c.z -= 0.00012;
 #ifdef SOFT_SHADOWS
-    float r = SHADOW_SOFTNESS / float(shadowMapResolution);
-    float s = shadow2D(shadowtex0, c + vec3(-0.6, 1.4, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(1.4, 0.6, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(0.6, -1.4, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(-1.4, -0.6, 0.0) * r).x;
-    s *= 0.25;
+    float r = 1.6 * SHADOW_SOFTNESS / float(shadowMapResolution);
+    float s = 0.0;
+    for (int i = 0; i < 6; i++) s += shadow2D(shadowtex0, vec3(c.xy + vogel(i, 6, noise * 6.2831853) * r, c.z)).x;
+    s /= 6.0;
 #else
     float s = shadow2D(shadowtex0, c).x;
 #endif

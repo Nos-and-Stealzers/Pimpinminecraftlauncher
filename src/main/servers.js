@@ -20,10 +20,14 @@ const SOFTWARE = {
   purpur: { name: 'Purpur', plugins: true },
   vanilla: { name: 'Vanilla', plugins: false },
 };
+const PLAYER_NAME = /^\.?[A-Za-z0-9_]{1,20}$/; // the dot is for Geyser/Floodgate bedrock players
+const LOG_LIMIT = 3000;
+
 const running = new Map(); // id -> { child, started, ready, stopping }
 const logs = new Map();
 const players = new Map(); // id -> Set of online player names
 const crashes = new Map(); // id -> timestamps of recent auto-restarts
+const waiters = new Map(); // id -> Set of { re, resolve }, see waitForLog
 let emit = () => {};
 
 function setEmitter(fn) {
@@ -36,16 +40,17 @@ function dirOf(id) {
 
 async function versions(software = 'paper') {
   if (software === 'purpur') {
-    const data = await getJson(PURPUR);
-    return [...data.versions].reverse();
+    const purpur = await getJson(PURPUR);
+    return [...purpur.versions].reverse();
   }
   if (software === 'vanilla') {
-    const m = await minecraft.getVersionManifest();
+    const manifest = await minecraft.getVersionManifest();
     // Mojang's server jars are reliable from 1.8 onwards.
-    return m.versions.filter((v) => v.type === 'release' && v.releaseTime >= '2014-09-02').map((v) => v.id);
+    return manifest.versions.filter((v) => v.type === 'release' && v.releaseTime >= '2014-09-02').map((v) => v.id);
   }
-  const data = await getJson(FILL);
-  return Object.values(data.versions)
+  // Fill groups versions by major: { "1.21": ["1.21.1", ...] }
+  const paper = await getJson(FILL);
+  return Object.values(paper.versions)
     .flat()
     .filter((v) => !/(pre|rc|snapshot)/i.test(v));
 }
@@ -60,6 +65,7 @@ function status(id) {
   };
 }
 
+// Servers made before Purpur/Vanilla support have no `software` field.
 async function get(id) {
   const meta = await readJson(path.join(dirOf(id), META), null);
   if (!meta) throw new Error('Server not found');
@@ -67,6 +73,7 @@ async function get(id) {
 }
 
 async function save(id, meta) {
+  // strip the live status that get() mixes in
   const { running: _r, ready: _re, started: _s, online: _o, ...clean } = meta;
   await writeJson(path.join(dirOf(id), META), { ...clean, id });
 }
@@ -76,7 +83,7 @@ function holder(meta) {
     kind: 'server',
     dir: dirOf(meta.id),
     mcVersion: meta.mcVersion,
-    loader: meta.software || 'paper',
+    loader: meta.software,
     load: () => get(meta.id),
     save: (m) => save(meta.id, m),
   };
@@ -93,11 +100,11 @@ async function list() {
 
 async function create({ name, mcVersion, software = 'paper', memory = 2048, port = 25565, properties = {} }) {
   if (!mcVersion) throw new Error('Pick a server version');
-  if (!SOFTWARE[software]) throw new Error('Unknown server software');
-  const label = SOFTWARE[software].name;
+  if (!Object.hasOwn(SOFTWARE, software)) throw new Error('Unknown server software');
+  const { name: label, plugins } = SOFTWARE[software];
   const id = uniqueDir(dirs.servers, name || `${software} ${mcVersion}`);
   const meta = { id, name: name || `${label} ${mcVersion}`, mcVersion, software, memory, port, eulaAccepted: false, autoRestart: false, created: Date.now(), content: [] };
-  await fsp.mkdir(path.join(dirOf(id), SOFTWARE[software].plugins ? 'plugins' : 'world'), { recursive: true });
+  await fsp.mkdir(path.join(dirOf(id), plugins ? 'plugins' : 'world'), { recursive: true });
   await save(id, meta);
   if (Object.keys(properties).length) await setProperties(id, properties);
   return get(id);
@@ -106,7 +113,8 @@ async function create({ name, mcVersion, software = 'paper', memory = 2048, port
 async function update(id, patch) {
   const meta = await get(id);
   for (const k of ['name', 'memory', 'port', 'eulaAccepted', 'mcVersion', 'software', 'autoRestart', 'jvmArgs']) if (k in patch) meta[k] = patch[k];
-  if (!SOFTWARE[meta.software]) throw new Error('Unknown server software');
+  if (!Object.hasOwn(SOFTWARE, meta.software)) throw new Error('Unknown server software');
+  // different jar now, make ensureJar fetch it on next start
   if ('mcVersion' in patch || 'software' in patch) meta.build = null;
   await save(id, meta);
   return get(id);
@@ -118,36 +126,38 @@ async function remove(id) {
   return list();
 }
 
-// ------------------------------------------------------------------ logs --
-const waiters = new Map(); // id -> Set of { re, resolve }
-
 function trackPlayers(id, line) {
-  const set = players.get(id) || new Set();
+  const online = players.get(id) || new Set();
+  players.set(id, online);
+  const joined = line.match(/\]: (\.?[A-Za-z0-9_]{1,20}) joined the game/);
+  const left = line.match(/\]: (\.?[A-Za-z0-9_]{1,20}) left the game/);
   let changed = false;
-  let m = line.match(/\]: (\.?[A-Za-z0-9_]{1,20}) joined the game/);
-  if (m) changed = !set.has(m[1]) && Boolean(set.add(m[1]));
-  m = line.match(/\]: (\.?[A-Za-z0-9_]{1,20}) left the game/);
-  if (m) changed = set.delete(m[1]) || changed;
-  players.set(id, set);
-  if (changed) emit('server:players', { id, online: [...set] });
+  if (joined && !online.has(joined[1])) {
+    online.add(joined[1]);
+    changed = true;
+  }
+  if (left && online.delete(left[1])) changed = true;
+  if (changed) emit('server:players', { id, online: [...online] });
+}
+
+function pushLog(id, line) {
+  line = line.replace(/\x1b\[[0-9;]*m/g, ''); // colour codes from the console
+  const buf = logs.get(id) || [];
+  buf.push(line);
+  if (buf.length > LOG_LIMIT) buf.splice(0, buf.length - LOG_LIMIT);
+  logs.set(id, buf);
+  trackPlayers(id, line);
+
   const r = running.get(id);
   if (r && !r.ready && /\]: Done \([\d.,]+s\)!/.test(line)) {
     r.ready = true;
     emit('server:state', { id, state: 'running', ready: true });
   }
-}
-
-function pushLog(id, line) {
-  line = line.replace(/\x1b\[[0-9;]*m/g, '');
-  const buf = logs.get(id) || [];
-  buf.push(line);
-  if (buf.length > 3000) buf.splice(0, buf.length - 3000);
-  logs.set(id, buf);
-  trackPlayers(id, line);
   for (const w of waiters.get(id) || []) if (w.re.test(line)) w.resolve(true);
   emit('server:log', { id, line });
 }
 
+// Resolves true when a matching line shows up, false after `ms`.
 function waitForLog(id, re, ms) {
   return new Promise((resolve) => {
     const set = waiters.get(id) || new Set();
@@ -165,11 +175,11 @@ function waitForLog(id, re, ms) {
   });
 }
 
-// --------------------------------------------------------------- server jar --
+// Downloads the server jar when the build changed. Mutates meta.build, the
+// caller saves it.
 async function ensureJar(meta, progress) {
-  const dir = dirOf(meta.id);
-  const software = meta.software || 'paper';
-  const jar = path.join(dir, `${software}.jar`);
+  const { software } = meta;
+  const jar = path.join(dirOf(meta.id), `${software}.jar`);
   const fetchJar = (url, label, opts = {}) =>
     download(url, jar, { ...opts, onProgress: (d, t) => progress({ stage: label, done: d, total: t, bytes: true }) });
 
@@ -181,10 +191,11 @@ async function ensureJar(meta, progress) {
     return jar;
   }
   if (software === 'purpur') {
-    const info = await getJson(`${PURPUR}/${encodeURIComponent(meta.mcVersion)}`);
-    const build = info.builds.latest;
+    const base = `${PURPUR}/${encodeURIComponent(meta.mcVersion)}`;
+    const build = (await getJson(base)).builds.latest;
+    // compare as strings, Purpur's API isn't consistent about the type
     if (String(meta.build) !== String(build) || !fs.existsSync(jar)) {
-      await fetchJar(`${PURPUR}/${encodeURIComponent(meta.mcVersion)}/${build}/download`, `Purpur ${meta.mcVersion} #${build}`, { force: true });
+      await fetchJar(`${base}/${build}/download`, `Purpur ${meta.mcVersion} #${build}`, { force: true });
       meta.build = build;
     }
     return jar;
@@ -198,41 +209,37 @@ async function ensureJar(meta, progress) {
   return jar;
 }
 
-// ------------------------------------------------------------ properties --
+// server.properties only exists after the first start, so missing = empty.
+const propertiesFile = (id) => path.join(dirOf(id), 'server.properties');
+const readPropertiesText = (id) => fsp.readFile(propertiesFile(id), 'utf8').catch(() => '');
+
 async function readProperties(id) {
-  let text = '';
-  try {
-    text = await fsp.readFile(path.join(dirOf(id), 'server.properties'), 'utf8');
-  } catch {
-    /* not generated yet */
-  }
-  const out = {};
-  for (const line of text.split(/\r?\n/)) {
+  const props = {};
+  for (const line of (await readPropertiesText(id)).split(/\r?\n/)) {
     const m = line.match(/^\s*([^#!=\s][^=]*?)\s*=(.*)$/);
-    if (m) out[m[1]] = m[2];
+    if (m) props[m[1]] = m[2];
   }
-  return out;
+  return props;
 }
 
+// Edits lines in place so the server's comments and key order survive.
 async function setProperties(id, patch) {
-  const file = path.join(dirOf(id), 'server.properties');
-  let text = '';
-  try {
-    text = await fsp.readFile(file, 'utf8');
-  } catch {
-    /* first start */
-  }
+  let text = await readPropertiesText(id);
   for (const [key, raw] of Object.entries(patch || {})) {
     if (!/^[a-z0-9.\-_]+$/i.test(key)) throw new Error(`Invalid property ${key}`);
     const value = String(raw ?? '').replace(/[\r\n]/g, ' ');
     const re = new RegExp(`^${key.replace(/[.\-]/g, '\\$&')}=.*$`, 'm');
-    text = re.test(text) ? text.replace(re, () => `${key}=${value}`) : `${text}${text && !text.endsWith('\n') ? '\n' : ''}${key}=${value}\n`;
+    if (re.test(text)) {
+      text = text.replace(re, () => `${key}=${value}`); // fn so a "$" in the value stays literal
+    } else {
+      if (text && !text.endsWith('\n')) text += '\n';
+      text += `${key}=${value}\n`;
+    }
   }
-  await fsp.writeFile(file, text);
+  await fsp.writeFile(propertiesFile(id), text);
   return readProperties(id);
 }
 
-// --------------------------------------------------------------- running --
 async function start(id) {
   if (running.has(id)) throw new Error('Server is already running.');
   const meta = await get(id);
@@ -243,12 +250,13 @@ async function start(id) {
   players.set(id, new Set());
   emit('server:state', { id, state: 'preparing' });
   try {
+    // Offline is fine as long as some jar was downloaded before.
     let jar;
     try {
       jar = await ensureJar(meta, progress);
     } catch (err) {
       jar = path.join(dir, `${meta.software}.jar`);
-      if (!fs.existsSync(jar)) throw err; // offline and nothing cached
+      if (!fs.existsSync(jar)) throw err;
     }
     const vanilla = await minecraft.getVanillaJson(meta.mcVersion);
     const java = consoleJava(await ensureJava(vanilla.javaVersion, progress));
@@ -284,17 +292,18 @@ async function start(id) {
   }
 }
 
-/** Auto-restart after a crash, at most 3 times in 10 minutes. */
+// Auto-restart after a crash, at most 3 times in 10 minutes so a broken
+// plugin doesn't put it in a loop.
 async function maybeRestart(id) {
-  const meta = await get(id).catch(() => null);
+  const meta = await get(id).catch(() => null); // deleted while it was running
   if (!meta?.autoRestart) return;
-  const recent = (crashes.get(id) || []).filter((t) => Date.now() - t < 600e3);
+  const recent = (crashes.get(id) || []).filter((t) => Date.now() - t < 10 * 60e3);
   if (recent.length >= 3) {
-    pushLog(id, '[Pimpin] Crashed 3 times in 10 minutes — not restarting again.');
+    pushLog(id, '[Pimpin] Crashed 3 times in 10 minutes, not restarting again.');
     return;
   }
   crashes.set(id, [...recent, Date.now()]);
-  pushLog(id, '[Pimpin] Server crashed — restarting in 5 seconds…');
+  pushLog(id, '[Pimpin] Server crashed, restarting in 5 seconds...');
   setTimeout(() => start(id).catch((err) => pushLog(id, `[Pimpin] Restart failed: ${err.message}`)), 5000);
 }
 
@@ -310,6 +319,7 @@ function stop(id) {
   if (!r) return;
   r.stopping = true;
   r.child.stdin.write('stop\n');
+  // give it 30s to save the world, then kill it
   const timer = setTimeout(() => r.child.kill(), 30000);
   r.child.once('close', () => clearTimeout(timer));
 }
@@ -332,7 +342,6 @@ function getLogs(id) {
   return logs.get(id) || [];
 }
 
-// --------------------------------------------------------------- players --
 const readList = async (id, file) => (await readJson(path.join(dirOf(id), file), [])).map((e) => e.name).filter(Boolean);
 
 async function playerInfo(id) {
@@ -344,27 +353,27 @@ async function playerInfo(id) {
   };
 }
 
-const PLAYER_ACTIONS = {
-  op: (n) => `op ${n}`,
-  deop: (n) => `deop ${n}`,
-  kick: (n) => `kick ${n}`,
-  ban: (n) => `ban ${n}`,
-  pardon: (n) => `pardon ${n}`,
-  whitelist: (n) => `whitelist add ${n}`,
-  unwhitelist: (n) => `whitelist remove ${n}`,
+// action -> console command, the player name goes after it
+const PLAYER_COMMANDS = {
+  op: 'op',
+  deop: 'deop',
+  kick: 'kick',
+  ban: 'ban',
+  pardon: 'pardon',
+  whitelist: 'whitelist add',
+  unwhitelist: 'whitelist remove',
 };
 
 async function playerAction(id, action, name) {
-  if (!PLAYER_ACTIONS[action]) throw new Error('Unknown action');
-  if (!/^\.?[A-Za-z0-9_]{1,20}$/.test(name || '')) throw new Error('That is not a valid player name');
+  if (!Object.hasOwn(PLAYER_COMMANDS, action)) throw new Error('Unknown action');
+  if (typeof name !== 'string' || !PLAYER_NAME.test(name)) throw new Error('That is not a valid player name');
   if (!running.has(id)) throw new Error('Start the server to manage players.');
-  command(id, PLAYER_ACTIONS[action](name));
+  command(id, `${PLAYER_COMMANDS[action]} ${name}`);
   // The server writes ops.json / whitelist.json right after the command.
   await new Promise((r) => setTimeout(r, 600));
   return playerInfo(id);
 }
 
-// --------------------------------------------------------------- backups --
 async function worldFolders(id) {
   const level = (await readProperties(id))['level-name'] || 'world';
   return [level, `${level}_nether`, `${level}_the_end`].filter((f) => fs.existsSync(safeJoin(dirOf(id), f)));
@@ -381,11 +390,20 @@ async function backups(id) {
   return out.sort((a, b) => b.created - a.created);
 }
 
+// Backup names come from the renderer: only plain .zip names in backups/.
+function backupFile(id, name) {
+  if (typeof name !== 'string' || path.basename(name) !== name || !name.endsWith('.zip')) throw new Error('Unknown backup');
+  return safeJoin(dirOf(id), 'backups', name);
+}
+
 async function backup(id) {
   const worlds = await worldFolders(id);
-  if (!worlds.length) throw new Error('There is no world yet — start the server once first.');
+  if (!worlds.length) throw new Error('There is no world yet. Start the server once first.');
+  const dir = dirOf(id);
   const live = running.has(id);
   if (live) {
+    // flush chunks to disk and keep the server from writing while we zip.
+    // On timeout we back up anyway, worst case a few seconds are missing.
     command(id, 'save-off');
     command(id, 'save-all flush');
     await waitForLog(id, /Saved the (game|world)/i, 15000);
@@ -393,11 +411,12 @@ async function backup(id) {
   try {
     const zip = new AdmZip();
     for (const w of worlds) {
-      await zip.addLocalFolderPromise(path.join(dirOf(id), w), { zipPath: w, filter: (f) => !/session\.lock$/.test(f) });
+      // session.lock is held open by a running server
+      await zip.addLocalFolderPromise(path.join(dir, w), { zipPath: w, filter: (f) => !/session\.lock$/.test(f) });
     }
     const stamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-    await fsp.mkdir(path.join(dirOf(id), 'backups'), { recursive: true });
-    await zip.writeZipPromise(path.join(dirOf(id), 'backups', `backup-${stamp}.zip`));
+    await fsp.mkdir(path.join(dir, 'backups'), { recursive: true });
+    await zip.writeZipPromise(path.join(dir, 'backups', `backup-${stamp}.zip`));
   } finally {
     if (live && running.has(id)) command(id, 'save-on');
   }
@@ -406,30 +425,36 @@ async function backup(id) {
 
 async function restoreBackup(id, name) {
   if (running.has(id)) throw new Error('Stop the server before restoring a backup.');
-  const file = safeJoin(dirOf(id), 'backups', name);
-  const zip = new AdmZip(file);
+  const dir = dirOf(id);
+  const zip = new AdmZip(backupFile(id, name));
   const tops = new Set(zip.getEntries().map((e) => e.entryName.split('/')[0]).filter(Boolean));
+  // check everything before deleting anything
   for (const t of tops) {
     if (t === 'backups' || t.endsWith('.jar') || t === META) throw new Error('This backup contains unexpected files.');
-    await fsp.rm(safeJoin(dirOf(id), t), { recursive: true, force: true });
   }
-  await zip.extractAllToAsync(dirOf(id), true);
+  // wipe the old world folders first so deleted chunks/region files don't linger
+  for (const t of tops) await fsp.rm(safeJoin(dir, t), { recursive: true, force: true });
+  await zip.extractAllToAsync(dir, true);
   return backups(id);
 }
 
 async function deleteBackup(id, name) {
-  await fsp.rm(safeJoin(dirOf(id), 'backups', name), { force: true });
+  await fsp.rm(backupFile(id, name), { force: true });
   return backups(id);
 }
 
-// --------------------------------------------------------------- network --
+// Home networks first, VPN / virtual adapters last.
+const LAN_RANGES = [/^192\.168\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./];
+
 function lanAddresses() {
   const out = [];
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const a of list || []) if (a.family === 'IPv4' && !a.internal) out.push(a.address);
+  for (const iface of Object.values(os.networkInterfaces())) {
+    for (const a of iface || []) if (a.family === 'IPv4' && !a.internal) out.push(a.address);
   }
-  // Home networks first; VPN / virtual adapters last.
-  const rank = (ip) => (/^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
+  const rank = (ip) => {
+    const i = LAN_RANGES.findIndex((re) => re.test(ip));
+    return i === -1 ? LAN_RANGES.length : i;
+  };
   return out.sort((a, b) => rank(a) - rank(b));
 }
 

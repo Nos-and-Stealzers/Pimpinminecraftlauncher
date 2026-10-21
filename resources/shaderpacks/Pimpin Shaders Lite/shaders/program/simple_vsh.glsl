@@ -12,4 +12,5 @@ void main() {
     vec4 vp = gl_ModelViewMatrix * gl_Vertex;
     viewPos = vp.xyz;
     gl_Position = gl_ProjectionMatrix * vp;
+    JITTER(gl_Position);
 }

@@ -1,5 +1,5 @@
 // Liquids, fire and other "effect" textures, plus sky, crosshair and icon.
-const { Px, ramp, rng, noise, Image, rgba, mixc, hex } = require('./lib');
+const { Px, ramp, rng, noise, strip, Image, rgba, mixc, hex } = require('./lib');
 
 const T = {};
 const isP = (st) => st === 'looks';
@@ -80,22 +80,53 @@ function flames(colors, height = 0.45, seed = 60) {
     return px.toImage(pal);
   };
 }
-T.fire_0 = flames(['#c4300c', '#ff8f1f', '#ffd24a', '#fff6c8'], 0.45, 60);
-T.fire_1 = flames(['#b8280a', '#ff7f1a', '#ffc640', '#fff6c8'], 0.38, 61);
-T.soul_fire_0 = flames(['#16658a', '#2fb8d8', '#7ff0f8', '#e8ffff'], 0.45, 62);
-T.soul_fire_1 = flames(['#125d80', '#28a8cc', '#70e8f4', '#e8ffff'], 0.38, 63);
-T.campfire_fire = flames(['#c4300c', '#ff8f1f', '#ffd24a', '#fff6c8'], 0.6, 64);
+/**
+ * Pretty fire: two noise fields scroll upwards and are cut off by a height
+ * falloff, then quantised into flat colour bands (dark rim, body, hot core).
+ * The scroll covers exactly one noise period, so the loop is seamless.
+ */
+function liveFire(S, colors, seed, height = 0.85, frames = 32) {
+  const pal = colors.map(rgba);
+  const n1 = noise(S, 6, seed, 2);
+  const n2 = noise(S, 9, seed + 9, 5);
+  const out = [];
+  for (let f = 0; f < frames; f++) {
+    const t = (f / frames) * S;
+    const px = new Px(S, S, false, -1);
+    px.fill((x, y) => {
+      const u = 1 - y / (S - 1); // 0 bottom .. 1 top
+      const v = n1(x, y + t) * 0.62 + n2(x, y + t * 2) * 0.38 - (u ** 1.3 / height) * 0.9 + 0.14;
+      if (v < 0.14) return -1;
+      return v < 0.22 ? 0 : v < 0.4 ? 1 : v < 0.64 ? 2 : 3;
+    });
+    out.push(px.toImage(pal));
+  }
+  const img = strip(out);
+  img.meta = { animation: { frametime: 1 } };
+  return img;
+}
+const fire = (colors, h, seed, liveH) => (S, st) => (isP(st) ? liveFire(S, colors, seed, liveH) : flames(colors, h, seed)(S));
+T.fire_0 = fire(['#c4300c', '#ff8f1f', '#ffd24a', '#fff6c8'], 0.45, 60, 0.9);
+T.fire_1 = fire(['#b8280a', '#ff7f1a', '#ffc640', '#fff6c8'], 0.38, 61, 0.8);
+T.soul_fire_0 = fire(['#16658a', '#2fb8d8', '#7ff0f8', '#e8ffff'], 0.45, 62, 0.9);
+T.soul_fire_1 = fire(['#125d80', '#28a8cc', '#70e8f4', '#e8ffff'], 0.38, 63, 0.8);
+T.campfire_fire = fire(['#c4300c', '#ff8f1f', '#ffd24a', '#fff6c8'], 0.6, 64, 1);
 
 T.nether_portal = (S, st, seed = 70) => {
   const n = noise(S, 3, seed);
-  const pal = ['#3d0a7a', '#5a16a8', '#7b2ed0', '#a86cf2'].map((c) => [...rgba(c).slice(0, 3), 200]);
+  const P = isP(st);
+  const pal = (P ? ['#2e0660', '#4a1194', '#6a24c4', '#8d48e6', '#c49af8'] : ['#3d0a7a', '#5a16a8', '#7b2ed0', '#a86cf2']).map((c) => [...rgba(c).slice(0, 3), P ? 190 : 200]);
   const c = (S - 1) / 2;
-  return new Image(S).fill((x, y) => {
+  const frame = (ph) => new Image(S).fill((x, y) => {
     const a = Math.atan2(y - c, x - c);
     const d = Math.hypot(x - c, y - c) / S;
-    const v = (Math.sin(a * 2 + d * 14) * 0.5 + 0.5) * 0.6 + n(x, y) * 0.4;
-    return pal[Math.min(3, Math.floor(v * 4))];
+    const v = (Math.sin(a * 2 + d * 14 - ph) * 0.5 + 0.5) * 0.6 + n(x, y) * 0.4;
+    return pal[Math.min(pal.length - 1, Math.floor(v * pal.length))];
   });
+  if (!P) return frame(0);
+  const img = strip(Array.from({ length: 32 }, (_, i) => frame((i / 32) * Math.PI * 2)));
+  img.meta = { animation: { frametime: 2, interpolate: true } };
+  return img;
 };
 
 T.magma_block = (S, st, seed = 71) => {
@@ -116,12 +147,31 @@ T.magma_block = (S, st, seed = 71) => {
   }
   for (let i = 0; i < 6; i++) px.set(r.i(S), r.i(S), 5);
   for (let i = 0; i < 8 * k; i++) px.set(r.i(S), r.i(S), 1);
-  return px.toImage(pal);
+  if (!isP(st)) return px.toImage(pal);
+  // Pretty: the cracks breathe (dim, bright, dim)
+  const dim = pal.map((c, i) => (i >= 3 ? mixc(c, pal[2], 0.45) : c));
+  const img = strip([px.toImage(dim), px.toImage(pal), px.toImage(dim)]);
+  img.meta = { animation: { frametime: 12, interpolate: true } };
+  return img;
 };
 
-T.sea_lantern = (S) => {
+T.sea_lantern = (S, st) => {
   const k = S / 16;
   const pal = ['#8fb8ac', '#b6d8cc', '#d9efe7', '#f4fffb'].map(rgba);
+  if (isP(st)) {
+    // Pretty: the four glowing cores pulse one after another
+    const frames = [0, 1, 2, 3, 4].map((f) => {
+      const img = T.sea_lantern(S, 'perf');
+      [[0, 0], [S / 2, 0], [S / 2, S / 2], [0, S / 2]].forEach(([qx, qy], i) => {
+        if (i !== f % 4) return;
+        for (let y = 0; y < 4 * k; y++) for (let x = 0; x < 4 * k; x++) img.set(qx + k + x, qy + k + y, x < k || y < k ? pal[3] : [255, 255, 255, 255]);
+      });
+      return img;
+    });
+    const img = strip(frames);
+    img.meta = { animation: { frametime: 6, interpolate: true } };
+    return img;
+  }
   const px = new Px(S).fill(2);
   for (let i = 0; i < S; i++) {
     px.set(i, 0, 1).set(0, i, 1).set(i, S / 2, 1).set(S / 2, i, 1);
@@ -131,9 +181,16 @@ T.sea_lantern = (S) => {
   return px.toImage(pal);
 };
 
-T.prismarine = (S, st, seed = 72) => {
+T.prismarine = (S, st, seed = 72, colors = null) => {
+  if (isP(st)) {
+    // Pretty: slow shift between teal and blue-violet, like the real block
+    const shades = [['#3f7a70', '#5a9a8a', '#76b2a0', '#98ccb8'], ['#3f6a7a', '#5a8a9e', '#76a2b8', '#98bcd0'], ['#4a5f80', '#647aa4', '#8094bc', '#a2b0d4']];
+    const img = strip([0, 1, 2, 1].map((i) => T.prismarine(S, 'perf', seed, shades[i])));
+    img.meta = { animation: { frametime: 60, interpolate: true } };
+    return img;
+  }
   const r = rng(seed);
-  const pal = ['#3f7a70', '#5a9a8a', '#76b2a0', '#98ccb8'].map(rgba);
+  const pal = (colors || ['#3f7a70', '#5a9a8a', '#76b2a0', '#98ccb8']).map(rgba);
   const k = S / 16;
   const px = new Px(S).fill(1);
   for (let y = 0; y < S; y += 4 * k) for (let x = 0; x < S; x += 4 * k) {

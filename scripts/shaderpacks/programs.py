@@ -1,7 +1,7 @@
 # GLSL program bodies. Each body is included from a small per-dimension stub that
 # sets #version, DIM_* and PROGRAM_* defines. ULTRA is defined for the Ultra pack.
 
-SHADOW_LITE = r"""// shadow lookup: hardware filtered with a few taps
+SHADOW_LITE = r"""// shadow lookup: a rotated Vogel disk of hardware-filtered taps
 uniform sampler2DShadow shadowtex0;
 
 vec2 distortShadow(vec2 p) {
@@ -22,12 +22,10 @@ vec3 sampleShadow(vec3 clip, float fallback, float noise) {
     if (fade >= 1.0 || c.z >= 1.0) return vec3(fallback);
     c.z -= 0.00012;
 #ifdef SOFT_SHADOWS
-    float r = SHADOW_SOFTNESS / float(shadowMapResolution);
-    float s = shadow2D(shadowtex0, c + vec3(-0.6, 1.4, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(1.4, 0.6, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(0.6, -1.4, 0.0) * r).x;
-    s += shadow2D(shadowtex0, c + vec3(-1.4, -0.6, 0.0) * r).x;
-    s *= 0.25;
+    float r = 1.6 * SHADOW_SOFTNESS / float(shadowMapResolution);
+    float s = 0.0;
+    for (int i = 0; i < 6; i++) s += shadow2D(shadowtex0, vec3(c.xy + vogel(i, 6, noise * 6.2831853) * r, c.z)).x;
+    s /= 6.0;
 #else
     float s = shadow2D(shadowtex0, c).x;
 #endif
@@ -61,12 +59,6 @@ vec3 shadowTap(vec2 uv, float z) {
 #else
     return vec3(0.0);
 #endif
-}
-
-vec2 vogel(int i, int n, float phi) {
-    float r = sqrt((float(i) + 0.5) / float(n));
-    float a = float(i) * 2.39996323 + phi;
-    return r * vec2(cos(a), sin(a));
 }
 
 vec3 sampleShadow(vec3 clip, float fallback, float noise) {
@@ -175,6 +167,7 @@ void main() {
     viewPos = vp.xyz;
     worldPos = playerPos + cameraPosition;
     gl_Position = gl_ProjectionMatrix * vp;
+    JITTER(gl_Position);
 #if defined SHADOWS && defined DIM_OVERWORLD && !defined PROGRAM_HAND
     vec3 wn = mat3(gbufferModelViewInverse) * viewNormal;
     if (blockId > 10000.5 && blockId < 10004.5) wn = normalize(mat3(gbufferModelViewInverse) * shadowLightPosition);
@@ -186,40 +179,72 @@ void main() {
 """
 
 LIGHTING = r"""// shared surface lighting
-vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, float vdist, out vec3 directOut) {
+float ggxSpecular(vec3 n, vec3 V, vec3 L, float rough) {
+    vec3 H = normalize(L - V);
+    float NdotH = max(dot(n, H), 0.0);
+    float NdotL = max(dot(n, L), 0.0);
+    float a2 = pow2(rough * rough);
+    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    float D = a2 / (PI * d * d);
+    float F = 0.04 + 0.96 * pow(1.0 - max(dot(H, -V), 0.0), 5.0);
+    float k = rough * 0.5;
+    float vis = 0.25 / ((NdotL * (1.0 - k) + k) * (max(dot(n, -V), 0.0) * (1.0 - k) + k));
+    return D * F * vis * NdotL;
+}
+
+// returns the lit colour; indirectOut is the part that ambient occlusion may darken
+vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 vpos, vec3 wpos, float shine, out vec3 directOut, out vec3 indirectOut) {
     vec3 up = normalize(upPosition);
     vec3 L = normalize(shadowLightPosition);
+    vec3 V = normalize(vpos);
     float NdotL = dot(n, L);
-    float diffuse = foliage > 0.5 ? 0.42 + 0.45 * abs(NdotL) : max(NdotL, 0.0);
+    float diffuse = foliage > 0.5 ? 0.35 + 0.4 * abs(NdotL) : max(NdotL, 0.0);
     float skyL = lm.y;
+    float NdotU = dot(n, up);
     vec3 direct = vec3(0.0);
+    vec3 bounce = vec3(0.0);
 #ifdef DIM_OVERWORLD
+    vec3 sunC = sunLightColor();
     float fallback = pow(skyL, 6.0);
-    if (diffuse > 0.001 && skyL > 0.02) {
+    if (skyL > 0.02 && (diffuse > 0.001 || foliage > 0.5)) {
 #if defined SHADOWS && !defined PROGRAM_HAND
         vec3 vis = sampleShadow(shadowP, fallback, dither(gl_FragCoord.xy));
         vis *= smoothstep(0.02, 0.3, skyL);
 #else
         vec3 vis = vec3(fallback);
 #endif
-        direct = sunLightColor() * diffuse * vis;
+#if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined CLOUD_SHADOWS
+        vis *= cloudShadow(wpos, mat3(gbufferModelViewInverse) * L);
+#endif
+        // light glowing through leaves and grass when looking towards the sun
+        float sss = foliage * pow(max(dot(V, L), 0.0), 6.0) * 1.1;
+        direct = sunC * (diffuse + sss) * vis;
+        if (shine > 0.0) direct += sunC * vis * ggxSpecular(n, V, L, mix(0.45, 0.18, shine)) * shine;
     }
-    vec3 amb = ambientColor() * skyL * skyL * (0.78 + 0.22 * dot(n, up));
+    vec3 amb = ambientColor() * skyL * skyL * (0.62 + 0.38 * NdotU);
+    // sunlight bouncing off the ground onto walls
+    bounce = sunC * 0.05 * sat(0.6 - 0.6 * NdotU) * skyL * skyL * dayFactor();
 #else
-    vec3 amb = ambientColor() * (0.8 + 0.2 * dot(n, up));
+    vec3 amb = ambientColor() * (0.75 + 0.25 * NdotU);
+#endif
+#ifdef DIM_END
+    vec3 Le = normalize(mat3(gbufferModelView) * vec3(0.3, 0.88, 0.36));
+    direct = vec3(0.60, 0.40, 1.0) * 0.6 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
 #endif
     float bl = lm.x;
     float held = float(max(heldBlockLightValue, heldBlockLightValue2));
-    bl = max(bl, clamp((held - vdist) / 15.0, 0.0, 1.0) * 0.95);
+    bl = max(bl, clamp((held - length(vpos)) / 15.0, 0.0, 1.0) * 0.95);
+    vec3 block = blockLightColor(bl);
     directOut = direct;
-    return alb * (amb + blockLightColor(bl) + direct + minimumLight());
+    indirectOut = alb * (amb + bounce + block * 0.5 + minimumLight());
+    return alb * (amb + bounce + block + direct + minimumLight());
 }
 
 vec3 emission(vec3 alb, vec3 srgb, float id) {
-    if (isId(id, ID_LAVA)) return alb * 1.6 * EMISSIVE_STRENGTH;
+    if (isId(id, ID_LAVA)) return alb * 1.8 * EMISSIVE_STRENGTH;
     if (isId(id, ID_GLOW)) {
-        float m = smoothstep(0.6, 0.95, max(srgb.r, max(srgb.g, srgb.b)));
-        return alb * m * 1.1 * EMISSIVE_STRENGTH;
+        float m = smoothstep(0.55, 0.95, max(srgb.r, max(srgb.g, srgb.b)));
+        return alb * m * 1.4 * EMISSIVE_STRENGTH;
     }
     return vec3(0.0);
 }
@@ -255,16 +280,21 @@ void main() {
 #ifdef PROGRAM_HAND
     lm.y = max(lm.y, float(eyeBrightnessSmooth.y) / 240.0);
 #endif
+    float shine = isId(blockId, ID_SHINY) ? 0.6 : 0.0;
 
-#if defined ULTRA && defined PROGRAM_TERRAIN && defined DIM_OVERWORLD
+#if defined PROGRAM_TERRAIN && defined DIM_OVERWORLD
+    // rain soaks the ground: darker and glossier
     float up = dot(n, normalize(upPosition));
     float wet = wetness * smoothstep(0.82, 0.95, lm.y) * (0.45 + 0.55 * clamp(up, 0.0, 1.0));
     alb *= 1.0 - 0.38 * wet * (1.0 - foliage);
+    shine = max(shine, wet * 0.8 * (1.0 - foliage));
 #endif
 
     vec3 direct;
-    vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, length(viewPos), direct);
-    color += emission(alb, albedo.rgb, blockId);
+    vec3 indirect;
+    vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, viewPos, worldPos, shine, direct, indirect);
+    vec3 glow = emission(alb, albedo.rgb, blockId);
+    color += glow;
 
     gl_FragData[0] = vec4(color, albedo.a);
 #ifdef ULTRA
@@ -276,6 +306,7 @@ void main() {
     float mat = foliage > 0.5 ? 6.0 : 1.0;
 #endif
     gl_FragData[1] = vec4(encodeNormal(n), packMaterial(mat, lm.y), 1.0);
+    gl_FragData[2] = vec4(luma(glow) > 0.0 ? vec3(0.0) : indirect, 1.0);
 #endif
 }
 """
@@ -295,44 +326,68 @@ void main() {
     vec3 n = normalize(viewNormal);
     vec3 V = normalize(viewPos);
     vec3 up = normalize(upPosition);
+    vec3 L = normalize(shadowLightPosition);
     if (water) {
 #ifdef WATER_WAVES
         if (dot(n, up) > 0.5) n = normalize(mat3(gbufferModelView) * waterNormalWorld(worldPos.xz));
 #endif
-        float detail = 0.75 + 0.35 * luma(texture2D(tex, texcoord).rgb);
-        albedo.rgb = glcolor.rgb * vec3(0.55, 0.78, 0.9) * detail;
-        albedo.a = WATER_ALPHA;
+        albedo.rgb = glcolor.rgb * vec3(0.55, 0.78, 0.9) * (0.75 + 0.35 * luma(texture2D(tex, texcoord).rgb));
+        albedo.a = 1.0;
     }
     if (albedo.a < 0.01) discard;
     vec3 alb = toLinear(albedo.rgb);
     vec3 direct;
-    vec3 color = shadeSurface(alb, n, lmcoord, shadowPos, 0.0, length(viewPos), direct);
+    vec3 indirect;
+    vec3 color = shadeSurface(alb, n, lmcoord, shadowPos, 0.0, viewPos, worldPos, 0.0, direct, indirect);
     float alpha = albedo.a;
-
-    if (water) {
-        float NdotV = abs(dot(V, n));
-        float F = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
-        if (isEyeInWater == 1) F *= 0.4;
-        vec3 R = reflect(V, n);
-        vec3 L = normalize(shadowLightPosition);
-        float RdotL = max(dot(R, L), 0.0);
-        float lit = luma(direct) / max(luma(sunLightColor()), 0.0001);
-        vec3 spec = sunLightColor() * (pow(RdotL, 400.0) * 6.0 + pow(RdotL, 60.0) * 0.12) * clamp(lit * 3.0, 0.0, 1.0);
-#ifdef ULTRA
-        // the composite pass adds the real reflection; keep the sun glint here
-        color += spec;
-        alpha = mix(alpha, 1.0, clamp(luma(spec), 0.0, 1.0));
-#else
-        float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
-        vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.05 * (1.0 - skyVis);
-        color = mix(color, refl, F) + spec;
-        alpha = mix(alpha, 1.0, F);
+    float lit = 0.0;
+#ifdef DIM_OVERWORLD
+    lit = sat(luma(direct) / max(luma(sunLightColor()), 0.0001) * 3.0);
 #endif
-    }
+    float NdotV = abs(dot(V, n));
+    float F = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
+    vec3 spec = vec3(0.0);
+#ifdef DIM_OVERWORLD
+    spec = sunLightColor() * ggxSpecular(n, V, L, 0.06) * lit * 0.6;
+#endif
 
-    gl_FragData[0] = vec4(color, alpha);
 #ifdef ULTRA
-    gl_FragData[1] = vec4(encodeNormal(n), packMaterial(water ? 2.0 : 3.0, lmcoord.y), 1.0);
+    if (water) {
+        // refraction, absorption and reflections are done in composite; keep the sun glint here
+        gl_FragData[0] = vec4(0.0);
+        gl_FragData[1] = vec4(encodeNormal(n), packMaterial(2.0, lmcoord.y), 1.0);
+        gl_FragData[2] = vec4(spec, 1.0);
+        return;
+    }
+    // glass and ice: a faint sky reflection, the background keeps its material data
+    vec3 R = reflect(V, n);
+    vec3 refl = skyColorAt(R) * smoothstep(0.4, 0.9, lmcoord.y);
+    color = mix(color, refl, F * 0.6) + spec * 0.3;
+    alpha = mix(alpha, 1.0, F * 0.5);
+    gl_FragData[0] = vec4(color, alpha);
+    gl_FragData[1] = vec4(0.0);
+    gl_FragData[2] = vec4(0.0);
+#else
+    vec3 R = reflect(V, n);
+    float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
+    vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
+    if (water) {
+        // how much water lies between this surface and the ground below it
+        float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
+        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
+        if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
+        float a = 1.0 - exp(-thick * 0.32 * WATER_FOG);
+        a = mix(0.10, 0.97, a);
+        vec3 deep = vec3(0.020, 0.13, 0.16) * (ambientColor() * lmcoord.y * lmcoord.y + sunLightColor() * 0.12 + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        deep = mix(deep, color * 0.6, 0.25);
+        float A = a * (1.0 - F) + F;
+        color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
+        alpha = sat(A + luma(spec));
+    } else {
+        color = mix(color, refl, F * 0.6) + spec * 0.3;
+        alpha = mix(alpha, 1.0, F * 0.5);
+    }
+    gl_FragData[0] = vec4(color, alpha);
 #endif
 }
 """
@@ -352,6 +407,7 @@ void main() {
     vec4 vp = gl_ModelViewMatrix * gl_Vertex;
     viewPos = vp.xyz;
     gl_Position = gl_ProjectionMatrix * vp;
+    JITTER(gl_Position);
 }
 """
 
@@ -375,6 +431,9 @@ void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
     gl_FragData[0] = vec4(toLinear(c.rgb) * 1.6, c.a);
 #elif defined PROGRAM_CLOUDS
+#if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+    discard;
+#endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
     if (c.a < 0.01) discard;
     vec3 n = normalize(viewNormal);
@@ -383,8 +442,10 @@ void main() {
     float side = 0.55 + 0.45 * max(dot(n, L), 0.0);
     vec3 V = normalize(viewPos);
     float silver = pow(max(dot(V, L), 0.0), 6.0) * 0.6;
-    vec3 col = ambientColor() * 1.25 + sun * (0.35 * side + silver);
+    vec3 col = ambientColor() * 1.1 + sun * (0.32 * side + silver);
     col *= mix(1.0, 0.55, rainStrength);
+    // distant clouds melt into the sky
+    col = mix(col, skyColorAt(V), sat(length(viewPos) / (far * 3.0)) * 0.6);
     gl_FragData[0] = vec4(col * CLOUD_BRIGHTNESS, c.a * mix(0.85, 0.95, rainStrength));
 #elif defined PROGRAM_WEATHER
     vec4 c = texture2D(tex, texcoord) * glcolor;
@@ -413,6 +474,7 @@ SKYBASIC_VSH = r"""varying vec4 glcolor;
 void main() {
     glcolor = gl_Color;
     gl_Position = ftransform();
+    JITTER(gl_Position);
 }
 """
 
@@ -426,7 +488,8 @@ void main() {
 #endif
     if (!star) discard;
     float night = 1.0 - dayFactor();
-    vec3 c = vec3(0.75, 0.82, 1.0) * glcolor.rgb * glcolor.a * STAR_BRIGHTNESS * 1.6 * night * (1.0 - rainStrength);
+    float twinkle = 0.75 + 0.25 * sin(frameTimeCounter * 3.0 + gl_FragCoord.x * 0.37 + gl_FragCoord.y * 0.71);
+    vec3 c = vec3(0.78, 0.85, 1.0) * glcolor.rgb * glcolor.a * STAR_BRIGHTNESS * 2.2 * twinkle * night * night * (1.0 - rainStrength);
     gl_FragData[0] = vec4(c, 1.0);
 }
 """
@@ -438,6 +501,7 @@ void main() {
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
     gl_Position = ftransform();
+    JITTER(gl_Position);
 }
 """
 
@@ -447,13 +511,17 @@ varying vec4 glcolor;
 void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
 #ifdef DIM_END
-    gl_FragData[0] = vec4(toLinear(c.rgb) * vec3(0.85, 0.7, 1.15) * 0.9, c.a);
+    gl_FragData[0] = vec4(toLinear(c.rgb) * vec3(0.85, 0.7, 1.15) * 0.9 * END_SKY, c.a);
 #else
-    float boost = 3.0;
-#ifdef MC_RENDER_STAGE_MOON
-    if (renderStage == MC_RENDER_STAGE_MOON) boost = 1.3 * MOON_BRIGHTNESS;
+    vec3 col = toLinear(c.rgb) * 6.0;
+#ifdef DIM_OVERWORLD
+    // the sun sinks into the atmosphere: reddened near the horizon
+    col *= sunTransmittance(max(sunHeight(), 0.01)) * 1.2 + vec3(0.02);
 #endif
-    gl_FragData[0] = vec4(toLinear(c.rgb) * boost * (1.0 - rainStrength), c.a);
+#ifdef MC_RENDER_STAGE_MOON
+    if (renderStage == MC_RENDER_STAGE_MOON) col = toLinear(c.rgb) * 1.4 * MOON_BRIGHTNESS * vec3(0.85, 0.92, 1.0);
+#endif
+    gl_FragData[0] = vec4(col * (1.0 - rainStrength), c.a);
 #endif
 }
 """
@@ -467,37 +535,95 @@ void main() {
 }
 """
 
+PREPARE_FSH = r"""// renders the sky-view LUT plus the sun and ambient colours into a corner of colortex5
+#define SKY_INTENSITY 9.0
+#define SUN_INTENSITY 3.3
+
+vec3 skyRadiance(vec3 d, vec3 sunL) {
+    float below = max(-d.y, 0.0);
+    if (d.y < 0.0) d = normalize(vec3(d.x, 0.0, d.z));
+    vec3 c = vec3(0.0);
+    if (sunL.y > -0.3) c += atmScatter(d, sunL) * SKY_INTENSITY;
+    if (sunL.y < 0.3) c += atmScatter(d, -sunL) * SKY_INTENSITY * 0.012 * moonTint();
+    // faint airglow so a moonless night is not pitch black
+    c += vec3(0.0030, 0.0042, 0.0085) * (1.15 - 0.5 * d.y) * (1.0 - dayFactor());
+    c *= mix(1.0, 0.3, smoothstep(0.0, 0.5, below));
+    float l = luma(c);
+    c = mix(vec3(l), c, 1.12);
+    vec3 overcast = vec3(l) * vec3(0.92, 0.96, 1.02) * 0.7;
+    return mix(c, overcast, rainStrength * 0.85);
+}
+
+void main() {
+    vec2 px = gl_FragCoord.xy;
+    if (px.x > LUT_W || px.y > LUT_H + 1.0) discard;
+    float sinE = sunHeight();
+    vec3 sunL = vec3(sqrt(max(1.0 - sinE * sinE, 0.0)), sinE, 0.0);
+    vec3 col;
+    if (px.y < LUT_H) {
+        col = skyRadiance(lutDirection((px - 0.5) / (vec2(LUT_W, LUT_H) - 1.0)), sunL);
+    } else if (px.x < 1.0) {
+        vec3 sunC = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(0.0, 0.06, sinE);
+        vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.085 * moonTint() * smoothstep(0.0, 0.06, -sinE);
+        col = (sunC + moonC) * (1.0 - 0.85 * rainStrength);
+    } else if (px.x < 2.0) {
+        // cosine weighted average of the sky over the upper hemisphere
+        col = skyRadiance(vec3(0.0, 1.0, 0.0), sunL);
+        col += (skyRadiance(vec3(0.82, 0.57, 0.0), sunL) + 2.0 * skyRadiance(vec3(0.0, 0.57, 0.82), sunL) + skyRadiance(vec3(-0.82, 0.57, 0.0), sunL)) * 0.75;
+        col += (skyRadiance(vec3(0.99, 0.14, 0.0), sunL) + 2.0 * skyRadiance(vec3(0.0, 0.14, 0.99), sunL) + skyRadiance(vec3(-0.99, 0.14, 0.0), sunL)) * 0.3;
+        col /= 5.2;
+        // a little saturation so shade stays blue instead of grey
+        col = mix(vec3(luma(col)), col, 1.25) * AMBIENT_STRENGTH;
+        col += vec3(0.006, 0.009, 0.018) * MOON_BRIGHTNESS * (1.0 - dayFactor());
+    } else {
+        discard;
+    }
+    gl_FragData[0] = vec4(max(col, vec3(0.0)), 1.0);
+}
+"""
+
 FOG = r"""uniform sampler2D colortex2;
 uniform sampler2D colortex3;
 
 float eyeSkyLight() { return float(eyeBrightnessSmooth.y) / 240.0; }
 
+// distance + height fog; its colour is the sky behind the object, so far terrain fades into the horizon
 vec3 applyFog(vec3 col, vec3 dir, float dist) {
-    float border = smoothstep(far * 0.55, far, dist);
+    float border = smoothstep(far * 0.6, far, dist);
 #if defined DIM_NETHER
     float f = 1.0 - exp(-dist * 0.014 * FOG_DENSITY);
 #elif defined DIM_END
     float f = 1.0 - exp(-dist * 0.005 * FOG_DENSITY);
 #else
-    float density = (0.0018 + 0.010 * rainStrength + 0.003 * twilightFactor()) * FOG_DENSITY;
-    float f = 1.0 - exp(-dist * density);
-    f *= mix(0.35, 1.0, eyeSkyLight());
+    float dy = dot(dir, normalize(upPosition));
+    float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
+    // exponential height fog, integrated along the ray
+    float b = 1.0 / 28.0;
+    float h0 = (0.0035 + 0.004 * twilightFactor() + 0.012 * rainStrength) * FOG_DENSITY * exp(-b * max(cameraPosition.y - 63.0, 0.0));
+    float k = b * dy * dist;
+    float heightTerm = abs(k) > 0.001 ? (1.0 - exp(-k)) / k : 1.0;
+    float tau = base * dist + h0 * dist * heightTerm;
+    float f = 1.0 - exp(-tau);
+    f *= mix(0.25, 1.0, eyeSkyLight());
 #endif
     f = max(f, border);
-    return mix(col, skyColorAt(dir), f);
+    vec3 fc = skyColorAt(dir);
+#ifdef DIM_OVERWORLD
+    fc *= mix(0.08, 1.0, eyeSkyLight());
+#endif
+    return mix(col, fc, f);
 }
 
 vec3 mediumFog(vec3 col, float dist) {
     if (isEyeInWater == 1) {
-        vec3 tint = vec3(0.10, 0.42, 0.52);
 #ifdef DIM_OVERWORLD
-        vec3 lightAmt = ambientColor() * 0.9 + sunLightColor() * 0.12;
+        vec3 lightAmt = ambientColor() * 0.9 + sunLightColor() * 0.15;
 #else
         vec3 lightAmt = ambientColor();
 #endif
-        vec3 fogC = tint * luma(lightAmt) * mix(0.25, 1.0, eyeSkyLight()) + vec3(0.002, 0.006, 0.008);
-        col *= vec3(0.55, 0.85, 0.95);
-        return mix(col, fogC, 1.0 - exp(-dist * 0.075));
+        vec3 scatter = vec3(0.012, 0.075, 0.095) * luma(lightAmt) * mix(0.2, 1.0, eyeSkyLight()) + vec3(0.001, 0.004, 0.005);
+        vec3 absorb = exp(-vec3(0.32, 0.09, 0.07) * dist * WATER_FOG);
+        return col * absorb + scatter * (1.0 - absorb);
     }
     if (isEyeInWater == 2) return mix(col, vec3(1.2, 0.32, 0.04), 1.0 - exp(-dist * 1.2));
     if (isEyeInWater == 3) return mix(col, vec3(0.6, 0.7, 0.8), 1.0 - exp(-dist * 1.2));
@@ -508,8 +634,8 @@ float exposureValue() {
     float e = EXPOSURE;
 #ifdef DIM_OVERWORLD
     float eye = eyeSkyLight();
-    e *= mix(1.7, 1.0, eye);
-    e *= mix(1.0, mix(1.7, 1.0, dayFactor()), eye);
+    e *= mix(2.2, 1.0, eye);
+    e *= mix(1.0, mix(1.9, 1.0, dayFactor()), eye);
 #else
     e *= 1.35;
 #endif
@@ -518,9 +644,14 @@ float exposureValue() {
 
 vec3 finishColor(vec3 col, vec2 uv, float exposure) {
     col = mix(col, vec3(0.0), max(blindness, darknessFactor * 0.7));
-    col = acesFilm(col * exposure);
+    col *= exposure;
+    // dark scenes lose colour and drift blue, like the eye at night
+    float l = luma(col);
+    float scot = (1.0 - smoothstep(0.0, 0.12, l)) * NIGHT_DESAT;
+    col = mix(col, vec3(l) * vec3(0.72, 0.86, 1.2), scot * 0.65);
+    col = lottes(max(col, vec3(0.0)));
     col = grade(col);
-    col = pow(col, vec3(1.0 / 2.2));
+    col = pow(sat3(col), vec3(1.0 / 2.2));
     vec2 v = uv - 0.5;
     col *= 1.0 - VIGNETTE * pow(dot(v, v) * 2.0, 1.3);
     col += (dither(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -528,7 +659,47 @@ vec3 finishColor(vec3 col, vec2 uv, float exposure) {
 }
 """
 
+DEFERRED_LITE = r"""varying vec2 uv;
+
+// paint the sky behind the opaque world before translucent blocks are drawn
+void main() {
+    vec3 col = texture2D(colortex0, uv).rgb;
+    float depth = texture2D(depthtex0, uv).r;
+    if (depth >= 1.0) {
+        vec3 dir = normalize(screenToView(uv, 1.0));
+        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
+#ifdef DIM_END
+        col += endSkyDetail(dir);
+#endif
+    }
+    gl_FragData[0] = vec4(col, 1.0);
+}
+"""
+
 FINAL_LITE = r"""varying vec2 uv;
+
+#ifdef SSAO
+// cheap depth-only ambient occlusion (after Capt Tatsu / MakeUp), 2 x SSAO_STEPS taps
+float linDepth(float d) { return (2.0 * near) / (far + near - (d * 2.0 - 1.0) * (far - near)); }
+
+float depthAO(float depth, float noise) {
+    float ld = linDepth(depth);
+    vec2 scale = vec2(viewHeight / viewWidth, 1.0) * gbufferProjection[1][1] * 0.5 / (ld * far) * 1.2;
+    float ao = 0.0;
+    for (int i = 0; i < SSAO_STEPS; i++) {
+        float s = float(i) + noise;
+        float a = fract(s * 1.618034) * 3.1415926;
+        vec2 o = vec2(cos(a), sin(a)) * s / float(SSAO_STEPS) * scale;
+        float d1 = (ld - linDepth(texture2D(depthtex0, uv + o).r)) * far;
+        float d2 = (ld - linDepth(texture2D(depthtex0, uv - o).r)) * far;
+        float angle = sat(0.5 - d1) + sat(0.5 - d2);
+        float dist = sat(0.25 * d1 - 1.0) + sat(0.25 * d2 - 1.0);
+        ao += sat(angle + dist);
+    }
+    ao /= float(SSAO_STEPS);
+    return mix(1.0, sqrt(ao), SSAO_STRENGTH);
+}
+#endif
 
 void main() {
     vec3 col = texture2D(colortex0, uv).rgb;
@@ -537,9 +708,11 @@ void main() {
     vec3 dir = normalize(vp);
     float dist = length(vp);
     if (depth >= 1.0) {
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
         dist = far * 4.0;
     } else {
+#ifdef SSAO
+        if (depth > 0.56) col *= depthAO(depth, dither(gl_FragCoord.xy));
+#endif
         col = applyFog(col, dir, dist);
     }
     vec4 weather = texture2D(colortex3, uv);
@@ -549,7 +722,9 @@ void main() {
 }
 """
 
-COMPOSITE_ULTRA = r"""varying vec2 uv;
+# ---------------------------------------------------------------- Ultra only
+DEFERRED_ULTRA = r"""varying vec2 uv;
+uniform sampler2D colortex4;
 
 vec3 decodeNormal(vec2 e) {
     vec2 fe = e * 4.0 - 2.0;
@@ -558,9 +733,115 @@ vec3 decodeNormal(vec2 e) {
     return vec3(fe * g, 1.0 - f / 2.0);
 }
 
-vec3 toScreen(vec3 vp) {
-    vec4 c = gbufferProjection * vec4(vp, 1.0);
-    return c.xyz / c.w * 0.5 + 0.5;
+#ifdef SSAO
+// normal-oriented hemisphere AO in view space; noise changes every frame and TAA averages it
+float ssao(vec3 vp, vec3 n, float noise) {
+    vec3 t = normalize(cross(n, abs(n.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 b = cross(n, t);
+    float occ = 0.0;
+    float radius = SSAO_RADIUS;
+    for (int i = 0; i < SSAO_SAMPLES; i++) {
+        vec2 v = vogel(i, SSAO_SAMPLES, noise * 6.2831853);
+        float z = sqrt(max(1.0 - dot(v, v), 0.0));
+        float len = mix(0.15, 1.0, pow2(fract(noise + float(i) * 0.618034)));
+        vec3 s = vp + (t * v.x + b * v.y + n * z) * radius * len;
+        vec3 sc = viewToScreen(s);
+        if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0) continue;
+        float sd = texture2D(depthtex0, sc.xy).r;
+        vec3 sp = screenToView(sc.xy, sd);
+        float diff = sp.z - s.z;
+        occ += step(0.03, diff) * (1.0 - smoothstep(0.0, radius * 1.5, diff));
+    }
+    return 1.0 - occ / float(SSAO_SAMPLES) * SSAO_STRENGTH;
+}
+#endif
+
+#if defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+float hgPhase(float mu, float g) { float g2 = g * g; return 0.0795775 * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
+
+// march the cloud slab; returns scattered light (rgb) and transmittance (a)
+vec4 renderClouds(vec3 dirView, float maxDist, float noise) {
+    vec3 d = mat3(gbufferModelViewInverse) * dirView;
+    if (abs(d.y) < 0.0005) return vec4(0.0, 0.0, 0.0, 1.0);
+    float y = cameraPosition.y;
+    float ta = (CLOUD_HEIGHT - y) / d.y;
+    float tb = (CLOUD_HEIGHT + CLOUD_THICKNESS - y) / d.y;
+    float t0 = max(min(ta, tb), 0.0);
+    float t1 = min(max(ta, tb), maxDist);
+    t1 = min(t1, t0 + CLOUD_THICKNESS * 8.0);
+    if (t1 <= t0 || t0 > 4000.0) return vec4(0.0, 0.0, 0.0, 1.0);
+    vec3 Lw = normalize(mat3(gbufferModelViewInverse) * shadowLightPosition);
+    float mu = dot(d, Lw);
+    float phase = mix(hgPhase(mu, 0.65), hgPhase(mu, -0.2), 0.35) * 4.0 * PI;
+    float sinE = sunHeight();
+    vec3 sunC = sinE > 0.0 ? sunTransmittance(sinE + 0.04) * 4.5 * smoothstep(0.0, 0.05, sinE) * (1.0 - 0.85 * rainStrength) : sunLightColor() * 1.6;
+    vec3 ambC = ambientColor() * 0.9 + sunC * 0.04;
+    float dt = (t1 - t0) / float(CLOUD_STEPS);
+    float T = 1.0;
+    vec3 scat = vec3(0.0);
+    for (int i = 0; i < CLOUD_STEPS; i++) {
+        vec3 p = cameraPosition + d * (t0 + dt * (float(i) + noise));
+        float dens = cloudDensity(p, true);
+        if (dens < 0.003) continue;
+        float od = 0.0;
+        for (int j = 0; j < 3; j++) od += cloudDensity(p + Lw * (float(j) + 0.5) * CLOUD_THICKNESS * 0.16, false);
+        od *= CLOUD_THICKNESS * 0.16 * 0.09;
+        float h = sat((p.y - CLOUD_HEIGHT) / CLOUD_THICKNESS);
+        float sigma = dens * 0.09;
+        float powder = 1.0 - exp(-dens * 6.0);
+        vec3 S = sunC * exp(-od) * phase * mix(0.6, 1.0, powder) + ambC * (0.35 + 0.65 * h);
+        float stepT = exp(-sigma * dt);
+        scat += T * S * (1.0 - stepT);
+        T *= stepT;
+        if (T < 0.02) break;
+    }
+    // far clouds fade into the sky
+    float fade = exp(-t0 * 0.00045) * smoothstep(0.0, 0.06, d.y + 0.02);
+    vec3 skyBehind = skyColorAt(dirView);
+    scat = mix(skyBehind * (1.0 - T), scat, fade);
+    return vec4(scat * CLOUD_BRIGHTNESS, T);
+}
+#endif
+
+void main() {
+    vec3 col = texture2D(colortex0, uv).rgb;
+    float depth = texture2D(depthtex0, uv).r;
+    vec3 vp = screenToView(uv, depth);
+    vec3 dir = normalize(vp);
+    float noise = dither(gl_FragCoord.xy);
+    if (depth >= 1.0) {
+        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
+#ifdef DIM_END
+        col += endSkyDetail(dir);
+#endif
+    }
+#ifdef SSAO
+    else if (depth > 0.56) {
+        vec4 data = texture2D(colortex1, uv);
+        vec3 n = normalize(decodeNormal(data.xy));
+        vec3 ind = texture2D(colortex4, uv).rgb;
+        float ao = ssao(vp, n, noise);
+        col -= ind * (1.0 - ao);
+    }
+#endif
+#if defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+    if (depth >= 1.0 || length(vp) > 120.0) {
+        vec4 cl = renderClouds(dir, depth >= 1.0 ? 1e6 : length(vp), noise);
+        col = col * cl.a + cl.rgb;
+    }
+#endif
+    gl_FragData[0] = vec4(max(col, vec3(0.0)), 1.0);
+}
+"""
+
+COMPOSITE_ULTRA = r"""varying vec2 uv;
+uniform sampler2D colortex6;
+
+vec3 decodeNormal(vec2 e) {
+    vec2 fe = e * 4.0 - 2.0;
+    float f = dot(fe, fe);
+    float g = sqrt(max(1.0 - f / 4.0, 0.0));
+    return vec3(fe * g, 1.0 - f / 2.0);
 }
 
 vec4 traceReflection(vec3 origin, vec3 R, float jitter) {
@@ -568,20 +849,20 @@ vec4 traceReflection(vec3 origin, vec3 R, float jitter) {
     vec3 stepv = R * stepLen;
     vec3 pos = origin + stepv * (0.3 + jitter);
     for (int i = 0; i < SSR_STEPS; i++) {
-        vec3 sc = toScreen(pos);
+        vec3 sc = viewToScreen(pos);
         if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) break;
         float d = texture2D(depthtex1, sc.xy).r;
-        if (d < 1.0) {
+        if (d < 1.0 && d > 0.56) {
             vec3 sp = screenToView(sc.xy, d);
             float diff = sp.z - pos.z;
             if (diff > 0.0 && diff < length(stepv) * 2.5 + 0.4) {
                 for (int j = 0; j < 5; j++) {
                     stepv *= 0.5;
-                    sc = toScreen(pos);
+                    sc = viewToScreen(pos);
                     sp = screenToView(sc.xy, texture2D(depthtex1, sc.xy).r);
                     pos += (sp.z - pos.z > 0.0 ? -stepv : stepv);
                 }
-                sc = toScreen(pos);
+                sc = viewToScreen(pos);
                 vec2 edge = min(sc.xy, 1.0 - sc.xy);
                 float fade = clamp(min(edge.x, edge.y) * 12.0, 0.0, 1.0);
                 if (texture2D(depthtex1, sc.xy).r >= 1.0) return vec4(0.0);
@@ -620,6 +901,14 @@ vec3 volumetricLight(vec3 dir, float dist, float jitter) {
 }
 #endif
 
+vec3 waterScatter(float skyL) {
+    vec3 light = ambientColor() * skyL * skyL + minimumLight();
+#ifdef DIM_OVERWORLD
+    light += sunLightColor() * 0.12 * skyL;
+#endif
+    return vec3(0.018, 0.12, 0.15) * light;
+}
+
 void main() {
     vec3 col = texture2D(colortex0, uv).rgb;
     float depth0 = texture2D(depthtex0, uv).r;
@@ -628,9 +917,9 @@ void main() {
     vec3 dir = normalize(vp);
     float dist = length(vp);
     float jitter = dither(gl_FragCoord.xy);
+    vec3 up = normalize(upPosition);
 
     if (depth0 >= 1.0) {
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
         dist = far * 4.0;
     } else {
         vec4 data = texture2D(colortex1, uv);
@@ -638,26 +927,49 @@ void main() {
         float mat = floor(m + 0.02);
         float skyL = clamp((m - mat) / 0.95, 0.0, 1.0);
         vec3 n = normalize(decodeNormal(data.xy));
-
-        if (abs(mat - 2.0) < 0.5 && isEyeInWater == 0) {
-            float thick = depth1 >= 1.0 ? 48.0 : length(screenToView(uv, depth1) - vp);
-            vec3 absorb = exp(-vec3(0.42, 0.11, 0.07) * thick * WATER_FOG);
-            vec3 deep = vec3(0.01, 0.06, 0.08) * luma(ambientColor() + sunLightColor() * 0.2) * skyL;
-            col = col * absorb + deep * (1.0 - absorb);
-        }
+        bool water = abs(mat - 2.0) < 0.5 && depth1 > depth0;
 
         float F = 0.0;
-        if (abs(mat - 2.0) < 0.5) {
+        if (water) {
+            vec3 spec = texture2D(colortex6, uv).rgb;
+            if (isEyeInWater == 0) {
+                // refraction: bend the view ray and look up what is behind the surface there
+                float thick0 = depth1 >= 1.0 ? 16.0 : distance(screenToView(uv, depth1), vp);
+                vec3 rd = refract(dir, n, 0.75);
+                vec2 suv = viewToScreen(vp + rd * clamp(thick0, 0.5, 3.0)).xy;
+                suv = mix(uv, suv, WATER_REFRACTION);
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0 || texture2D(depthtex1, suv).r <= depth0) suv = uv;
+                vec3 bg = texture2D(colortex0, suv).rgb;
+                float bd = texture2D(depthtex1, suv).r;
+                vec3 bp = screenToView(suv, bd);
+                float thick = bd >= 1.0 ? 64.0 : max(distance(bp, vp), 0.0);
+#if defined CAUSTICS && defined DIM_OVERWORLD
+                if (bd < 1.0) {
+                    vec3 bw = (gbufferModelViewInverse * vec4(bp, 1.0)).xyz + cameraPosition;
+                    float c = waterCaustics(bw);
+                    bg *= 1.0 + c * 2.5 * skyL * skyL * sat(luma(sunLightColor()) * 0.5) * exp(-thick * 0.2);
+                }
+#endif
+                vec3 absorb = exp(-vec3(0.42, 0.11, 0.07) * thick * WATER_FOG);
+                col = bg * absorb + waterScatter(skyL) * (1.0 - absorb);
+            }
             F = 0.02 + 0.98 * pow(1.0 - abs(dot(dir, n)), 5.0);
             if (isEyeInWater == 1) F *= 0.4;
+            col += spec;
         }
 #if defined WET_REFLECTIONS && defined DIM_OVERWORLD
         else if (abs(mat - 1.0) < 0.5 && wetness > 0.01) {
             vec3 wp = (gbufferModelViewInverse * vec4(vp, 1.0)).xyz + cameraPosition;
             float puddle = smoothstep(0.4, 0.65, valueNoise(wp.xz * 0.35));
-            float flatness = smoothstep(0.85, 0.98, dot(n, normalize(upPosition)));
+            float flatness = smoothstep(0.85, 0.98, dot(n, up));
             float wetMask = wetness * flatness * smoothstep(0.85, 0.95, skyL) * mix(0.15, 1.0, puddle);
             F = (0.12 + 0.88 * pow(1.0 - abs(dot(dir, n)), 5.0)) * wetMask * 0.9;
+        }
+#endif
+#if defined CAUSTICS && defined DIM_OVERWORLD
+        if (isEyeInWater == 1 && depth0 > 0.56) {
+            vec3 wp = (gbufferModelViewInverse * vec4(vp, 1.0)).xyz + cameraPosition;
+            col *= 1.0 + waterCaustics(wp) * 2.0 * skyL * skyL * sat(luma(sunLightColor()) * 0.5);
         }
 #endif
         if (F > 0.003) {
@@ -682,13 +994,66 @@ void main() {
 }
 """
 
+TAA_ULTRA = r"""varying vec2 uv;
+uniform sampler2D colortex7;
+
+// temporal anti-aliasing: reproject last frame, clamp it to this frame's neighbourhood, blend
+vec3 toYCoCg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
+vec3 fromYCoCg(vec3 c) { return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
+vec3 squash(vec3 c) { return c / (1.0 + luma(c)); }
+vec3 unsquash(vec3 c) { return c / max(1.0 - luma(c), 0.001); }
+
+void main() {
+    vec3 cur = texture2D(colortex0, uv).rgb;
+#ifdef TAA
+    float depth = texture2D(depthtex0, uv).r;
+    vec2 prevUV = uv;
+    if (depth > 0.56) {
+        vec3 vp = screenToView(uv, depth);
+        vec3 pp = depth >= 1.0 ? mat3(gbufferModelViewInverse) * vp : (gbufferModelViewInverse * vec4(vp, 1.0)).xyz + cameraPosition - previousCameraPosition;
+        vec4 pv = gbufferPreviousProjection * (depth >= 1.0 ? vec4(mat3(gbufferPreviousModelView) * pp, 1.0) : gbufferPreviousModelView * vec4(pp, 1.0));
+        prevUV = pv.xy / pv.w * 0.5 + 0.5;
+    }
+    vec2 px = 1.0 / vec2(viewWidth, viewHeight);
+    vec3 c = toYCoCg(squash(cur));
+    vec3 mn = c;
+    vec3 mx = c;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            if (x == 0 && y == 0) continue;
+            vec3 s = toYCoCg(squash(texture2D(colortex0, uv + vec2(float(x), float(y)) * px).rgb));
+            mn = min(mn, s);
+            mx = max(mx, s);
+        }
+    }
+    vec3 hist = toYCoCg(squash(texture2D(colortex7, prevUV).rgb));
+    hist = clamp(hist, mn, mx);
+    float blend = TAA_BLEND;
+    if (prevUV.x < 0.0 || prevUV.x > 1.0 || prevUV.y < 0.0 || prevUV.y > 1.0) blend = 0.0;
+    blend *= mix(1.0, 0.85, sat(length((prevUV - uv) * vec2(viewWidth, viewHeight)) / 6.0));
+    vec3 res = max(unsquash(fromYCoCg(mix(c, hist, blend))), vec3(0.0));
+#else
+    vec3 res = cur;
+#endif
+    gl_FragData[0] = vec4(res, 1.0);
+    gl_FragData[1] = vec4(res, 1.0);
+}
+"""
+
 FINAL_ULTRA = r"""varying vec2 uv;
 const bool colortex0MipmapEnabled = true;
 
 void main() {
-    vec3 col = texture2D(colortex0, uv).rgb;
-#ifdef BLOOM
     vec2 px = 1.0 / vec2(viewWidth, viewHeight);
+    vec3 col = texture2D(colortex0, uv).rgb;
+#ifdef SHARPEN
+    // gentle sharpening to win back what TAA softens
+    vec3 nb = texture2D(colortex0, uv + vec2(px.x, 0.0)).rgb + texture2D(colortex0, uv - vec2(px.x, 0.0)).rgb
+            + texture2D(colortex0, uv + vec2(0.0, px.y)).rgb + texture2D(colortex0, uv - vec2(0.0, px.y)).rgb;
+    vec3 sharp = col + (col - nb * 0.25) * 0.35;
+    col = clamp(sharp, col * 0.6, col * 1.6);
+#endif
+#ifdef BLOOM
     vec3 bloom = vec3(0.0);
     float wsum = 0.0;
     for (int i = 2; i < 8; i++) {
@@ -705,12 +1070,12 @@ void main() {
     bloom /= wsum;
     float bl = luma(bloom);
     vec3 bright = bloom * clamp((bl - 0.9) / max(bl, 0.0001), 0.0, 1.0);
-    col += (bright * 0.45 + bloom * 0.025) * BLOOM_STRENGTH;
+    col += (bright * 0.45 + bloom * 0.03) * BLOOM_STRENGTH;
 #endif
     float exposure = exposureValue();
 #ifdef AUTO_EXPOSURE
     float avg = luma(texture2D(colortex0, vec2(0.5), 14.0).rgb);
-    float autoExp = clamp(0.2 / max(avg * exposure, 0.0001), 0.6, 1.6);
+    float autoExp = clamp(0.2 / max(avg * exposure, 0.0001), 0.6, 1.3);
     exposure *= mix(1.0, autoExp, 0.5);
 #endif
     gl_FragData[0] = vec4(finishColor(col, uv, exposure), 1.0);

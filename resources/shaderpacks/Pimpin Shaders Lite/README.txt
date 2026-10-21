@@ -3,8 +3,10 @@ Pimpin Shaders Lite
 Made for the Pimpin Launcher by Nos and Stealzers. Works with Iris (Fabric/NeoForge) and OptiFine,
 Minecraft 1.16.5 and newer.
 
-Looks good, keeps your FPS: soft sun shadows, warm sunlight with cool shade, a gradient sky with a
-glowing sun, fog that matches the sky, nicer water with gentle waves, swaying leaves and grass,
-filmic colours and a light vignette. Everything runs in the world passes plus one final pass.
+Looks good, keeps your FPS: a physically based sky (sunsets go orange and red on their own, the
+night turns deep blue), fog that fades distant land into the horizon, soft sun shadows, ambient
+occlusion in corners, light glowing through leaves, water that is clear in the shallows and deep
+blue further out, swaying plants, filmic colours. It costs the world passes plus two cheap
+full-screen passes.
 
 Profiles (Shader Settings): Fast, Balanced (default), Crisp.

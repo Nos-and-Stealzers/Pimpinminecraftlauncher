@@ -41,7 +41,7 @@ export function fileBrowser(root, target, { start = '', rootLabel = 'Folder' } =
   const crumbs = el('div', { class: 'crumbs grow' });
   const list = el('div', { class: 'file-list' });
   const summary = el('div', { class: 'file-summary dim' });
-  const filter = el('input', { class: 'input', placeholder: 'Filter…', style: { height: '34px', width: '180px' } });
+  const filter = el('input', { class: 'input', placeholder: 'Filter', style: { height: '34px', width: '180px' } });
   const drop = el('div', { class: 'file-drop' }, icon('upload'), el('b', {}, 'Drop to copy here'));
   const wrap = el('div', { class: 'file-browser' });
 
@@ -97,7 +97,7 @@ export function fileBrowser(root, target, { start = '', rootLabel = 'Folder' } =
 
   const load = async () => {
     drawCrumbs();
-    clear(list, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+    clear(list, el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading'));
     try {
       entries = (await api.call('files:list', target, sub)).entries;
       draw();

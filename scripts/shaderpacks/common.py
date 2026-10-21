@@ -20,24 +20,30 @@ block.10010=water
 
 # other translucent blocks
 block.10011=ice frosted_ice slime_block honey_block
-block.10012=white_stained_glass orange_stained_glass magenta_stained_glass light_blue_stained_glass yellow_stained_glass lime_stained_glass pink_stained_glass gray_stained_glass light_gray_stained_glass cyan_stained_glass purple_stained_glass blue_stained_glass brown_stained_glass green_stained_glass red_stained_glass black_stained_glass white_stained_glass_pane orange_stained_glass_pane magenta_stained_glass_pane light_blue_stained_glass_pane yellow_stained_glass_pane lime_stained_glass_pane pink_stained_glass_pane gray_stained_glass_pane light_gray_stained_glass_pane cyan_stained_glass_pane purple_stained_glass_pane blue_stained_glass_pane brown_stained_glass_pane green_stained_glass_pane red_stained_glass_pane black_stained_glass_pane tinted_glass
+block.10012=white_stained_glass orange_stained_glass magenta_stained_glass light_blue_stained_glass yellow_stained_glass lime_stained_glass pink_stained_glass gray_stained_glass light_gray_stained_glass cyan_stained_glass purple_stained_glass blue_stained_glass brown_stained_glass green_stained_glass red_stained_glass black_stained_glass white_stained_glass_pane orange_stained_glass_pane magenta_stained_glass_pane light_blue_stained_glass_pane yellow_stained_glass_pane lime_stained_glass_pane pink_stained_glass_pane gray_stained_glass_pane light_gray_stained_glass_pane cyan_stained_glass_pane purple_stained_glass_pane blue_stained_glass_pane brown_stained_glass_pane green_stained_glass_pane red_stained_glass_pane black_stained_glass_pane tinted_glass glass glass_pane
 
 # light sources: bright texels glow
 block.10020=glowstone sea_lantern shroomlight jack_o_lantern redstone_lamp:lit=true beacon end_rod lantern soul_lantern torch wall_torch soul_torch soul_wall_torch redstone_torch:lit=true redstone_wall_torch:lit=true campfire:lit=true soul_campfire:lit=true fire soul_fire ochre_froglight verdant_froglight pearlescent_froglight glow_lichen crying_obsidian sea_pickle respawn_anchor cave_vines:berries=true cave_vines_plant:berries=true furnace:lit=true blast_furnace:lit=true smoker:lit=true conduit copper_bulb:lit=true exposed_copper_bulb:lit=true weathered_copper_bulb:lit=true oxidized_copper_bulb:lit=true waxed_copper_bulb:lit=true waxed_exposed_copper_bulb:lit=true waxed_weathered_copper_bulb:lit=true waxed_oxidized_copper_bulb:lit=true amethyst_cluster large_amethyst_bud magma_block nether_portal end_portal end_gateway candle:lit=true white_candle:lit=true orange_candle:lit=true yellow_candle:lit=true red_candle:lit=true
 
 # fully emissive
 block.10021=lava
+
+# shiny blocks: a little sun specular
+block.10030=iron_block gold_block diamond_block emerald_block copper_block exposed_copper weathered_copper oxidized_copper waxed_copper_block netherite_block polished_andesite polished_diorite polished_granite polished_deepslate quartz_block smooth_quartz obsidian packed_ice blue_ice smooth_stone calcite
 """
 
 UNIFORMS = """uniform sampler2D tex;
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
+uniform sampler2D colortex5;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
 uniform mat4 gbufferModelView;
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferProjectionInverse;
+uniform mat4 gbufferPreviousModelView;
+uniform mat4 gbufferPreviousProjection;
 uniform mat4 shadowModelView;
 uniform mat4 shadowModelViewInverse;
 uniform mat4 shadowProjection;
@@ -46,6 +52,7 @@ uniform vec3 moonPosition;
 uniform vec3 shadowLightPosition;
 uniform vec3 upPosition;
 uniform vec3 cameraPosition;
+uniform vec3 previousCameraPosition;
 uniform vec3 fogColor;
 uniform vec3 skyColor;
 uniform vec4 entityColor;
@@ -62,6 +69,8 @@ uniform float darknessFactor;
 uniform float screenBrightness;
 uniform int isEyeInWater;
 uniform int renderStage;
+uniform int frameCounter;
+uniform int moonPhase;
 uniform int heldBlockLightValue;
 uniform int heldBlockLightValue2;
 uniform ivec2 eyeBrightnessSmooth;
@@ -77,14 +86,23 @@ COMMON = """// small helpers shared by every program
 #define ID_GLASS 10012.0
 #define ID_GLOW 10020.0
 #define ID_LAVA 10021.0
+#define ID_SHINY 10030.0
+#define PI 3.14159265
 
 bool isId(float id, float want) { return abs(id - want) < 0.5; }
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 toLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
 float sat(float x) { return clamp(x, 0.0, 1.0); }
+float pow2(float x) { return x * x; }
+vec3 sat3(vec3 c) { return clamp(c, 0.0, 1.0); }
 
-// interleaved gradient noise
-float dither(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+// interleaved gradient noise; the Ultra pack shifts it every frame so TAA can average it out
+float dither(vec2 p) {
+#if defined ULTRA && defined TAA
+    p += 5.588238 * mod(float(frameCounter), 64.0);
+#endif
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
 
 float hash12(vec2 p) {
     vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -109,86 +127,239 @@ vec3 screenToView(vec2 uv, float depth) {
     vec4 p = gbufferProjectionInverse * vec4(vec3(uv, depth) * 2.0 - 1.0, 1.0);
     return p.xyz / p.w;
 }
+
+vec3 viewToScreen(vec3 vp) {
+    vec4 c = gbufferProjection * vec4(vp, 1.0);
+    return c.xyz / c.w * 0.5 + 0.5;
+}
+
+vec2 vogel(int i, int n, float phi) {
+    float r = sqrt((float(i) + 0.5) / float(n));
+    float a = float(i) * 2.39996323 + phi;
+    return r * vec2(cos(a), sin(a));
+}
+
+#if defined ULTRA && defined TAA
+// sub-pixel camera jitter (Halton 2,3), averaged away again by the TAA pass
+vec2 taaOffset() {
+    float i = mod(float(frameCounter), 8.0) + 1.0;
+    vec2 h = vec2(0.0);
+    float f = 0.5;
+    float j = i;
+    for (int k = 0; k < 4; k++) { h.x += f * mod(j, 2.0); j = floor(j / 2.0); f *= 0.5; }
+    f = 1.0 / 3.0;
+    j = i;
+    for (int k = 0; k < 3; k++) { h.y += f * mod(j, 3.0); j = floor(j / 3.0); f /= 3.0; }
+    return (h - 0.5) * 2.0 / vec2(viewWidth, viewHeight);
+}
+#define JITTER(p) p.xy += taaOffset() * p.w
+#else
+#define JITTER(p)
+#endif
 """
 
-ATMOSPHERE = """// sky, sun and ambient colours. Everything is linear HDR.
+ATMOSPHERE = """// Sky and light colours.
+// The overworld sky is a small physically based atmosphere (Rayleigh + Mie + ozone, single
+// scattering plus a cheap multiple-scattering term). The prepare pass renders it into a
+// sky-view lookup table in the corner of colortex5 (after Hillaire 2020); everything else reads
+// that table, so sky, fog, reflections and ambient light always agree with each other.
+#define LUT_W 96.0
+#define LUT_H 48.0
+
 float sunHeight() { return dot(normalize(sunPosition), normalize(upPosition)); }
-float dayFactor() { return smoothstep(-0.12, 0.18, sunHeight()); }
-float twilightFactor() { float e = sunHeight(); return exp(-e * e * 40.0); }
+float dayFactor() { return smoothstep(-0.10, 0.12, sunHeight()); }
+float twilightFactor() { float e = sunHeight(); return exp(-e * e * 30.0); }
 
-vec3 sunLightColor() {
 #ifdef DIM_OVERWORLD
-    float e = sunHeight();
-    float low = 1.0 - smoothstep(0.02, 0.45, e);
-    vec3 sun = mix(vec3(1.0, 0.91, 0.78) * 3.1, vec3(1.0, 0.47, 0.17) * 2.3, low * low);
-    vec3 moon = vec3(0.42, 0.56, 0.95) * 0.14 * MOON_BRIGHTNESS;
-    vec3 c = e > 0.0 ? sun : moon;
-    c *= smoothstep(0.0, 0.06, abs(e));
-    return c * (1.0 - 0.82 * rainStrength);
-#else
-    return vec3(0.0);
-#endif
+const vec3 rayleighBeta = vec3(5.802e-3, 13.558e-3, 33.1e-3);
+const vec3 ozoneBeta = vec3(0.650e-3, 1.881e-3, 0.085e-3) * 1.5;
+#define MIE_SCATTER 2.4e-3
+#define MIE_EXTINCT 2.64e-3
+#define ATM_GROUND 6360.0
+#define ATM_TOP 6420.0
+
+vec3 atmDensity(float h) {
+    float haze = 1.0 + rainStrength * 3.0;
+    return vec3(exp(-h / 8.0), exp(-h / 1.2) * haze, max(0.0, 1.0 - abs(h - 25.0) / 15.0));
+}
+vec3 atmExtinction(vec3 d) { return rayleighBeta * d.x + vec3(MIE_EXTINCT * d.y) + ozoneBeta * d.z; }
+
+vec2 raySphere(vec3 o, vec3 d, float r) {
+    float b = dot(o, d);
+    float h = b * b - dot(o, o) + r * r;
+    if (h < 0.0) return vec2(-1.0);
+    h = sqrt(h);
+    return vec2(-b - h, -b + h);
 }
 
-vec3 ambientColor() {
-#if defined DIM_NETHER
-    return toLinear(fogColor) * 0.55 + vec3(0.10, 0.06, 0.04);
-#elif defined DIM_END
-    return vec3(0.15, 0.12, 0.21);
-#else
-    float d = dayFactor();
-    vec3 a = mix(vec3(0.05, 0.07, 0.13) * MOON_BRIGHTNESS, vec3(0.40, 0.54, 0.82) * 0.8, d);
-    a = mix(a, vec3(0.42, 0.33, 0.38) * 0.5, twilightFactor() * 0.45);
-    a = mix(a, vec3(luma(a)) * 0.75, rainStrength * 0.7);
-    return a;
-#endif
+// transmittance from a point to the top of the atmosphere
+vec3 atmTransmittance(vec3 p, vec3 L) {
+    vec2 g = raySphere(p, L, ATM_GROUND);
+    if (g.x > 0.0) return vec3(0.0);
+    float t = raySphere(p, L, ATM_TOP).y;
+    vec3 od = vec3(0.0);
+    for (int i = 0; i < 6; i++) {
+        vec3 q = p + L * (t * (float(i) + 0.5) / 6.0);
+        od += atmExtinction(atmDensity(length(q) - ATM_GROUND));
+    }
+    return exp(-od * t / 6.0);
 }
 
-vec3 skyColorAt(vec3 dir) {
-#if defined DIM_NETHER
-    return toLinear(fogColor) * 0.9;
-#elif defined DIM_END
-    return vec3(0.035, 0.025, 0.055);
-#else
+// light scattered towards the eye along a view ray, for a light source of irradiance 1
+vec3 atmScatter(vec3 d, vec3 L) {
+    vec3 o = vec3(0.0, ATM_GROUND + 0.4, 0.0);
+    float t = raySphere(o, d, ATM_TOP).y;
+    vec2 gh = raySphere(o, d, ATM_GROUND);
+    if (gh.x > 0.0) t = gh.x;
+    float mu = dot(d, L);
+    float pR = 0.0596831 * (1.0 + mu * mu);
+    const float g = 0.78;
+    float pM = 0.1193662 * (1.0 - g * g) * (1.0 + mu * mu) / ((2.0 + g * g) * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+    vec3 T = vec3(1.0);
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 16; i++) {
+        float s0 = t * pow2(float(i) / 16.0);
+        float s1 = t * pow2(float(i + 1) / 16.0);
+        vec3 p = o + d * (0.5 * (s0 + s1));
+        vec3 dens = atmDensity(length(p) - ATM_GROUND);
+        vec3 ext = atmExtinction(dens);
+        vec3 Ts = atmTransmittance(p, L);
+        vec3 scat = rayleighBeta * dens.x * (pR + 0.07) + vec3(MIE_SCATTER * dens.y * (pM + 0.05));
+        vec3 stepT = exp(-ext * (s1 - s0));
+        acc += T * scat * Ts * (1.0 - stepT) / max(ext, vec3(1e-7));
+        T *= stepT;
+    }
+    return acc;
+}
+
+vec3 sunTransmittance(float sinE) {
+    vec3 L = vec3(sqrt(max(1.0 - sinE * sinE, 0.0)), sinE, 0.0);
+    return atmTransmittance(vec3(0.0, ATM_GROUND + 0.4, 0.0), L);
+}
+
+vec3 moonTint() { return vec3(0.45, 0.62, 1.0) * MOON_BRIGHTNESS * (0.55 + 0.45 * abs(float(moonPhase) - 4.0) / 4.0); }
+
+// LUT parameterisation: x = angle to the sun around the up axis, y = elevation (squeezed towards the horizon)
+vec3 lutDirection(vec2 uv) {
+    float phi = uv.x * PI;
+    float v = uv.y * 2.0 - 1.0;
+    float l = sign(v) * v * v * PI * 0.5;
+    return vec3(cos(l) * cos(phi), sin(l), cos(l) * sin(phi));
+}
+
+vec2 lutCoord(vec3 d) {
+    vec3 up = normalize(upPosition);
+    float s = clamp(dot(d, up), -1.0, 1.0);
+    float l = asin(s);
+    vec3 sv = normalize(sunPosition);
+    vec3 sh = sv - up * dot(sv, up);
+    vec3 dh = d - up * s;
+    float c = dot(dh, sh) * inversesqrt(max(dot(dh, dh) * dot(sh, sh), 1e-12));
+    float u = acos(clamp(c, -1.0, 1.0)) / PI;
+    float v = 0.5 + 0.5 * sign(l) * sqrt(abs(l) / (PI * 0.5));
+    vec2 uv = vec2(u, v) * (vec2(LUT_W, LUT_H) - 1.0) + 0.5;
+    return uv / vec2(viewWidth, viewHeight);
+}
+#endif
+
+// the old hand-tuned gradient, used if the LUT was never written (an old loader without prepare passes)
+vec3 analyticSky(vec3 dir) {
     vec3 up = normalize(upPosition);
     vec3 sv = normalize(sunPosition);
     float h = dot(dir, up);
     float d = dayFactor();
     float tw = twilightFactor();
     float toSun = dot(dir, sv) * 0.5 + 0.5;
-
     vec3 zenith = mix(vec3(0.006, 0.010, 0.026), vec3(0.16, 0.34, 0.82), d);
     vec3 horizon = mix(vec3(0.025, 0.035, 0.065), vec3(0.60, 0.74, 0.95), d);
     horizon = mix(horizon, vec3(1.15, 0.48, 0.18), tw * pow(toSun, 2.5));
-    zenith = mix(zenith, vec3(0.22, 0.20, 0.38), tw * 0.45);
-
-    float hc = max(h, 0.0);
-    vec3 c = mix(horizon, zenith, pow(hc, 0.45));
+    vec3 c = mix(horizon, zenith, pow(max(h, 0.0), 0.45));
     c = mix(c, horizon * 0.35, sat(-h * 2.5));
+    return mix(c, vec3(luma(c)) * 0.55, rainStrength * 0.85);
+}
 
-    float cs = max(dot(dir, sv), 0.0);
-    vec3 glow = mix(vec3(1.0, 0.85, 0.6), vec3(1.0, 0.45, 0.15), tw);
-    c += glow * (pow(cs, 10.0) * 0.30 + pow(cs, 120.0) * 0.9) * SUN_GLOW * (1.0 - rainStrength) * smoothstep(-0.2, 0.05, sunHeight());
-    float cm = max(dot(dir, -sv), 0.0);
-    c += vec3(0.25, 0.32, 0.5) * pow(cm, 30.0) * 0.08 * (1.0 - d);
+vec4 lutTexel(float x) { return texture2D(colortex5, vec2(x + 0.5, LUT_H + 0.5) / vec2(viewWidth, viewHeight)); }
 
-    c = mix(c, vec3(luma(c)) * 0.55, rainStrength * 0.85);
-    return c;
+// sky radiance seen in a view-space direction, without the sun, moon and stars
+vec3 skyColorAt(vec3 dir) {
+#if defined DIM_NETHER
+    return toLinear(fogColor) * 0.9;
+#elif defined DIM_END
+    float h = dot(dir, normalize(upPosition));
+    return mix(vec3(0.050, 0.032, 0.080), vec3(0.018, 0.010, 0.036), sat(h * 0.5 + 0.5)) * END_SKY;
+#else
+    vec4 s = texture2D(colortex5, lutCoord(dir));
+    return s.a > 0.5 ? s.rgb : analyticSky(dir);
 #endif
 }
 
-vec3 blockLightColor(float bl) {
-    float b = bl * bl;
-    return vec3(1.0, 0.60, 0.30) * (b * b * b * 1.5 + b * 0.09) * BLOCKLIGHT_STRENGTH;
+// colour of the direct sun or moon light reaching the ground
+vec3 sunLightColor() {
+#ifdef DIM_OVERWORLD
+    vec4 t = lutTexel(0.0);
+    if (t.a < 0.5) {
+        float e = sunHeight();
+        float low = 1.0 - smoothstep(0.02, 0.45, e);
+        vec3 c = e > 0.0 ? mix(vec3(1.0, 0.91, 0.78) * 3.1, vec3(1.0, 0.47, 0.17) * 2.3, low * low) : vec3(0.42, 0.56, 0.95) * 0.14 * MOON_BRIGHTNESS;
+        return c * smoothstep(0.0, 0.06, abs(e)) * (1.0 - 0.82 * rainStrength);
+    }
+    return t.rgb;
+#else
+    return vec3(0.0);
+#endif
 }
 
-vec3 minimumLight() { return vec3(0.012, 0.013, 0.016) * (1.0 + screenBrightness * 2.0) + vec3(0.30) * nightVision; }
+// light from the whole sky onto an upward facing surface
+vec3 ambientColor() {
+#if defined DIM_NETHER
+    return toLinear(fogColor) * 0.55 + vec3(0.10, 0.06, 0.04);
+#elif defined DIM_END
+    return vec3(0.10, 0.07, 0.16) * END_SKY;
+#else
+    vec4 t = lutTexel(1.0);
+    if (t.a < 0.5) {
+        float d = dayFactor();
+        vec3 a = mix(vec3(0.05, 0.07, 0.13) * MOON_BRIGHTNESS, vec3(0.40, 0.54, 0.82) * 0.8, d);
+        return mix(a, vec3(luma(a)) * 0.75, rainStrength * 0.7);
+    }
+    return t.rgb;
+#endif
+}
+
+#ifdef DIM_END
+// stars and a faint nebula for the End sky
+vec3 endSkyDetail(vec3 dir) {
+    vec3 d = mat3(gbufferModelViewInverse) * dir;
+    vec2 sc = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * 60.0;
+    vec2 cell = floor(sc);
+    float h = hash12(cell);
+    vec2 f = fract(sc) - 0.5 - (vec2(hash12(cell + 7.1), hash12(cell + 3.7)) - 0.5) * 0.6;
+    float star = step(0.985, h) * smoothstep(0.2, 0.0, length(f)) * (0.5 + 2.0 * fract(h * 91.7));
+    vec2 q = sc * 0.025;
+    float neb = valueNoise(q) * valueNoise(q * 2.3 + 5.0);
+    vec3 nebC = mix(vec3(0.35, 0.12, 0.55), vec3(0.10, 0.30, 0.45), valueNoise(q * 0.7 + 9.0));
+    return (vec3(0.9, 0.85, 1.0) * star * 0.6 + nebC * neb * neb * 0.3) * END_SKY;
+}
+#endif
+
+vec3 blockLightColor(float bl) {
+    float b = bl * bl;
+#ifdef DIM_NETHER
+    vec3 warm = vec3(1.0, 0.48, 0.20);
+#else
+    vec3 warm = vec3(1.0, 0.56, 0.26);
+#endif
+    return warm * (b * b * b * 1.9 + b * 0.12) * BLOCKLIGHT_STRENGTH;
+}
+
+vec3 minimumLight() { return vec3(0.010, 0.012, 0.016) * (1.0 + screenBrightness * 2.5) + vec3(0.30) * nightVision; }
 """
 
 WAVING = """// gentle wind for foliage, offsets in world space
 vec3 waveOffset(vec3 wp, float id, bool top, float sky) {
     float t = frameTimeCounter;
-    float wind = WAVE_STRENGTH * (0.65 + 0.9 * rainStrength) * (0.55 + 0.45 * sin(t * 0.37 + wp.x * 0.05 + wp.z * 0.03));
+    float gust = 0.6 + 0.4 * sin(t * 0.37 + wp.x * 0.05 + wp.z * 0.03) * sin(t * 0.21 + wp.z * 0.02);
+    float wind = WAVE_STRENGTH * (0.65 + 0.9 * rainStrength) * gust;
     wind *= smoothstep(0.15, 0.6, sky);
     if (isId(id, ID_LEAVES)) {
         return vec3(sin(t * 1.7 + wp.x * 1.3 + wp.z * 0.7 + wp.y),
@@ -205,7 +376,7 @@ vec3 waveOffset(vec3 wp, float id, bool top, float sky) {
 }
 """
 
-WATER = """// procedural water surface: a few travelling sine waves plus a noise layer
+WATER = """// procedural water surface: travelling directional waves plus a noise layer
 float waterHeight(vec2 p) {
     float t = frameTimeCounter * WATER_SPEED;
     float h = 0.0;
@@ -214,8 +385,8 @@ float waterHeight(vec2 p) {
     h += sin(dot(p, vec2(0.96, -0.28)) * 3.1 + t * 2.4) * 0.12;
     h += valueNoise(p * 1.6 + vec2(t * 0.6, t * 0.35)) * 0.35;
 #ifdef WATER_DETAIL
-    h += valueNoise(p * 3.1 - vec2(t * 0.7, -t * 0.5)) * 0.10;
-    h += sin(dot(p, vec2(0.3, 0.95)) * 4.4 + t * 2.6) * 0.04;
+    h += valueNoise(p * 3.7 - vec2(t * 0.7, -t * 0.5)) * 0.12;
+    h += valueNoise(p * 7.3 + vec2(t * 1.1, t * 0.9)) * 0.05;
 #endif
     return h;
 }
@@ -227,16 +398,81 @@ vec3 waterNormalWorld(vec2 p) {
     float s = WATER_WAVE_HEIGHT * 0.22 / e;
     return normalize(vec3(-hx * s, 1.0, -hz * s));
 }
+
+// light focused by the waves onto whatever is under the water (iterated warp pattern)
+float waterCaustics(vec3 wp) {
+    float t = frameTimeCounter * WATER_SPEED * 0.5;
+    vec2 p = mod(wp.xz * 0.55 + wp.y * 0.08, 6.2831853) - 250.0;
+    vec2 i = p;
+    float c = 1.0;
+    for (int n = 0; n < 4; n++) {
+        float tt = t * (1.0 - 3.5 / float(n + 1));
+        i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+        c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / 0.005), p.y / (cos(i.y + tt) / 0.005)));
+    }
+    c /= 4.0;
+    c = 1.17 - pow(c, 1.4);
+    return pow(abs(c), 8.0);
+}
 """
 
-TONEMAP = """// Narkowicz fit of the ACES filmic curve
-vec3 acesFilm(vec3 x) {
-    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+TONEMAP = """// Lottes 2016 filmic curve ("Advanced Techniques and Optimization of HDR Color Pipelines")
+vec3 lottes(vec3 x) {
+    const vec3 a = vec3(1.36);
+    const vec3 d = vec3(0.93);
+    const vec3 hdrMax = vec3(10.0);
+    const vec3 midIn = vec3(0.24);
+    const vec3 midOut = vec3(0.26);
+    vec3 b = (-pow(midIn, a) + pow(hdrMax, a) * midOut) / ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
+    vec3 c = (pow(hdrMax, a * d) * pow(midIn, a) - pow(hdrMax, a) * pow(midIn, a * d) * midOut) / ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
+    return pow(x, a) / (pow(x, a * d) * b + c);
 }
 
 vec3 grade(vec3 c) {
     float l = luma(c);
-    c = mix(vec3(l), c, SATURATION);
-    return c;
+    // vibrance: push the dull colours more than the already vivid ones
+    float s = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    c = mix(vec3(l), c, SATURATION * (1.0 + 0.25 * (1.0 - sat(s * 2.0))));
+    // warm highlights, slightly cool shadows
+    c *= mix(vec3(0.97, 0.99, 1.04), vec3(1.03, 1.0, 0.96), smoothstep(0.1, 0.7, l));
+    return max(c, vec3(0.0));
+}
+"""
+
+CLOUDS = """// cumulus layer for the Ultra pack: 2D coverage with a vertical profile, raymarched in deferred
+float cloudFbm(vec2 p) {
+    float n = valueNoise(p) * 0.5;
+    n += valueNoise(p * 2.03 + 11.7) * 0.25;
+    n += valueNoise(p * 4.01 + 3.1) * 0.125;
+    n += valueNoise(p * 8.07 + 7.9) * 0.0625;
+    return n / 0.9375;
+}
+
+float cloudCoverage(vec2 xz) {
+    vec2 p = (xz + vec2(frameTimeCounter * 2.0, frameTimeCounter * 0.7)) * 0.0028;
+    float cov = CLOUD_AMOUNT * 0.1 + rainStrength * 0.3;
+    return sat((cloudFbm(p) - (0.62 - cov)) * 3.2);
+}
+
+float cloudDensity(vec3 wp, bool detail) {
+    float h = (wp.y - CLOUD_HEIGHT) / CLOUD_THICKNESS;
+    if (h < 0.0 || h > 1.0) return 0.0;
+    float cov = cloudCoverage(wp.xz);
+    if (cov <= 0.0) return 0.0;
+    // rounded tops, flatter bases
+    float profile = smoothstep(0.0, 0.12, h) * (1.0 - smoothstep(0.35, 1.0, h));
+    float d = cov * profile - h * 0.25;
+    if (detail && d > 0.0) {
+        vec2 q = wp.xz * 0.035 + wp.y * 0.05 + frameTimeCounter * 0.04;
+        d -= (valueNoise(q) * 0.6 + valueNoise(q * 2.7) * 0.4) * 0.22 * (1.0 - h * 0.5);
+    }
+    return sat(d * 3.0);
+}
+
+// how much sun a point on the ground gets through the cloud layer
+float cloudShadow(vec3 wp, vec3 Lworld) {
+    if (Lworld.y < 0.05) return 1.0;
+    vec3 p = wp + Lworld * ((CLOUD_HEIGHT + CLOUD_THICKNESS * 0.35 - wp.y) / Lworld.y);
+    return 1.0 - 0.75 * smoothstep(0.0, 0.6, cloudCoverage(p.xz));
 }
 """

@@ -2,7 +2,7 @@
 // clusters, bevelled shapes lit from the top-left, hue-shifted ramps.
 // 'perf' = calm 16× (3-4 shades, few details); 'looks' = rich 32× (5-7
 // shades, more shapes, highlights). Every texture is original.
-const { Px, ramp, rng, blob, lump, cells, noise, despeckle, Image, rgba, hex, mixc } = require('./lib');
+const { Px, ramp, rng, blob, lump, cells, noise, despeckle, dither, shadeRegions, layer, strip, Image, rgba, hex, mixc } = require('./lib');
 
 const T = {};
 const isP = (st) => st === 'looks';
@@ -25,7 +25,14 @@ function rock(S, st, seed, color, o = {}) {
   const n = P ? 6 : 4;
   const pal = o.pal || ramp(color, n, { contrast: P ? 0.42 : 0.24, hue: 16, tint: 0.04, ...(o.ramp || {}) });
   const b = o.base ?? (P ? 3 : 2);
-  const px = new Px(S).fill(b);
+  // soft mottling first so no area is one flat colour
+  const mot = noise(S, P ? 6 : 4, seed + 900);
+  const hiT = o.flat ? 2 : P ? 0.66 : 0.72;
+  const loT = P ? 0.3 : 0.24;
+  const px = new Px(S).fill((x, y) => {
+    const m = mot(x, y);
+    return m > hiT ? b + 1 : m < loT ? b - 1 : b;
+  });
   const count = Math.round((P ? 12 : 7) * (o.density ?? 1));
   for (let i = 0; i < count; i++) {
     const rx = (1.3 + r.f() * 2.4) * k * (o.scale ?? 1) * (o.stretch ?? 1);
@@ -47,6 +54,7 @@ function rock(S, st, seed, color, o = {}) {
     }
   }
   despeckle(px);
+  if (P && o.dither !== false) dither(px);
   return { px, pal, n: pal.length };
 }
 
@@ -281,13 +289,13 @@ T.grass_block_side = (S, st, seed = 6) => {
   return img;
 };
 
-T.sand = (S, st, seed = 7) => {
+const sandLike = (S, st, seed, color) => {
   const P = isP(st);
   const k = S / 16;
   const r = rng(seed);
   const n = P ? 5 : 4;
-  const pal = ramp('#dccf91', n, { contrast: P ? 0.24 : 0.16, hue: 14 });
-  const b = P ? 2 : 2;
+  const pal = ramp(color, n, { contrast: P ? 0.24 : 0.16, hue: 14 });
+  const b = 2;
   const px = new Px(S).fill(b);
   if (P) {
     // wind ripples: a light crest with its shadow below
@@ -315,6 +323,9 @@ T.sand = (S, st, seed = 7) => {
   return px.toImage(pal);
 };
 
+T.sand = (S, st) => sandLike(S, st, 7, '#dccf91');
+T.red_sand = (S, st) => sandLike(S, st, 107, '#b7622c');
+
 T.snow = (S, st, seed = 14) => {
   const P = isP(st);
   const k = S / 16;
@@ -332,10 +343,17 @@ T.snow = (S, st, seed = 14) => {
 };
 
 // -------------------------------------------------------------------- wood --
+// Shared wood colours: bark, inner rings (log top) and planks. Plank colours
+// sit close to the log-top rings so a cut log and its planks look related.
 const WOOD = {
-  oak: { bark: '#664c2f', top: '#b48f5b', plank: '#ae8752' },
-  spruce: { bark: '#4a3421', top: '#7d5c38', plank: '#76552f' },
-  birch: { bark: '#dad6c9', top: '#d6c391', plank: '#cdb67a' },
+  oak: { bark: '#6a4f31', top: '#b38c58', plank: '#ad8550' },
+  spruce: { bark: '#4b3522', top: '#7f5d38', plank: '#77562f' },
+  birch: { bark: '#dcd8cb', top: '#d6c391', plank: '#cdb67a' },
+  jungle: { bark: '#5b4527', top: '#b88a56', plank: '#a8784f' },
+  acacia: { bark: '#6a655c', top: '#b9663a', plank: '#ad5d32' },
+  dark_oak: { bark: '#3d2b19', top: '#5e4226', plank: '#4d341c' },
+  mangrove: { bark: '#55443a', top: '#7a3a34', plank: '#773632' },
+  cherry: { bark: '#3b2533', top: '#e2b0a8', plank: '#e0b1a8' },
 };
 
 function barkSide(S, st, seed, wood) {
@@ -382,6 +400,20 @@ function barkSide(S, st, seed, wood) {
     for (let y = 0; y < S; y++) {
       const xs = x0 + shift[(y + x0 * 3) % S];
       for (let i = 0; i < w; i++) px.set(xs + i, y, i === 0 ? Math.min(n - 1, v + 1) : i === w - 1 && w > 2 ? v - 1 : v);
+    }
+  }
+  if (wood === 'cherry') {
+    // cherry bark: dark with pale horizontal lenticel bands
+    for (let y = r.i(3); y < S; y += r.range(3, 4) * k) px.hline(0, y, S, (x) => ((x + y) % 5 === 0 ? 1 : Math.min(n - 1, (P ? 4 : 3))));
+  }
+  if (wood === 'jungle') {
+    // a few moss patches in the crevices
+    const moss = pal.length;
+    pal.push(...ramp('#5d7a2e', 2, { contrast: 0.3, hue: 14 }));
+    for (let i = 0; i < (P ? 6 : 3); i++) {
+      const x = r.i(S);
+      const y = r.i(S);
+      px.stamp(x, y, P ? ['.a', 'ab', 'b.'] : ['a', 'b'], { a: moss + 1, b: moss });
     }
   }
   // horizontal nicks in the plates
@@ -488,8 +520,11 @@ function leaves(S, st, seed, kind) {
   const k = S / 16;
   const r = rng(seed);
   const n = P ? 6 : 4;
-  const base = kind === 'birch' ? '#a3a3a3' : kind === 'spruce' ? '#8a8a8a' : '#949494';
-  const pal = ramp(base, n, { contrast: P ? 0.6 : 0.45, hue: 0, tint: 0 });
+  const base = { birch: '#a8a8a8', spruce: '#a2a2a2', cherry: '#e6a0c0', dark_oak: '#8e8e8e' }[kind] || '#9a9a9a';
+  const pal = kind === 'cherry'
+    ? ramp(base, n, { contrast: P ? 0.5 : 0.4, hue: 12 })
+    : ramp(base, n, { contrast: P ? 0.58 : kind === 'spruce' ? 0.34 : 0.42, hue: 0, tint: 0 });
+  const stampKind = { jungle: 'oak', dark_oak: 'oak', mangrove: 'oak', cherry: 'oak', acacia: 'birch' }[kind] || kind;
   const px = new Px(S).fill(0);
   // hand-drawn leaf stamps: a = lit edge, b = body, c = shaded edge
   const STAMPS = {
@@ -502,8 +537,8 @@ function leaves(S, st, seed, kind) {
     spruce: P
       ? [['a.a.a.a', 'bcbcbcb', '.b.b.b.'], ['.a.a.a', 'abcbcb', 'b.b.b.'], ['a.a.a', 'bcbcb', '.b.b.']]
       : [['a.a.a', 'bcbcb'], ['.a.a', 'abcb'], ['a.a', 'bcb']],
-  }[kind];
-  const step = (kind === 'spruce' ? 3 : kind === 'birch' ? 2.6 : 3.2) * (P ? 1.25 : 1);
+  }[stampKind];
+  const step = (stampKind === 'spruce' ? 3 : stampKind === 'birch' ? 2.6 : kind === 'jungle' ? 3.8 : 3.2) * (P ? 1.25 : 1);
   const spots = [];
   for (let gy = 0; gy < S; gy += step) for (let gx = 0; gx < S; gx += step) spots.push([Math.round(gx + r.f() * step), Math.round(gy + r.f() * step)]);
   // shuffle so overlaps vary
@@ -520,15 +555,26 @@ function leaves(S, st, seed, kind) {
   }
   // punch clustered holes (never lone pixels) where nothing grows
   const holes = new Px(S).fill(0);
-  for (let i = 0; i < (kind === 'spruce' ? 0.6 : 1) * (P ? 16 : 9); i++) for (const [x, y] of blob(r, r.i(S), r.i(S), (1 + r.f() * 1.6) * k, (1 + r.f()) * k, 0.5)) holes.set(x, y, 1);
+  for (let i = 0; i < (kind === 'spruce' ? 0.5 : kind === 'dark_oak' ? 0.6 : 1) * (P ? 16 : 9); i++) for (const [x, y] of blob(r, r.i(S), r.i(S), (1 + r.f() * 1.6) * k, (1 + r.f()) * k, 0.5)) holes.set(x, y, 1);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (px.get(x, y) === 0 && holes.get(x, y)) px.set(x, y, -1);
   despeckle(px);
+  if (kind === 'cherry') {
+    // blossoms: small white-pink flowers with a darker heart
+    const bl = pal.length;
+    pal.push(...['#f7d9e6', '#fff4f8', '#c25a86'].map(rgba));
+    for (let i = 0; i < (P ? 14 : 7); i++) {
+      const x = r.i(S);
+      const y = r.i(S);
+      if (px.get(x, y) < 0) continue;
+      px.stamp(x - 1, y - 1, P ? ['.a.', 'aca', '.a.'] : ['ab', 'a.'], { a: bl, b: bl + 1, c: bl + 2 });
+    }
+  }
   const c = pal[0];
   return px.toImage(pal, [c[0], c[1], c[2]]);
 }
 
-for (const w of ['oak', 'spruce', 'birch']) {
-  const s = { oak: 0, spruce: 1, birch: 2 }[w] * 50;
+for (const w of Object.keys(WOOD)) {
+  const s = Object.keys(WOOD).indexOf(w) * 50;
   T[`${w}_log`] = (S, st) => barkSide(S, st, 9 + s, w);
   T[`${w}_log_top`] = (S, st) => logTop(S, st, 10 + s, w);
   T[`${w}_planks`] = (S, st) => planks(S, st, 11 + s, w);
@@ -606,12 +652,12 @@ T.bricks = (S, st, seed = 13) => {
   return px.toImage(pal);
 };
 
-function sandstoneSide(S, st, seed = 18) {
+function sandstoneSide(S, st, seed = 18, color = '#d8c98f') {
   const P = isP(st);
   const k = S / 16;
   const r = rng(seed);
   const n = P ? 5 : 4;
-  const pal = ramp('#d8c98f', n, { contrast: P ? 0.3 : 0.2, hue: 16 });
+  const pal = ramp(color, n, { contrast: P ? 0.3 : 0.2, hue: 16 });
   const b = 2;
   const px = new Px(S).fill(b);
   // carved top band, layered middle, heavy bottom band
@@ -634,12 +680,12 @@ function sandstoneSide(S, st, seed = 18) {
   return px.toImage(pal);
 }
 
-function sandstoneFlat(S, st, seed, cracked) {
+function sandstoneFlat(S, st, seed, cracked, color = '#dccd94') {
   const P = isP(st);
   const k = S / 16;
   const r = rng(seed);
   const n = P ? 5 : 4;
-  const pal = ramp('#dccd94', n, { contrast: P ? 0.28 : 0.18, hue: 16 });
+  const pal = ramp(color, n, { contrast: P ? 0.28 : 0.18, hue: 16 });
   const b = 2;
   const px = new Px(S).fill(b);
   for (let i = 0; i < (P ? 7 : 4); i++) lump(px, blob(r, r.i(S), r.i(S), (1.5 + r.f() * 2) * k, (1 + r.f()) * k, 0.5), b, { hi: 1, lo: 1, max: n - 1 });
@@ -658,6 +704,9 @@ function sandstoneFlat(S, st, seed, cracked) {
 T.sandstone = (S, st) => sandstoneSide(S, st, 18);
 T.sandstone_top = (S, st) => sandstoneFlat(S, st, 19, false);
 T.sandstone_bottom = (S, st) => sandstoneFlat(S, st, 20, true);
+T.red_sandstone = (S, st) => sandstoneSide(S, st, 118, '#b5612c');
+T.red_sandstone_top = (S, st) => sandstoneFlat(S, st, 119, false, '#b8632e');
+T.red_sandstone_bottom = (S, st) => sandstoneFlat(S, st, 120, true, '#b8632e');
 
 T.netherrack = (S, st, seed = 21) => {
   const P = isP(st);
@@ -766,32 +815,45 @@ T.crafting_table_top = (S, st, seed = 24) => {
   return img;
 };
 
+// Tools hanging on the table sides, drawn as shapes in 16× units and shaded
+// with the same light + 1px outline rule as the item textures.
+const TOOLS = {
+  hammer: ['mmmmm', 'mmmmm', '..w..', '..w..', '..w..', '..w..', '..w..'],
+  saw: ['ww.....', 'w.w....', 'wwmmmmm', '..mmmmm', '..mmmmm', '..m.m.m'],
+  pickaxe: ['.mmmmm.', 'm..w..m', '...w...', '...w...', '...w...', '...w...'],
+  shovel: ['.w.', '.w.', '.w.', '.w.', 'mmm', 'mmm', '.m.'],
+};
+
 function tableSide(S, st, seed, tools) {
   const { P, k, pal, off } = woodFrame(S, st, seed);
   const img = planks(S, st, seed + 1, 'oak');
   const px = new Px(S, S, false, -1);
-  // top rim and legs
+  // top rim and corner posts
   px.rect(0, 0, S, 3 * k, off[1] + 1);
   px.hline(0, 0, S, off[1] + 2);
   px.hline(0, 3 * k - 1, S, off[1]);
-  px.rect(0, 3 * k, 2 * k, S - 3 * k, off[1] + 1).rect(S - 2 * k, 3 * k, 2 * k, S - 3 * k, off[1]);
-  const M = (rows, x, y, map) => {
-    // stamp scaled by k
-    rows.forEach((row, j) => [...row].forEach((ch, i) => {
-      if (!(ch in map)) return;
-      px.rect(x + i * k, y + j * k, k, k, map[ch]);
-    }));
+  px.rect(0, 3 * k, k, S - 3 * k, off[1] + 1).rect(S - k, 3 * k, k, S - 3 * k, off[1]);
+  const metal = { at: (l) => off[2] + Math.max(0, Math.min(2, l)), mid: 1 };
+  const wood = { at: (l) => off[1] + Math.max(0, Math.min(2, l)), mid: 1 };
+  const regions = [];
+  const place = (rows, ux, uy) => {
+    const has = (ch) => (x, y) => {
+      const u = Math.floor(x / k) - ux;
+      const v = Math.floor(y / k) - uy;
+      return v >= 0 && v < rows.length && u >= 0 && u < rows[v].length && rows[v][u] === ch;
+    };
+    regions.push({ has: has('w'), m: wood, base: 2 }, { has: has('m'), m: metal });
   };
-  const metal = { m: off[2] + 1, h: off[2] + 2, d: off[2], w: off[1] + 2, x: off[1] };
   if (tools === 'saw') {
-    // saw hanging on the left, hammer on the right
-    M(['.ww.', 'wxxw', '.hm.', '.mm.', '.md.', '.md.', '.md.', '.dd.', '..d.'], 3 * k, 4 * k, metal);
-    M(['hmmd', 'mmmd', '.w..', '.w..', '.w..', '.x..'], 9 * k, 5 * k, metal);
+    place(TOOLS.saw, 2, 5);
+    place(TOOLS.hammer, 10, 5);
   } else {
-    // pickaxe-ish hook and a shelf of a ruler
-    M(['.hmmm.', 'h.ww.d', '..w...', '..w...', '..x...'], 4 * k, 5 * k, metal);
-    M(['wwwwww', 'x.x.x.'], 5 * k, 12 * k, metal);
+    place(TOOLS.pickaxe, 2, 5);
+    place(TOOLS.shovel, 11, 5);
   }
+  shadeRegions(px, regions, off[1]);
+  // pegs the tools hang from
+  for (const x of tools === 'saw' ? [3, 12] : [5, 12]) px.rect(x * k, 4 * k, k, k, off[1] + 2);
   const top = px.toImage(pal);
   for (let i = 0; i < top.data.length; i += 4) if (top.data[i + 3]) img.data.set(top.data.slice(i, i + 4), i);
   return img;
@@ -894,112 +956,150 @@ T.torch = (S, st) => {
 };
 
 // -------------------------------------------------------------------- ores --
+// Each ore has a few hand-drawn gem stamps per resolution. Letters: h = glint,
+// a = lit face, b = body, c = shaded face, x = accent (copper verdigris).
+// Every gem gets a 1px dark outline so ores read from across a cave.
 const ORES = {
-  coal_ore: { c: '#3a3a3e', shape: 'lump', hl: '#8a8a94' },
-  iron_ore: { c: '#d9a98a', shape: 'nugget' },
-  gold_ore: { c: '#f6cf36', shape: 'nugget' },
-  diamond_ore: { c: '#4fe0e6', shape: 'diamond' },
-  emerald_ore: { c: '#27c95f', shape: 'emerald' },
-  redstone_ore: { c: '#e2201b', shape: 'dot' },
-  lapis_ore: { c: '#2a56c6', shape: 'flake' },
-  copper_ore: { c: '#d9784e', shape: 'nugget', extra: '#5fc8a2' },
+  coal_ore: { c: '#3b3a40', hl: '#8c8a98', outline: '#1a181e', base: 'stone' },
+  iron_ore: { c: '#d8a383', base: 'stone' },
+  gold_ore: { c: '#f4c93a', base: 'stone' },
+  diamond_ore: { c: '#46d8e0', base: 'stone' },
+  emerald_ore: { c: '#2fc663', base: 'stone' },
+  redstone_ore: { c: '#d8231e', base: 'stone' },
+  lapis_ore: { c: '#2f5bd0', base: 'stone' },
+  copper_ore: { c: '#d47a4c', extra: '#5ec7a0', base: 'stone' },
+};
+const NETHER_ORES = {
+  nether_gold_ore: { c: '#f4c93a', base: 'netherrack', stamps: 'nugget_small' },
+  nether_quartz_ore: { c: '#e8ddd0', base: 'netherrack', stamps: 'quartz', outline: '#4a1c1c' },
 };
 
-function gemPoints(shape, r, P) {
-  const s = P ? 2 : 1;
-  const pts = [];
-  const add = (x, y) => pts.push([x, y]);
-  if (shape === 'diamond') {
-    const rad = P ? 2 : 1;
-    for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) if (Math.abs(x) + Math.abs(y) <= rad) add(x, y);
-    if (!P && r.chance(0.5)) add(1, 1);
-  } else if (shape === 'emerald') {
-    const hh = P ? 2 : 1;
-    for (let y = -hh - 1; y <= hh + 1; y++) for (let x = -(P ? 1 : 0); x <= 1; x++) if (!(Math.abs(y) === hh + 1 && (x !== 0 && P))) add(x, y);
-  } else if (shape === 'dot') {
-    add(0, 0);
-    add(1, 0);
-    add(0, 1);
-    add(1, 1);
-    if (P) [[-1, 0], [2, 1], [0, -1], [1, 2]].forEach(([x, y]) => r.chance(0.7) && add(x, y));
-  } else if (shape === 'flake') {
-    const w = P ? r.range(3, 4) : r.range(2, 3);
-    for (let x = 0; x < w; x++) add(x, 0);
-    for (let x = r.i(2); x < w - 1 + (P ? 1 : 0); x++) add(x, 1);
-    if (P) for (let x = 1; x < w - 1; x++) add(x, 2);
-  } else {
-    // nugget / lump: rounded rectangle with a nick
-    const w = (P ? 4 : 2) + r.i(2);
-    const h = P ? 3 : 2;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      if (P && (x === 0 || x === w - 1) && (y === 0 || y === h - 1)) continue;
-      add(x, y);
+const STAMPS = {
+  coal_ore: {
+    16: [['.hb.', 'hbbc', 'bbcc', '.cc.'], ['hb.', 'bbc', '.cc'], ['hb', 'bc']],
+    32: [['..hb..', '.hbbc.', 'hbbbcc', 'bbbccc', '.bccc.', '..cc..'], ['.hb.', 'hbbc', 'bbcc', '.cc.']],
+  },
+  nugget: {
+    16: [['hab', 'bbc'], ['.h', 'ab', 'bc'], ['hb', 'bc']],
+    32: [['.hab.', 'habbc', 'abbbc', '.bcc.'], ['.hb', 'hbc', 'bcc'], ['hab.', 'abbc', '.bcc']],
+  },
+  copper_ore: {
+    16: [['hxb', 'bbc'], ['hb', 'xc'], ['.h', 'ab', 'xc']],
+    32: [['.hab.', 'haxbc', 'abbxc', '.bcc.'], ['hxb', 'abc', '.cc'], ['hab.', 'axbc', '.bcc']],
+  },
+  diamond_ore: {
+    16: [['.h.', 'hbc', '.c.'], ['hb', 'bc'], ['.h.', 'abc', '.c.']],
+    32: [['...h...', '..hab..', '.habbc.', 'habbbcc', '.abbcc.', '..bcc..', '...c...'], ['..h..', '.hbc.', 'hbbcc', '.bcc.', '..c..']],
+  },
+  emerald_ore: {
+    16: [['h.', 'ab', 'bc'], ['h', 'b', 'c']],
+    32: [['.hb.', 'habc', 'abbc', 'abbc', 'abcc', '.bc.'], ['.h.', 'hbc', 'abc', '.c.']],
+  },
+  redstone_ore: {
+    16: [['hb.', 'bbc', '.c.'], ['hb', 'bc']],
+    32: [['.hb.', 'habc', 'bbbc', '.cc.'], ['.hb', 'hbc', 'bc.'], ['hb', 'bc']],
+  },
+  lapis_ore: {
+    16: [['hab', 'bbc'], ['hb.', '.bc'], ['hb', 'bc']],
+    32: [['.hab.', 'habbbc', 'abbbc.', '.bcc..'], ['hab', 'bbc', '.c.']],
+  },
+  quartz: {
+    16: [['h.', 'ab', '.c'], ['ha', '.c'], ['hab']],
+    32: [['h....', 'hab..', '.abb.', '..bbc', '...c.'], ['.h.', 'hab', 'abc', '.c.']],
+  },
+  nugget_small: {
+    16: [['h'], ['hb'], ['a', 'c']],
+    32: [['hb', 'bc'], ['hab', 'bcc'], ['h.', 'ac']],
+  },
+};
+
+/** Gem layer for an ore: index map + palette + the glint pixels (for sparkles). */
+function gemLayer(name, S, st, seed) {
+  const def = ORES[name] || NETHER_ORES[name];
+  const P = isP(st);
+  const res = P ? 32 : 16;
+  const stamps = STAMPS[def.stamps || (STAMPS[name] ? name : 'nugget')][res];
+  const gp = ramp(def.c, 4, { contrast: P ? 0.55 : 0.48, hue: 22, mid: 2 });
+  const outline = def.outline ? rgba(def.outline) : mixc(gp[0], [22, 16, 32, 255], 0.6);
+  const hl = def.hl ? rgba(def.hl) : mixc(gp[3], [255, 255, 236, 255], 0.65);
+  const pal = [outline, gp[0], gp[1], gp[2], gp[3], hl, def.extra ? rgba(def.extra) : gp[2]];
+  const MAP = { c: 1, b: 2, a: 3, h: 5, x: 6 };
+  const px = new Px(S, S, true, -1);
+  const r = rng(seed);
+  const clusters = name === 'nether_gold_ore' ? (P ? 7 : 6) : P ? 4 : 3;
+  const per = name === 'nether_gold_ore' ? 2 : P ? 3 : 2;
+  const centres = [];
+  const glints = [];
+  const dist = (a, b) => Math.hypot(Math.min(Math.abs(a[0] - b[0]), S - Math.abs(a[0] - b[0])), Math.min(Math.abs(a[1] - b[1]), S - Math.abs(a[1] - b[1])));
+  for (let c = 0; c < clusters; c++) {
+    let best = null;
+    for (let t = 0; t < 40; t++) {
+      const p = [r.i(S), r.i(S)];
+      const d = Math.min(S, ...centres.map((q) => dist(p, q)));
+      if (!best || d > best[1]) best = [p, d];
     }
-    if (!P && r.chance(0.5)) add(r.i(w), h);
+    centres.push(best[0]);
+    for (let g = 0; g < per; g++) {
+      const st0 = stamps[g === 0 ? 0 : r.i(stamps.length)];
+      const rows = r.chance(0.5) && g ? st0.map((row) => [...row].reverse().join('')) : st0;
+      const [cx, cy] = best[0];
+      const ox = cx + (g ? r.pick([-1, 1]) * (P ? r.range(4, 6) : r.range(3, 4)) : 0);
+      const oy = cy + (g ? r.pick([-1, 0, 1]) * (P ? 4 : 3) : 0);
+      const pts = [];
+      rows.forEach((row, j) => [...row].forEach((ch, i) => ch in MAP && pts.push([ox + i, oy + j, MAP[ch]])));
+      // gems never touch: keep a free ring for the outline
+      const ring = [];
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) ring.push([dx, dy]);
+      if (pts.some(([x, y]) => ring.some(([dx, dy]) => px.get(x + dx, y + dy) >= 1))) continue;
+      for (const [x, y, v] of pts) {
+        px.set(x, y, v);
+        if (v === 5) glints.push([(x + S) % S, (y + S) % S]);
+      }
+      for (const [x, y] of pts) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (px.get(x + dx, y + dy) < 0) px.set(x + dx, y + dy, 0);
+    }
   }
-  return pts.map(([x, y]) => [x * (s === 2 && shape === 'nugget' ? 1 : 1), y]);
+  return { px, pal, glints };
 }
 
-/** Ore = the matching stone/deepslate + clusters of outlined gems. */
+/** Ore = the exact matching stone + outlined gem clusters. Pretty ores twinkle. */
 function ore(name, deep, seed) {
-  const def = ORES[name];
-  return (S, st) => {
-    const P = isP(st);
-    const k = S / 16;
-    const baseFn = deep ? 'deepslate' : 'stone';
-    // reuse the exact stone so ore blocks sit seamlessly next to stone
-    const base = T[baseFn](S, st);
-    const gn = P ? 5 : 4;
-    const gp = ramp(def.c, gn, { contrast: P ? 0.6 : 0.5, hue: 22, mid: P ? 2 : 2 });
-    const outline = mixc(gp[0], [20, 16, 30, 255], 0.55);
-    const hl = def.hl ? rgba(def.hl) : mixc(gp[gn - 1], [255, 255, 240, 255], 0.6);
-    const pal = [outline, ...gp, hl, def.extra ? rgba(def.extra) : hl];
-    const O = 0; const D = 1; const M = 1 + Math.floor(gn / 2); const L = gn; const H = gn + 1; const X = gn + 2;
-    const px = new Px(S, S, true, -1);
-    const r = rng(seed);
-    const clusters = P ? 5 : 4;
-    const placed = [];
-    for (let c = 0; c < clusters; c++) {
-      let cx;
-      let cy;
-      for (let t = 0; t < 30; t++) {
-        cx = r.i(S);
-        cy = r.i(S);
-        if (placed.every(([a, b]) => Math.min(Math.abs(a - cx), S - Math.abs(a - cx)) + Math.min(Math.abs(b - cy), S - Math.abs(b - cy)) > S / 3.2)) break;
-      }
-      placed.push([cx, cy]);
-      const gems = P ? r.range(2, 3) : r.range(1, 2);
-      for (let g = 0; g < gems; g++) {
-        const ox = cx + (g ? r.range(-3, 3) * (P ? 2 : 1) : 0);
-        const oy = cy + (g ? r.range(-2, 2) * (P ? 2 : 1) : 0);
-        const pts = gemPoints(def.shape, r, P).map(([x, y]) => [ox + x, oy + y]);
-        // keep gems apart so every one reads as its own outlined shape
-        if (pts.some(([x, y]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => px.get(x + dx, y + dy) >= 0))) continue;
-        const key = new Set(pts.map(([x, y]) => `${(x + S) % S},${(y + S) % S}`));
-        const has = (x, y) => key.has(`${(x + S) % S},${(y + S) % S}`);
-        // dark outline all round, then the lit body
-        for (const [x, y] of pts) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!has(x + dx, y + dy) && px.get(x + dx, y + dy) < 1) px.set(x + dx, y + dy, O);
-        for (const [x, y] of pts) {
-          const tl = !has(x - 1, y) || !has(x, y - 1);
-          const br = !has(x + 1, y) || !has(x, y + 1);
-          px.set(x, y, tl && !br ? L - (P ? 1 : 0) : br && !tl ? D : M);
-        }
-        const [hx, hy] = pts.reduce((a, b) => (b[0] + b[1] < a[0] + a[1] ? b : a));
-        px.set(hx, hy, H);
-        if (def.extra && r.chance(0.6)) {
-          const [ex, ey] = r.pick(pts);
-          px.set(ex, ey, X);
-        }
-      }
-    }
-    const top = px.toImage(pal);
-    for (let i = 0; i < top.data.length; i += 4) if (top.data[i + 3]) base.data.set(top.data.slice(i, i + 4), i);
-    return base;
+  const def = ORES[name] || NETHER_ORES[name];
+  const fn = (S, st) => {
+    const base = deep ? T.deepslate(S, st) : T[def.base](S, st);
+    const { px, pal, glints } = gemLayer(name, S, st, seed);
+    const still = layer(base, px.toImage(pal));
+    if (!isP(st) || !glints.length) return still;
+    // a slow sparkle: mostly still, then one glint flares and fades
+    const g = glints[seed % glints.length];
+    const frame = (size) => {
+      const f = new Image(S).blit(still, 0, 0);
+      f.set(g[0], g[1], [255, 255, 250, 255]);
+      const soft = mixc(pal[5], [255, 255, 255, 255], 0.5);
+      if (size > 1) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) f.set((g[0] + dx + S) % S, (g[1] + dy + S) % S, soft);
+      return f;
+    };
+    const img = strip([still, frame(1), frame(2)]);
+    img.meta = { animation: { frametime: 2, frames: [{ index: 0, time: 90 + (seed % 7) * 12 }, 1, 2, 2, 1] } };
+    return img;
   };
+  // emissive overlay (OptiFine / Continuity): only the glint and lit faces glow
+  fn.emissive = (S, st) => {
+    const { px, pal } = gemLayer(name, S, st, seed);
+    const img = new Image(S);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const v = px.get(x, y);
+      if (v === 5 || v === 4) img.set(x, y, pal[v]);
+    }
+    return img;
+  };
+  return fn;
 }
 Object.keys(ORES).forEach((name, i) => {
   T[name] = ore(name, false, 100 + i * 17);
   T[`deepslate_${name}`] = ore(name, true, 300 + i * 17);
 });
+Object.keys(NETHER_ORES).forEach((name, i) => {
+  T[name] = ore(name, false, 500 + i * 17);
+});
 
-module.exports = { T, ORES, rock, WOOD };
+module.exports = { T, ORES, NETHER_ORES, rock, WOOD, planks, leaves, barkSide, logTop, isP, cat };

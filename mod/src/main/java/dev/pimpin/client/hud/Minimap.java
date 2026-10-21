@@ -8,7 +8,10 @@ import dev.pimpin.client.feature.DeathTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import dev.pimpin.client.compat.Draw;
+import dev.pimpin.client.feature.Waypoints;
 import net.minecraft.core.BlockPos;
+
+import java.util.List;
 
 /**
  * Corner minimap plus a big map you hold a key for. Terrain comes from {@link MapTiles}
@@ -91,7 +94,7 @@ public final class Minimap {
         int[] l = layout(g.width(), g.height());
         int x = l[0], y = l[1], size = l[2];
         DynTex tex = SMALL.frame(mc, smallRes(c), ZOOMS[c.mapZoom], c.minimapRound, c.minimapRotate, c.minimapShading,
-                c.minimapPlayers, c.minimapMobs, death, c.accent);
+                c.minimapPlayers, c.minimapMobs, death, Waypoints.here(mc), c.accent);
         tex.draw(g, x, y, size, size);
         labels(g, mc, SMALL, x, y, size, c.minimapRotate);
         if (c.minimapCoords) {
@@ -127,9 +130,38 @@ public final class Minimap {
         int x = (sw - size) / 2;
         int y = (sh - size) / 2 + 6;
         g.fill(0, 0, sw, sh, 0x66000000);
-        DynTex tex = BIG.frame(mc, 256, ZOOMS[bigZoom], false, false, c.minimapShading, c.minimapPlayers, c.minimapMobs, death, c.accent);
+        List<Waypoints.Point> waypoints = Waypoints.here(mc);
+        DynTex tex = BIG.frame(mc, 256, ZOOMS[bigZoom], false, false, c.minimapShading, c.minimapPlayers, c.minimapMobs, death, waypoints, c.accent);
         tex.draw(g, x, y, size, size);
         labels(g, mc, BIG, x, y, size, false);
+        // Names under the diamonds; waypoints that land on top of each other share one label.
+        double px = size / 256.0;
+        List<int[]> placed = new java.util.ArrayList<>();
+        List<Waypoints.Point> first = new java.util.ArrayList<>();
+        for (Waypoints.Point w : waypoints) {
+            if (!w.shown) continue;
+            double[] at = BIG.project(mc, ZOOMS[bigZoom], w.x + 0.5, w.z + 0.5);
+            if (at == null) continue;
+            int lx = x + (int) (at[0] * px);
+            int ly = y + (int) (at[1] * px) + 7;
+            boolean merged = false;
+            for (int[] s : placed) {
+                if (Math.abs(s[0] - lx) < 40 && Math.abs(s[1] - ly) < 10) {
+                    s[2]++;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                placed.add(new int[]{lx, ly, 0});
+                first.add(w);
+            }
+        }
+        for (int i = 0; i < placed.size(); i++) {
+            int[] s = placed.get(i);
+            String label = s[2] > 0 ? first.get(i).name + " §7+" + s[2] : first.get(i).name;
+            g.centered(font, label, s[0], s[1], first.get(i).color);
+        }
         BlockPos p = mc.player.blockPosition();
         g.centered(font, "§lMap§r  " + p.getX() + ", " + p.getY() + ", " + p.getZ() + "  §7(" + ZOOM_NAMES[bigZoom] + ", scroll to zoom)", sw / 2, y - 14, 0xFFFFFFFF);
         if (death != null) {

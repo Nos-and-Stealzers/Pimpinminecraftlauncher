@@ -2,7 +2,7 @@
 #define DIM_OVERWORLD 1
 #define ULTRA 1
 #define PROGRAM_BLOCK 1
-/* DRAWBUFFERS:01 */
+/* DRAWBUFFERS:014 */
 #include "/lib/settings.glsl"
 #include "/lib/uniforms.glsl"
 #include "/lib/common.glsl"
@@ -10,5 +10,6 @@
 #include "/lib/shadow.glsl"
 #include "/lib/waving.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/lighting.glsl"
 #include "/program/lit_fsh.glsl"

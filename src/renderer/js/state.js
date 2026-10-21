@@ -29,13 +29,11 @@ export function notify(topic) {
 
 export async function refreshSettings() {
   state.settings = await api.call('settings:get');
-  document.body.dataset.accent = state.settings.accent || 'violet';
   notify('settings');
 }
 
 export async function updateSettings(patch) {
   state.settings = await api.call('settings:update', patch);
-  document.body.dataset.accent = state.settings.accent || 'violet';
   notify('settings');
 }
 

@@ -7,7 +7,9 @@ const { safeStorage } = require('electron');
 const { dirs, readJson, writeJson, getSettings, updateSettings } = require('./store');
 
 const FILE = path.join(dirs.root, 'accounts.json');
-const sessionCache = new Map(); // id -> { accessToken, exp }
+// Minecraft access tokens live 24h, refresh a bit before that
+const TOKEN_TTL = 23 * 3600e3;
+const sessionCache = new Map(); // id -> { accessToken, xuid, exp }
 
 function seal(text) {
   if (safeStorage.isEncryptionAvailable()) return { enc: safeStorage.encryptString(text).toString('base64') };
@@ -37,12 +39,18 @@ async function listAccounts() {
   return { accounts: accounts.map(publicView), active: getSettings().activeAccount };
 }
 
+// Same v3 UUID the vanilla server gives offline players
+// (UUID.nameUUIDFromBytes("OfflinePlayer:" + name)), so worlds keep their data.
 function offlineUuid(name) {
   const md5 = crypto.createHash('md5').update(`OfflinePlayer:${name}`).digest();
   md5[6] = (md5[6] & 0x0f) | 0x30;
   md5[8] = (md5[8] & 0x3f) | 0x80;
   const h = md5.toString('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function cacheSession(id, user) {
+  sessionCache.set(id, { accessToken: user.access_token, xuid: user.meta?.xuid, exp: Date.now() + TOKEN_TTL });
 }
 
 async function upsert(acc) {
@@ -74,9 +82,8 @@ async function addMicrosoft() {
   const mc = await xbox.getMinecraft();
   if (!mc.profile) throw new Error('This Microsoft account does not own Minecraft: Java Edition.');
   const user = mc.mclc();
-  const id = user.uuid;
-  sessionCache.set(id, { accessToken: user.access_token, xuid: user.meta?.xuid, exp: Date.now() + 23 * 3600e3 });
-  return upsert({ id, name: user.name, type: 'msa', xuid: user.meta?.xuid, refresh: seal(xbox.save()) });
+  cacheSession(user.uuid, user);
+  return upsert({ id: user.uuid, name: user.name, type: 'msa', xuid: user.meta?.xuid, refresh: seal(xbox.save()) });
 }
 
 async function removeAccount(id) {
@@ -105,19 +112,18 @@ async function getLaunchAccount(id) {
     return { name: acc.name, uuid: acc.id, accessToken: cached.accessToken, xuid: cached.xuid, type: 'msa' };
   }
   const { Auth } = require('msmc');
-  const auth = new Auth('select_account');
   let xbox;
   try {
-    xbox = await auth.refresh(unseal(acc.refresh));
-  } catch (err) {
+    xbox = await new Auth('select_account').refresh(unseal(acc.refresh));
+  } catch {
+    // revoked/expired token, or safeStorage can't decrypt the old one anymore
     throw new Error(`Your Microsoft login for ${acc.name} expired. Remove the account and sign in again.`);
   }
-  const mc = await xbox.getMinecraft();
-  const user = mc.mclc();
-  acc.name = user.name;
+  const user = (await xbox.getMinecraft()).mclc();
+  acc.name = user.name; // picks up name changes
   acc.refresh = seal(xbox.save());
   await save(accounts);
-  sessionCache.set(acc.id, { accessToken: user.access_token, xuid: user.meta?.xuid, exp: Date.now() + 23 * 3600e3 });
+  cacheSession(acc.id, user);
   return { name: user.name, uuid: acc.id, accessToken: user.access_token, xuid: user.meta?.xuid, type: 'msa' };
 }
 

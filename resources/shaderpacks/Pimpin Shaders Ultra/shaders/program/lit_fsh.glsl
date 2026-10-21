@@ -20,16 +20,21 @@ void main() {
 #ifdef PROGRAM_HAND
     lm.y = max(lm.y, float(eyeBrightnessSmooth.y) / 240.0);
 #endif
+    float shine = isId(blockId, ID_SHINY) ? 0.6 : 0.0;
 
-#if defined ULTRA && defined PROGRAM_TERRAIN && defined DIM_OVERWORLD
+#if defined PROGRAM_TERRAIN && defined DIM_OVERWORLD
+    // rain soaks the ground: darker and glossier
     float up = dot(n, normalize(upPosition));
     float wet = wetness * smoothstep(0.82, 0.95, lm.y) * (0.45 + 0.55 * clamp(up, 0.0, 1.0));
     alb *= 1.0 - 0.38 * wet * (1.0 - foliage);
+    shine = max(shine, wet * 0.8 * (1.0 - foliage));
 #endif
 
     vec3 direct;
-    vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, length(viewPos), direct);
-    color += emission(alb, albedo.rgb, blockId);
+    vec3 indirect;
+    vec3 color = shadeSurface(alb, n, lm, shadowPos, foliage, viewPos, worldPos, shine, direct, indirect);
+    vec3 glow = emission(alb, albedo.rgb, blockId);
+    color += glow;
 
     gl_FragData[0] = vec4(color, albedo.a);
 #ifdef ULTRA
@@ -41,5 +46,6 @@ void main() {
     float mat = foliage > 0.5 ? 6.0 : 1.0;
 #endif
     gl_FragData[1] = vec4(encodeNormal(n), packMaterial(mat, lm.y), 1.0);
+    gl_FragData[2] = vec4(luma(glow) > 0.0 ? vec3(0.0) : indirect, 1.0);
 #endif
 }

@@ -6,7 +6,7 @@ import { api, state, refreshInstances, selectedInstance, LOADER_LABEL, SERVER_LA
 const TYPES = [
   { value: 'mod', label: 'Mods', icon: 'puzzle' },
   { value: 'shader', label: 'Shaders', icon: 'sun' },
-  { value: 'resourcepack', label: 'Resource Packs', icon: 'palette' },
+  { value: 'resourcepack', label: 'Resource packs', icon: 'palette' },
   { value: 'modpack', label: 'Modpacks', icon: 'library' },
   { value: 'plugin', label: 'Plugins', icon: 'server' },
 ];
@@ -45,7 +45,7 @@ export function render(page, params, navigate) {
       (CATEGORIES[mem.type] || []).map((c) =>
         el('button', { class: mem.category === c ? 'on' : '', onclick: () => { mem.category = mem.category === c ? null : c; mem.offset = 0; drawCats(); runSearch(); } }, c.replace(/-/g, ' '))),
     );
-  const search = el('input', { class: 'input', placeholder: 'Search the library…', value: mem.query });
+  const search = el('input', { class: 'input', placeholder: 'Search Modrinth', value: mem.query });
   const sortSel = el('select', { class: 'select', style: { width: '190px' } }, SORTS.map(([v, l]) => el('option', { value: v }, l)));
   sortSel.value = mem.sort;
   let installed = new Set();
@@ -77,7 +77,7 @@ export function render(page, params, navigate) {
   const drawTarget = () => {
     const t = target();
     if (mem.type === 'modpack') {
-      clear(targetBar, el('div', { class: 'target-bar' }, icon('info'), el('span', { class: 'grow' }, 'Modpacks install as a brand-new instance with everything set up. Fabric & Quilt packs are supported.')));
+      clear(targetBar, el('div', { class: 'target-bar' }, icon('info'), el('span', { class: 'grow' }, 'A modpack installs as a new instance. Fabric and Quilt packs are supported. You can also drop a .mrpack file onto the window.')));
       return;
     }
     const isPlugin = mem.type === 'plugin';
@@ -91,7 +91,7 @@ export function render(page, params, navigate) {
       );
       return;
     }
-    const sel = el('select', { class: 'select' }, list.map((x) => el('option', { value: x.id }, `${x.name} — ${x.mcVersion}${isPlugin ? ` ${SERVER_LABEL[x.software] || 'Paper'}` : ` ${LOADER_LABEL[x.loader] || ''}`}`)));
+    const sel = el('select', { class: 'select' }, list.map((x) => el('option', { value: x.id }, `${x.name} (${x.mcVersion}${isPlugin ? ` ${SERVER_LABEL[x.software] || 'Paper'}` : ` ${LOADER_LABEL[x.loader] || ''}`})`)));
     sel.value = t?.id;
     sel.addEventListener('change', async () => {
       if (isPlugin) mem.serverId = sel.value;
@@ -100,9 +100,9 @@ export function render(page, params, navigate) {
       await runSearch();
     });
     const warn = !isPlugin && t && t.loader === 'vanilla' && (mem.type === 'mod' || mem.type === 'shader')
-      ? el('span', { class: 'chip', style: { color: 'var(--warn)' } }, icon('alert'), 'Vanilla instance — switch to Fabric to use this')
+      ? el('span', { class: 'chip warn' }, icon('alert'), 'Vanilla instance. Switch it to Fabric to use this.')
       : isPlugin && t?.software === 'vanilla'
-        ? el('span', { class: 'chip', style: { color: 'var(--warn)' } }, icon('alert'), 'Vanilla server — switch to Paper or Purpur to use plugins')
+        ? el('span', { class: 'chip warn' }, icon('alert'), 'Vanilla server. Switch it to Paper or Purpur for plugins.')
         : null;
     clear(
       targetBar,
@@ -116,7 +116,7 @@ export function render(page, params, navigate) {
       mem.type === 'resourcepack' && t
         ? el('div', { class: 'pimpin-promo', onclick: () => navigate('instances', { id: t.id, tab: 'pimpin' }) },
             icon('sparkle'),
-            el('div', { class: 'grow' }, el('b', {}, 'Try the Pimpin packs'), el('span', {}, 'Our own original packs: Pimpin Performance for FPS and Pimpin Pretty for looks.')),
+            el('div', { class: 'grow' }, el('b', {}, 'Pimpin packs'), el('span', {}, 'The launcher has two packs of its own: Performance for FPS and Pretty for looks.')),
             el('span', { class: 'btn sm primary' }, 'Open', icon('chevronRight')))
         : null,
     );
@@ -163,12 +163,12 @@ export function render(page, params, navigate) {
   const install = async (projectId, btn, versionId) => {
     btn.disabled = true;
     const label = btn.textContent;
-    btn.replaceChildren(el('span', { class: 'spin', style: { width: '14px', height: '14px' } }), 'Installing');
+    btn.replaceChildren(el('span', { class: 'spin xs' }), 'Installing');
     try {
       if (mem.type === 'modpack') {
         const inst = await api.call('modpack:install', { projectId, versionId });
         await refreshInstances();
-        toast(`${inst.name} is ready to play!`);
+        toast(`${inst.name} is installed`);
         btn.replaceChildren(icon('check'), 'Installed');
         btn.classList.add('ok');
         return true;
@@ -216,7 +216,7 @@ export function render(page, params, navigate) {
     );
 
   const openProject = async (id) => {
-    const body = el('div', { class: 'row muted', style: { padding: '40px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading…');
+    const body = el('div', { class: 'row muted', style: { padding: '40px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading');
     const m = modal({ wide: true, title: '', body, header: el('div') });
     try {
       const p = await api.call('library:project', id);
@@ -287,7 +287,7 @@ export function render(page, params, navigate) {
   });
 
   page.append(
-    el('div', { class: 'page-head' }, el('div', {}, el('h1', { class: 'page-title' }, 'Library'), el('p', { class: 'page-sub' }, 'Thousands of mods, shaders, resource packs, modpacks and plugins — installed with one click.'))),
+    el('div', { class: 'page-head' }, el('div', {}, el('h1', { class: 'page-title' }, 'Library'), el('p', { class: 'page-sub' }, 'Mods, shaders, resource packs, modpacks and server plugins from Modrinth.'))),
     el('div', { class: 'lib-toolbar' },
       seg(TYPES, mem.type, (v) => { mem.type = v; mem.offset = 0; mem.category = null; drawCats(); runSearch(); }),
       el('div', { class: 'lib-search-row' }, el('div', { class: 'search' }, icon('search'), search), sortSel),

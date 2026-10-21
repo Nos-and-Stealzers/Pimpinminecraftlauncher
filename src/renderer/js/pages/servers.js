@@ -5,7 +5,6 @@ import { api, state, subscribe, refreshServers, selectInstance, activeAccount, S
 import { playInstance, newInstanceModal } from '../components.js';
 import { consoleView } from './instances.js';
 import { fileBrowser } from '../files.js';
-import { cube3d } from '../fx3d.js';
 
 const PLUGIN_SOFTWARE = new Set(['paper', 'purpur']);
 const STARTERS = [
@@ -33,19 +32,23 @@ const statusChip = (s) => {
 };
 
 function serverIcon(s, size = '') {
-  return el('div', { class: `inst-icon ${size} srv-icon ${s.running ? 'ic-emerald' : 'ic-night'}` }, cube3d(s.software === 'vanilla' ? 'grass' : s.software === 'purpur' ? 'purpur' : 'paper', size === 'lg' ? 34 : 22));
+  return el('div', { class: `inst-icon ${size} ${s.running ? 'ic-emerald' : 'ic-night'}` }, icon('server'));
 }
 
 function renderList(page, params, navigate) {
   const grid = el('div', { class: 'inst-grid' });
   const lan = el('span');
   api.call('servers:network').then((n) => n.lan[0] && clear(lan, el('span', { class: 'chip' }, icon('wifi'), `Your LAN address: ${n.lan[0]}`))).catch(() => {});
-  const draw = () =>
+  const draw = () => {
+    if (!state.servers.length) {
+      return clear(grid, el('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, icon('server'), el('h3', {}, 'No servers'),
+        el('div', {}, 'A local server runs on this PC. Friends on the same network can join with the LAN address.'),
+        el('button', { class: 'btn primary', onclick: () => newServerModal(navigate) }, icon('plus'), 'New server')));
+    }
     clear(
       grid,
       state.servers.map((s) =>
         el('div', { class: `card inst-card${s.running ? ' running' : ''}`, onclick: () => navigate('servers', { id: s.id }) },
-          el('div', { class: `glow ${s.running ? 'ic-emerald' : 'ic-night'}` }),
           el('div', { class: 'top' }, serverIcon(s), el('div', { class: 'grow' }, el('b', {}, s.name), el('span', {}, `${software(s)} ${s.mcVersion} · port ${s.port}`))),
           el('div', { class: 'bottom' },
             statusChip(s),
@@ -53,11 +56,11 @@ function renderList(page, params, navigate) {
             s.pluginCount ? el('span', { class: 'chip' }, icon('puzzle'), String(s.pluginCount)) : null,
             el('span', { class: 'dim' }, `${(s.memory / 1024).toFixed(1)} GB RAM`))),
       ),
-      el('div', { class: 'card inst-card new', onclick: () => newServerModal(navigate) }, icon('plus'), el('b', {}, 'New server'), el('span', { class: 'dim' }, 'Paper, Purpur or Vanilla')),
     );
+  };
   page.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', { class: 'page-title' }, 'Servers'), el('p', { class: 'page-sub' }, 'Host a local server for you and your friends — plugins, backups, player management and one-click join.')),
+      el('div', {}, el('h1', { class: 'page-title' }, 'Servers'), el('p', { class: 'page-sub' }, 'Local Paper, Purpur and Vanilla servers with plugins, backups and player management.')),
       el('div', { class: 'row' }, lan, el('button', { class: 'btn primary', onclick: () => newServerModal(navigate) }, icon('plus'), 'New server'))),
     grid,
   );
@@ -77,7 +80,7 @@ const DIFFICULTIES = [['peaceful', 'Peaceful'], ['easy', 'Easy'], ['normal', 'No
 async function newServerModal(navigate) {
   let kind = 'paper';
   const name = el('input', { class: 'input', placeholder: 'My server', maxlength: 40 });
-  const version = el('select', { class: 'select' }, el('option', {}, 'Loading…'));
+  const version = el('select', { class: 'select' }, el('option', {}, 'Loading'));
   const memory = el('input', { type: 'range', min: 1024, max: Math.max(2048, state.settings.totalMemory - 2048), step: 512, value: 2048 });
   const memVal = el('div', { class: 'mem-val' }, '2.0 GB');
   memory.addEventListener('input', () => (memVal.textContent = `${(memory.value / 1024).toFixed(1)} GB`));
@@ -98,7 +101,7 @@ async function newServerModal(navigate) {
   const create = el('button', { class: 'btn primary' }, icon('plus'), 'Create server');
 
   const loadVersions = async () => {
-    clear(version, el('option', {}, 'Loading…'));
+    clear(version, el('option', {}, 'Loading'));
     starterField.classList.toggle('hidden', !PLUGIN_SOFTWARE.has(kind));
     try {
       const versions = await api.call('servers:versions', kind);
@@ -129,7 +132,7 @@ async function newServerModal(navigate) {
       el('label', { class: 'field' }, 'Memory', el('div', { class: 'set-row' }, memory, memVal)),
       starterField,
       el('label', { class: 'check-row' }, crack, el('div', {}, el('b', {}, 'Allow offline accounts'), el('span', {}, 'Turns off online-mode so offline / non-premium accounts can join. Only do this for servers with friends.'))),
-      el('label', { class: 'check-row' }, eula, el('div', {}, el('b', {}, 'I agree to the Minecraft EULA'), el('span', {}, 'Required to run a server — https://aka.ms/MinecraftEULA'))),
+      el('label', { class: 'check-row' }, eula, el('div', {}, el('b', {}, 'I agree to the Minecraft EULA'), el('span', {}, 'Required to run a server: https://aka.ms/MinecraftEULA'))),
     ],
     actions: [el('button', { class: 'btn ghost', onclick: () => m.close() }, 'Cancel'), create],
   });
@@ -199,7 +202,7 @@ function renderDetail(page, id, navigate) {
         if (!ok) return;
         await api.call('servers:setProperties', id, { 'online-mode': false });
         await api.call('servers:restart', id).catch(errorToast);
-        toast('Restarting — press Join again once it is online');
+        toast('Restarting. Press Join again once it is online.');
         return;
       }
     }
@@ -254,9 +257,9 @@ function renderDetail(page, id, navigate) {
             s.running ? el('span', { class: 'chip' }, icon('users'), `${s.online?.length || 0} online`) : null,
             s.running && s.started ? el('span', { class: 'chip' }, icon('clock'), `Up ${fmtDuration((Date.now() - s.started) / 1000) || '<1m'}`) : null)),
         el('div', { class: 'row' },
-          el('button', { class: 'btn icon', title: 'Open folder', onclick: () => api.call('servers:open', id) }, icon('folder')),
+          el('button', { class: 'btn icon ghost', title: 'Open folder', onclick: () => api.call('servers:open', id) }, icon('folder')),
           el('button', {
-            class: 'btn icon danger',
+            class: 'btn icon ghost danger',
             title: 'Delete server',
             onclick: async () => {
               if (!(await confirmModal('Delete server?', `"${s.name}" and its world will be permanently deleted.`, { confirm: 'Delete', danger: true }))) return;
@@ -269,12 +272,12 @@ function renderDetail(page, id, navigate) {
               }
             },
           }, icon('trash')),
-          s.running ? el('button', { class: 'btn icon', title: 'Restart', onclick: () => api.call('servers:restart', id).catch(errorToast) }, icon('refresh')) : null,
+          s.running ? el('button', { class: 'btn icon ghost', title: 'Restart', onclick: () => api.call('servers:restart', id).catch(errorToast) }, icon('refresh')) : null,
           el('button', { class: 'btn', onclick: join, disabled: !s.running }, icon('play'), 'Join'),
           s.running
-            ? el('button', { class: 'btn', style: { height: '44px', padding: '0 22px' }, onclick: () => api.call('servers:stop', id) }, icon('stop'), 'Stop')
-            : el('button', { class: 'btn primary', style: { height: '44px', padding: '0 24px' }, disabled: preparing, onclick: startServer },
-                preparing ? el('span', { class: 'spin' }) : icon('play'), preparing ? 'Starting…' : 'Start')),
+            ? el('button', { class: 'play-btn running', onclick: () => api.call('servers:stop', id) }, icon('stop'), 'Stop')
+            : el('button', { class: `play-btn${preparing ? ' busy' : ''}`, disabled: preparing, onclick: startServer },
+                preparing ? el('span', { class: 'spin xs' }) : icon('play'), preparing ? 'Starting' : 'Start')),
       ),
     );
   };
@@ -380,14 +383,14 @@ function drawConsole(root, s) {
   root.append(
     el('div', { class: 'filter-row' },
       quick.map(([label, cmd, ic]) => el('button', { class: 'btn sm', onclick: () => send(cmd) }, icon(ic), label)),
-      el('button', { class: 'btn sm', onclick: () => { input.value = 'say '; input.focus(); } }, icon('send'), 'Broadcast…'),
+      el('button', { class: 'btn sm', onclick: () => { input.value = 'say '; input.focus(); } }, icon('send'), 'Broadcast'),
       el('span', { class: 'grow' }),
       el('button', { class: 'btn sm', onclick: () => { navigator.clipboard.writeText(box.innerText); toast('Log copied to clipboard'); } }, icon('copy'), 'Copy log')),
     box,
     el('div', { class: 'console-input' }, input, el('button', { class: 'btn primary', onclick: sendCmd }, icon('send'), 'Send')),
   );
   api.call('servers:logs', s.id).then((lines) => {
-    if (!lines.length) add(s.eulaAccepted ? '[Pimpin] Server is offline — press Start.' : '[Pimpin] Accept the Minecraft EULA by pressing Start.');
+    if (!lines.length) add(s.eulaAccepted ? '[Pimpin] Server is offline. Press Start.' : '[Pimpin] Accept the Minecraft EULA by pressing Start.');
     lines.forEach(add);
   });
   return api.on('server:log', (e) => e.id === s.id && add(e.line));
@@ -450,7 +453,7 @@ function drawPlayers(root, s) {
 
 async function drawPlugins(root, s, navigate) {
   if (!canPlugins(s)) {
-    root.append(el('div', { class: 'card empty' }, icon('puzzle'), el('h3', {}, 'Vanilla servers cannot run plugins'), el('div', {}, 'Switch to Paper or Purpur in the Settings tab — your world is kept.')));
+    root.append(el('div', { class: 'card empty' }, icon('puzzle'), el('h3', {}, 'Vanilla servers cannot run plugins'), el('div', {}, 'Switch to Paper or Purpur in the Settings tab. Your world is kept.')));
     return;
   }
   const target = { kind: 'server', id: s.id };
@@ -479,7 +482,7 @@ async function drawPlugins(root, s, navigate) {
       if (!updates.length) toast('All plugins are up to date');
       else if (await confirmModal(`${updates.length} update${updates.length > 1 ? 's' : ''} available`, updates.map((u) => `${u.title}: ${u.versionNumber} → ${u.newVersionNumber}`).join('\n'), { confirm: 'Update all' })) {
         await api.call('content:applyUpdates', target, updates);
-        toast('Plugins updated — restart the server to load them');
+        toast('Plugins updated. Restart the server to load them.');
         load();
       }
     } catch (err) {
@@ -520,7 +523,7 @@ const PROPS = [
 ];
 
 async function drawProperties(root, s) {
-  root.append(el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading…'));
+  root.append(el('div', { class: 'row muted' }, el('span', { class: 'spin' }), 'Loading'));
   const props = await api.call('servers:properties', s.id).catch(() => ({}));
   const inputs = {};
   const fields = [];
@@ -550,7 +553,7 @@ async function drawProperties(root, s) {
       const live = state.servers.find((x) => x.id === s.id)?.running;
       if (live && (await confirmModal('Restart now?', 'The server reads its properties when it starts. Restart it now to apply the changes?', { confirm: 'Restart' }))) {
         api.call('servers:restart', s.id).catch(errorToast);
-      } else toast(live ? 'Saved — restart the server to apply' : 'Saved');
+      } else toast(live ? 'Saved. Restart the server to apply.' : 'Saved');
     } catch (err) {
       errorToast(err);
     }
@@ -599,7 +602,7 @@ async function drawBackups(root, s) {
   };
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    btn.replaceChildren(el('span', { class: 'spin xs' }), 'Backing up…');
+    btn.replaceChildren(el('span', { class: 'spin xs' }), 'Backing up');
     try {
       draw(await api.call('servers:backup', s.id));
       toast('Backup saved');
@@ -645,7 +648,7 @@ function drawSettings(root, s) {
       el('label', { class: 'field' }, 'JVM arguments', jvm),
       el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Restart after a crash'), el('span', {}, 'Brings the server back up automatically (at most 3 times in 10 minutes).')),
         switchEl(autoRestart, (v) => (autoRestart = v))),
-      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Minecraft EULA'), el('span', {}, 'Required to run a server — https://aka.ms/MinecraftEULA')),
+      el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Minecraft EULA'), el('span', {}, 'Required to run a server: https://aka.ms/MinecraftEULA')),
         switchEl(s.eulaAccepted, (v) => api.call('servers:update', s.id, { eulaAccepted: v }).then(refreshServers)))),
     el('div', { class: 'row', style: { justifyContent: 'flex-end' } },
       el('button', {
@@ -663,7 +666,7 @@ function drawSettings(root, s) {
               jvmArgs: jvm.value.trim() || null,
             });
             await refreshServers();
-            toast(s.running ? 'Saved — restart the server to apply' : 'Saved');
+            toast(s.running ? 'Saved. Restart the server to apply.' : 'Saved');
           } catch (err) {
             errorToast(err);
           }

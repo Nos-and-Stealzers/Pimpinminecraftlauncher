@@ -26,12 +26,6 @@ vec3 shadowTap(vec2 uv, float z) {
 #endif
 }
 
-vec2 vogel(int i, int n, float phi) {
-    float r = sqrt((float(i) + 0.5) / float(n));
-    float a = float(i) * 2.39996323 + phi;
-    return r * vec2(cos(a), sin(a));
-}
-
 vec3 sampleShadow(vec3 clip, float fallback, float noise) {
     vec3 c = vec3(distortShadow(clip.xy), clip.z) * 0.5 + 0.5;
     float fade = smoothstep(0.8, 0.98, max(abs(clip.x), abs(clip.y)));

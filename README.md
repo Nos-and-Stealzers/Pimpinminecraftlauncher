@@ -28,6 +28,8 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
   - A HUD with FPS, coordinates, direction, biome, ping, speed, clock and your last death spot; keystrokes with CPS; armour durability. Position, size and colour are up to you.
   - A **minimap**: square or round, north-up or turning with you, five zoom levels, biome-tinted terrain with hill shading, see-through water, other players, mobs (red hostile, green passive), a death marker and a cave view underground and in the Nether. It remembers areas you've explored and scans chunks in the background with a time budget, so it doesn't cost FPS.
   - A **big map**: hold J, scroll to zoom.
+  - **Waypoints**: press B to drop one where you stand. They show on the minimap (stuck to the edge when far away) and with their names on the big map; rename, recolour, hide or delete them under Pimpin settings → Minimap → Waypoints. Saved per world/server and dimension.
+  - A **Pimpin loading screen** instead of the red Mojang Studios one, at startup and whenever resources reload (can be turned off under General).
   - **Zoom** (hold Z, scroll to adjust, smooth).
   - An **FPS booster**: caps the frame rate while the game is in the background, plus a one-click fast-settings switch that remembers your old settings.
   - A built-in **mod menu** (Right Shift or the "✦ Pimpin" button on the title and pause screens): every mod with its icon, version, authors, description and website, search, and a shortcut to the mods folder.
@@ -51,7 +53,7 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
 
 ## Download
 
-Every push to `main` publishes a new release with installers on the [Releases page](https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/releases). Installed copies update themselves.
+Every push to `main` publishes a new release with installers to the public [pimpin-launcher-releases](https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases) repo (this source repo is private, so launchers couldn't check it). Installed copies check there and update themselves; the workflow needs the `RELEASES_TOKEN` secret (a token that can write releases to that repo).
 
 | Platform | File |
 | --- | --- |

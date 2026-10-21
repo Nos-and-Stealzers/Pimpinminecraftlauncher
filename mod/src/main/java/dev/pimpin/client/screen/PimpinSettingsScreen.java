@@ -5,6 +5,7 @@ import dev.pimpin.client.compat.BaseScreen;
 import dev.pimpin.client.compat.Compat;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
+import dev.pimpin.client.feature.Waypoints;
 import dev.pimpin.client.hud.Minimap;
 import dev.pimpin.client.compat.Draw;
 import net.minecraft.client.gui.components.Button;
@@ -99,6 +100,7 @@ public final class PimpinSettingsScreen extends BaseScreen {
                 r.add(toggle("Cave view underground", () -> c.minimapCaves, v -> c.minimapCaves = v));
                 r.add(toggle("Other players", () -> c.minimapPlayers, v -> c.minimapPlayers = v));
                 r.add(toggle("Mobs", () -> c.minimapMobs, v -> c.minimapMobs = v));
+                r.add(cycle("Waypoints", () -> String.valueOf(Waypoints.here(minecraft).size()), () -> Compat.setScreen(minecraft, new WaypointsScreen(this))));
                 r.add(toggle("Coordinates under map", () -> c.minimapCoords, v -> c.minimapCoords = v));
                 r.add(cycle("Death marker", () -> "Clear", DeathTracker::clear));
                 r.add(cycle("Forget explored map", () -> "Click", Minimap::clearCache));
@@ -115,6 +117,7 @@ public final class PimpinSettingsScreen extends BaseScreen {
             }
             default -> {
                 r.add(toggle("Pimpin button on menus", () -> c.menuButtons, v -> c.menuButtons = v));
+                r.add(toggle("Pimpin loading screen", () -> c.brandedLoading, v -> c.brandedLoading = v));
                 r.add(cycle("Controls", () -> "Open", () -> Compat.setScreen(minecraft, keyBinds())));
                 r.add(cycle("Mod menu", () -> "Open", () -> Compat.setScreen(minecraft, new ModMenuScreen(this))));
                 r.add(cycle("Reset all settings", () -> "Click", () -> {

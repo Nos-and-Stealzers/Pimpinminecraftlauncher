@@ -18,6 +18,9 @@ void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
     gl_FragData[0] = vec4(toLinear(c.rgb) * 1.6, c.a);
 #elif defined PROGRAM_CLOUDS
+#if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+    discard;
+#endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
     if (c.a < 0.01) discard;
     vec3 n = normalize(viewNormal);
@@ -26,8 +29,10 @@ void main() {
     float side = 0.55 + 0.45 * max(dot(n, L), 0.0);
     vec3 V = normalize(viewPos);
     float silver = pow(max(dot(V, L), 0.0), 6.0) * 0.6;
-    vec3 col = ambientColor() * 1.25 + sun * (0.35 * side + silver);
+    vec3 col = ambientColor() * 1.1 + sun * (0.32 * side + silver);
     col *= mix(1.0, 0.55, rainStrength);
+    // distant clouds melt into the sky
+    col = mix(col, skyColorAt(V), sat(length(viewPos) / (far * 3.0)) * 0.6);
     gl_FragData[0] = vec4(col * CLOUD_BRIGHTNESS, c.a * mix(0.85, 0.95, rainStrength));
 #elif defined PROGRAM_WEATHER
     vec4 c = texture2D(tex, texcoord) * glcolor;

@@ -1,13 +1,14 @@
 // The Pimpin resource packs: "Pimpin Performance" (calm 16× textures, no
 // animated textures, low fire, clear overlays) and "Pimpin Pretty" (rich 32×
-// textures, smooth animated water & lava, custom sun, moon and crosshair).
+// textures, animated liquids, fire and ores, OptiFine/Continuity extras,
+// custom sun, moon and crosshair). Both cover blocks, items, mobs and HUD.
 // Built on demand for the instance's Minecraft version and switched on in
 // options.txt. Also one-click FPS / Pretty game-settings presets.
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { T, ORES, MOBS, SKINS, HUD } = require('./pack-art');
+const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS } = require('./pack-art');
 const { Image } = require('./png');
 
 const PACKS = {
@@ -22,8 +23,10 @@ const PACKS = {
       'Every animated texture made static (water, lava, fire, portals, magma, sea lanterns, prismarine)',
       'Low fire: flames cover far less of your screen',
       'Clear pumpkin, vignette and underwater overlays',
-      'Clean hand-pixelled 16× blocks with calm palettes and outlined, easy-to-spot ores',
-      'Matching mobs, default player skins, hotbar, hearts and buttons',
+      'About 170 calm 16× blocks (on 1.20+): the common stones, bricks, soils, eight woods, wools, storage blocks, plants and crops',
+      'Every ore (stone, deepslate and nether) with outlined gems you can spot from across a cave',
+      'Swords, tools, food, ingots, bow and arrow drawn as one matching set',
+      'Matching mobs (incl. villager, husk, drowned), chests, default player skins, hotbar, hearts and buttons',
       'Minimal crosshair',
     ],
     description: '§aPimpin §fPerformance §7— static, clean, low fire',
@@ -34,106 +37,105 @@ const PACKS = {
     file: 'Pimpin Pretty.zip',
     style: 'looks',
     size: 32,
-    tagline: 'Rich 32× textures with soft shading and smooth liquids.',
+    tagline: 'Rich 32× textures with soft shading and living animations.',
     features: [
-      'Hand-pixelled 32× blocks: stones, soils, three woods, leaves, bricks, sandstone and more',
-      'Outlined gem ores with highlights (stone and deepslate)',
-      'HD mobs, nine original default player skins, a violet-and-gold hotbar and HUD',
-      'Smooth animated water and glowing lava',
-      'Clear glass with a shine, rounded cobblestone',
+      'About 170 hand-shaded 32× blocks (on 1.20+): stones, bricks, soils, eight woods, wools, storage blocks, plants and crops',
+      'Ores with outlined gems that twinkle now and then (glow in the dark with OptiFine or Continuity)',
+      'Connected glass with OptiFine or Continuity',
+      'Smooth water and lava, living fire, swirling portals, breathing magma and pulsing sea lanterns',
+      'HD tools, weapons, food and materials; HD mobs (incl. villager, husk, drowned) and chests',
+      'Nine original default player skins, a violet-and-gold hotbar and HUD',
       'Pimpin sun, moon phases, crosshair and splash texts',
     ],
     description: '§dPimpin §fPretty §7— 32× original textures',
   },
 };
 
-// name -> legacy (pre-1.13) texture name, or null when the block didn't exist yet.
-const LEGACY = {
-  stone: 'stone',
-  andesite: 'stone_andesite',
-  diorite: 'stone_diorite',
-  granite: 'stone_granite',
-  cobblestone: 'cobblestone',
-  dirt: 'dirt',
-  grass_block_top: 'grass_top',
-  grass_block_side: 'grass_side',
-  grass_block_side_overlay: 'grass_side_overlay',
-  sand: 'sand',
-  gravel: 'gravel',
-  oak_log: 'log_oak',
-  oak_log_top: 'log_oak_top',
-  oak_planks: 'planks_oak',
-  oak_leaves: 'leaves_oak',
-  spruce_log: 'log_spruce',
-  spruce_log_top: 'log_spruce_top',
-  spruce_planks: 'planks_spruce',
-  spruce_leaves: 'leaves_spruce',
-  birch_log: 'log_birch',
-  birch_log_top: 'log_birch_top',
-  birch_planks: 'planks_birch',
-  birch_leaves: 'leaves_birch',
-  glass: 'glass',
-  glass_pane_top: 'glass_pane_top',
-  bricks: 'brick',
-  snow: 'snow',
-  sandstone: 'sandstone_normal',
-  sandstone_top: 'sandstone_top',
-  sandstone_bottom: 'sandstone_bottom',
-  netherrack: 'netherrack',
-  obsidian: 'obsidian',
-  white_wool: 'wool_colored_white',
-  crafting_table_top: 'crafting_table_top',
-  crafting_table_front: 'crafting_table_front',
-  crafting_table_side: 'crafting_table_side',
-  furnace_front: 'furnace_front_off',
-  furnace_front_on: 'furnace_front_on',
-  furnace_side: 'furnace_side',
-  furnace_top: 'furnace_top',
-  torch: 'torch_on',
-  deepslate: null,
-  water_still: 'water_still',
-  water_flow: 'water_flow',
-  lava_still: 'lava_still',
-  lava_flow: 'lava_flow',
-  fire_0: 'fire_layer_0',
-  fire_1: 'fire_layer_1',
-  soul_fire_0: null,
-  soul_fire_1: null,
-  campfire_fire: null,
-  nether_portal: 'portal',
-  magma_block: 'magma',
-  sea_lantern: 'sea_lantern',
-  prismarine: 'prismarine_rough',
-  coal_ore: 'coal_ore',
-  iron_ore: 'iron_ore',
-  gold_ore: 'gold_ore',
-  diamond_ore: 'diamond_ore',
-  emerald_ore: 'emerald_ore',
-  redstone_ore: 'redstone_ore',
-  lapis_ore: 'lapis_ore',
-  copper_ore: null,
+// ------------------------------------------------------------------ blocks --
+// name -> { legacy: pre-1.13 file name (null = didn't exist), since: [a, b, c], file: modern file name }
+const W = (legacy, since) => ({ legacy, since });
+const BLOCKS = {
+  stone: W('stone'), andesite: W('stone_andesite'), diorite: W('stone_diorite'), granite: W('stone_granite'),
+  cobblestone: W('cobblestone'), mossy_cobblestone: W('cobblestone_mossy'),
+  stone_bricks: W('stonebrick'), mossy_stone_bricks: W('stonebrick_mossy'), cracked_stone_bricks: W('stonebrick_cracked'), chiseled_stone_bricks: W('stonebrick_carved'),
+  smooth_stone: W('stone_slab_top'), smooth_stone_slab_side: W('stone_slab_side'), bedrock: W('bedrock'),
+  dirt: W('dirt'), coarse_dirt: W('coarse_dirt'), podzol_top: W('dirt_podzol_top'), podzol_side: W('dirt_podzol_side'),
+  grass_block_top: W('grass_top'), grass_block_side: W('grass_side'), grass_block_side_overlay: W('grass_side_overlay'), grass_block_snow: W('grass_side_snowed'),
+  farmland: W('farmland_dry'), farmland_moist: W('farmland_wet'),
+  sand: W('sand'), red_sand: W('red_sand'), gravel: W('gravel'), clay: W('clay'), terracotta: W('hardened_clay'), snow: W('snow'),
+  sandstone: W('sandstone_normal'), sandstone_top: W('sandstone_top'), sandstone_bottom: W('sandstone_bottom'),
+  red_sandstone: W('red_sandstone_normal'), red_sandstone_top: W('red_sandstone_top'), red_sandstone_bottom: W('red_sandstone_bottom'),
+  glass: W('glass'), glass_pane_top: W('glass_pane_top'), bricks: W('brick'), bookshelf: W('bookshelf'),
+  tnt_side: W('tnt_side'), tnt_top: W('tnt_top'), tnt_bottom: W('tnt_bottom'),
+  netherrack: W('netherrack'), soul_sand: W('soul_sand'), glowstone: W('glowstone'), obsidian: W('obsidian'),
+  end_stone: W('end_stone'), end_stone_bricks: W('end_bricks', [1, 9]),
+  crafting_table_top: W('crafting_table_top'), crafting_table_front: W('crafting_table_front'), crafting_table_side: W('crafting_table_side'),
+  furnace_front: W('furnace_front_off'), furnace_front_on: W('furnace_front_on'), furnace_side: W('furnace_side'), furnace_top: W('furnace_top'),
+  torch: W('torch_on'), lantern: W(null, [1, 14]), ladder: W('ladder'),
+  oak_door_top: W('door_wood_upper'), oak_door_bottom: W('door_wood_lower'), oak_trapdoor: W('trapdoor'),
+  deepslate: W(null, [1, 17]), deepslate_top: W(null, [1, 17]), cobbled_deepslate: W(null, [1, 17]), deepslate_bricks: W(null, [1, 17]), deepslate_tiles: W(null, [1, 17]),
+  tuff: W(null, [1, 17]), calcite: W(null, [1, 17]),
+  coal_block: W('coal_block'), iron_block: W('iron_block'), gold_block: W('gold_block'), diamond_block: W('diamond_block'),
+  emerald_block: W('emerald_block'), lapis_block: W('lapis_block'), redstone_block: W('redstone_block'),
+  // plants (grass/fern/sugar cane are tinted by the game)
+  fern: W('fern'), dandelion: W('flower_dandelion'), poppy: W('flower_rose'), sugar_cane: W('reeds'),
+  // liquids and effects
+  water_still: W('water_still'), water_flow: W('water_flow'), lava_still: W('lava_still'), lava_flow: W('lava_flow'),
+  fire_0: W('fire_layer_0'), fire_1: W('fire_layer_1'), soul_fire_0: W(null, [1, 16]), soul_fire_1: W(null, [1, 16]), campfire_fire: W(null, [1, 14]),
+  nether_portal: W('portal'), magma_block: { legacy: 'magma', since: [1, 10], file: 'magma' }, sea_lantern: W('sea_lantern'), prismarine: W('prismarine_rough'),
 };
+for (let s = 0; s < 8; s++) BLOCKS[`wheat_stage${s}`] = W(`wheat_stage_${s}`);
+const DYE_LEGACY = { light_gray: 'silver' };
+for (const c of ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black']) {
+  BLOCKS[`${c}_wool`] = W(`wool_colored_${DYE_LEGACY[c] || c}`);
+}
+const WOOD_LEGACY = { oak: 'oak', spruce: 'spruce', birch: 'birch', jungle: 'jungle', acacia: 'acacia', dark_oak: 'big_oak' };
+for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry']) {
+  const l = WOOD_LEGACY[w];
+  const since = w === 'mangrove' ? [1, 19] : w === 'cherry' ? [1, 20] : undefined;
+  BLOCKS[`${w}_log`] = W(l && `log_${l}`, since);
+  BLOCKS[`${w}_log_top`] = W(l && `log_${l}_top`, since);
+  BLOCKS[`${w}_planks`] = W(l && `planks_${l}`, since);
+  BLOCKS[`${w}_leaves`] = W(l && `leaves_${l}`, since);
+}
+for (const o of Object.keys(ORES)) {
+  BLOCKS[o] = W(o === 'copper_ore' ? null : o, o === 'copper_ore' ? [1, 17] : undefined);
+  BLOCKS[`deepslate_${o}`] = W(null, [1, 17]);
+}
+BLOCKS.nether_gold_ore = W(null, [1, 16]);
+BLOCKS.nether_quartz_ore = W('quartz_ore');
 
-// Modern file names that differ from our texture names.
-const MODERN = { magma_block: 'magma' };
+// Animated in the Pretty pack only; Performance keeps one calm frame of each.
+const ANIMATED = ['water_still', 'water_flow', 'lava_still', 'lava_flow', 'fire_0', 'fire_1', 'soul_fire_0', 'soul_fire_1', 'campfire_fire', 'nether_portal', 'magma_block', 'sea_lantern', 'prismarine'];
 
-// First version a texture exists in (older versions skip it).
-const SINCE = {
-  magma_block: [1, 10],
-  campfire_fire: [1, 14],
-  soul_fire_0: [1, 16],
-  soul_fire_1: [1, 16],
-  deepslate: [1, 17],
-  copper_ore: [1, 17],
-};
+/** File name of a block texture in version v, or null when that version doesn't have it. */
+function blockFile(name, v) {
+  const b = BLOCKS[name];
+  if (!b) return null;
+  if (b.since && !atLeast(v, ...b.since)) return null;
+  if (isLegacy(v)) return b.legacy || null;
+  if (name === 'short_grass') return atLeast(v, 1, 20, 3) ? 'short_grass' : 'grass';
+  return b.file || name;
+}
+// "short_grass" was "grass" in 1.13-1.20.2 and "tallgrass" before 1.13
+BLOCKS.short_grass = W('tallgrass');
 
-const COMMON = ['stone', 'andesite', 'diorite', 'granite', 'cobblestone', 'dirt', 'grass_block_top', 'grass_block_side', 'grass_block_side_overlay', 'sand', 'gravel',
-  'oak_log', 'oak_log_top', 'oak_planks', 'oak_leaves', 'spruce_log', 'spruce_log_top', 'spruce_planks', 'spruce_leaves', 'birch_log', 'birch_log_top', 'birch_planks', 'birch_leaves',
-  'glass', 'glass_pane_top', 'bricks', 'snow', 'sandstone', 'sandstone_top', 'sandstone_bottom', 'netherrack', 'obsidian', 'white_wool',
-  'crafting_table_top', 'crafting_table_front', 'crafting_table_side', 'furnace_front', 'furnace_front_on', 'furnace_side', 'furnace_top', 'torch',
-  'deepslate', 'water_still', 'water_flow', 'lava_still', 'lava_flow',
-  ...Object.keys(ORES), ...Object.keys(ORES).map((o) => `deepslate_${o}`)];
-const PERF_ONLY = ['fire_0', 'fire_1', 'soul_fire_0', 'soul_fire_1', 'campfire_fire', 'nether_portal', 'magma_block', 'sea_lantern', 'prismarine'];
+// ------------------------------------------------------------------- items --
+const ITEMS = [
+  ...['wooden', 'stone', 'iron', 'golden', 'diamond', 'netherite'].flatMap((m) => ['sword', 'pickaxe', 'axe', 'shovel'].map((t) => `${m}_${t}`)),
+  'stick', 'apple', 'bread', 'cooked_beef', 'coal', 'diamond', 'emerald', 'iron_ingot', 'gold_ingot', 'arrow', 'bow', 'bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2',
+];
+function itemFile(name, v) {
+  if (name.startsWith('netherite') && !atLeast(v, 1, 16)) return null;
+  return isLegacy(v) ? LEGACY_ITEMS[name] || name : name;
+}
+
+// -------------------------------------------------- OptiFine / Continuity --
+// Edge layout of the 47 tiles of the standard "ctm" method (layout data only):
+// T/B/L/R = framed edge, a/b/c/d = inner corner pixel (top-left, top-right,
+// bottom-left, bottom-right).
+const CTM47 = ['TBLR', 'TBL', 'TB', 'TBR', 'TLd', 'TRc', 'Lbd', 'Tcd', 'acd', 'abc', 'bd', 'cd', 'TLR', 'TL', 'T', 'TR', 'BLb', 'BRa', 'Bab', 'Rac', 'bcd', 'abd', 'ab', 'ac',
+  'LR', 'L', '', 'R', 'Lb', 'Td', 'Ld', 'Tc', 'd', 'c', 'ad', 'bc', 'BLR', 'BL', 'B', 'BR', 'Ba', 'Rc', 'Bb', 'Ra', 'b', 'a', 'abcd'];
 
 const SPLASHES = [
   "Pimpin' ain't easy!",
@@ -188,15 +190,6 @@ function mcmeta(pack, v) {
   return JSON.stringify({ pack: meta }, null, 2);
 }
 
-const frames = (img, size) => img.h / size;
-
-/** Is this texture part of version v? */
-function exists(name, v) {
-  const since = SINCE[name] || (name.startsWith('deepslate') ? [1, 17] : null);
-  if (since && !atLeast(v, ...since)) return false;
-  return !isLegacy(v) || !!LEGACY[name];
-}
-
 /** Entity texture paths (relative to textures/entity/) per version, with the painter for each. */
 function entityFiles(v, st) {
   const out = [];
@@ -205,6 +198,12 @@ function entityFiles(v, st) {
   const v215 = atLeast(v, 1, 21, 5);
   const v26 = atLeast(v, 26, 1);
   add('zombie/zombie', () => MOBS.zombie(st));
+  if (atLeast(v, 1, 10)) add('zombie/husk', () => ENT.husk(st));
+  if (atLeast(v, 1, 13)) {
+    add('zombie/drowned', () => ENT.drowned(st));
+    add('zombie/drowned_outer_layer', () => ENT.drowned_outer(st));
+  }
+  add('villager/villager', () => ENT.villager(st));
   add('skeleton/skeleton', () => MOBS.skeleton(st));
   add('creeper/creeper', () => MOBS.creeper(st));
   add('spider/spider', () => MOBS.spider(st));
@@ -229,6 +228,12 @@ function entityFiles(v, st) {
       add(name('chicken'), () => MOBS.chicken(st, c));
     }
   }
+  // chests: one sheet before 1.15, then separate left/right halves for doubles
+  add('chest/normal', () => ENT.chest(st, 'single'));
+  if (atLeast(v, 1, 15)) {
+    add('chest/normal_left', () => ENT.chest(st, 'left'));
+    add('chest/normal_right', () => ENT.chest(st, 'right'));
+  } else add('chest/normal_double', () => ENT.chest(st, 'double'));
   // default player skins
   if (atLeast(v, 1, 19, 3)) {
     for (const n of SKINS.SKIN_NAMES) {
@@ -242,6 +247,32 @@ function entityFiles(v, st) {
   return out;
 }
 
+/** Glass tile for one connected-texture case: frame only where the edge is open. */
+function glassTile(S, st, code) {
+  const img = T.glass(S, st);
+  const k = S / 16;
+  // clear the default frame, then redraw the edges this case keeps
+  for (let i = 0; i < S; i++) for (const [x, y] of [[i, 0], [0, i], [i, S - 1], [S - 1, i], [i, 1], [1, i], [i, S - 2], [S - 2, i]]) {
+    if (x > 1 && y > 1 && x < S - 2 && y < S - 2) continue;
+    img.set(x, y, [0, 0, 0, 0]);
+  }
+  const lit = [214, 236, 244, 235];
+  const dark = [150, 184, 204, 235];
+  const shine = [235, 248, 252, 90];
+  const has = (ch) => code.includes(ch);
+  for (let i = 0; i < S; i++) {
+    if (has('T')) { img.set(i, 0, lit); if (k > 1) img.set(i, 1, shine); }
+    if (has('L')) { img.set(0, i, lit); if (k > 1) img.set(1, i, shine); }
+    if (has('B')) img.set(i, S - 1, dark);
+    if (has('R')) img.set(S - 1, i, dark);
+  }
+  if (has('a')) img.set(0, 0, lit);
+  if (has('b')) img.set(S - 1, 0, dark);
+  if (has('c')) img.set(0, S - 1, dark);
+  if (has('d')) img.set(S - 1, S - 1, dark);
+  return img;
+}
+
 /** Every file of a pack for a Minecraft version, as [path, Buffer|string] pairs. */
 function files(id, mcVersion = '1.21.4') {
   const pack = PACKS[id];
@@ -250,29 +281,42 @@ function files(id, mcVersion = '1.21.4') {
   const legacy = isLegacy(v);
   const S = pack.size;
   const st = pack.style;
+  const pretty = st === 'looks';
   const out = [];
   const add = (p, data) => out.push([p, data]);
   const tex = 'assets/minecraft/textures';
+  const blockDir = `${tex}/${legacy ? 'blocks' : 'block'}`;
   add('pack.mcmeta', mcmeta(pack, v));
   add('pack.png', T.pack_icon(st).toPNG());
   add('assets/minecraft/texts/splashes.txt', SPLASHES.join('\n'));
   add('README.txt', `${pack.name}\n\nOriginal textures drawn by the Pimpin Launcher (pixel art painted in code, no Mojang art).\n\n- ${pack.features.join('\n- ')}\n`);
 
   // blocks
-  const names = st === 'perf' ? [...COMMON, ...PERF_ONLY] : COMMON;
-  for (const name of names) {
-    if (!exists(name, v)) continue;
-    const file = legacy ? LEGACY[name] : MODERN[name] || name;
+  const emissive = [];
+  for (const name of Object.keys(BLOCKS)) {
+    const file = blockFile(name, v);
+    if (!file) continue;
     const img = T[name](S, st);
-    const base = `${tex}/${legacy ? 'blocks' : 'block'}/${file}.png`;
-    add(base, img.toPNG());
-    const tile = name.endsWith('_flow') ? S * 2 : S;
-    if (frames(img, tile) > 1) {
-      add(`${base}.mcmeta`, JSON.stringify({ animation: { frametime: name.startsWith('lava') ? 3 : 2, interpolate: true } }));
+    const p = `${blockDir}/${file}.png`;
+    add(p, img.toPNG());
+    if (img.h > img.w) {
+      const flow = name.endsWith('_flow');
+      const meta = img.meta || { animation: { frametime: name.startsWith('lava') ? 3 : 2, interpolate: true } };
+      if (flow || ANIMATED.includes(name) || img.meta) add(`${p}.mcmeta`, JSON.stringify(meta));
+    }
+    if (pretty && T[name].emissive) {
+      add(`${blockDir}/${file}_e.png`, T[name].emissive(S, st).toPNG());
+      emissive.push(file);
     }
   }
 
-  // mobs and player skins
+  // items
+  for (const name of ITEMS) {
+    const file = itemFile(name, v);
+    if (file) add(`${tex}/${legacy ? 'items' : 'item'}/${file}.png`, I[name](S, st).toPNG());
+  }
+
+  // mobs, chests and player skins
   for (const [p, fn] of entityFiles(v, st)) add(`${tex}/${p}`, fn().toPNG());
 
   // hotbar, HUD and buttons
@@ -289,7 +333,7 @@ function files(id, mcVersion = '1.21.4') {
 
   // sky and overlays
   const env = `${tex}/environment`;
-  if (st === 'looks') {
+  if (pretty) {
     // 1.21.11 moved the sky textures to celestial/ (one file per moon phase).
     if (atLeast(v, 1, 21, 11)) {
       add(`${env}/celestial/sun.png`, T.sun(S, st).toPNG());
@@ -305,6 +349,15 @@ function files(id, mcVersion = '1.21.4') {
     add(`${tex}/misc/pumpkinblur.png`, clear);
     add(`${tex}/misc/vignette.png`, clear);
     add(`${tex}/misc/underwater.png`, clear);
+  }
+
+  // OptiFine / Continuity extras (ignored by the plain game): emissive ore
+  // glints and connected glass, Pretty only.
+  if (pretty) {
+    const of = 'assets/minecraft/optifine';
+    if (emissive.length) add(`${of}/emissive.properties`, 'suffix.emissive=_e\n');
+    CTM47.forEach((code, i) => add(`${of}/ctm/glass/${i}.png`, glassTile(S, st, code).toPNG()));
+    add(`${of}/ctm/glass/glass.properties`, 'method=ctm\nmatchBlocks=glass\ntiles=0-46\nconnect=block\n');
   }
   return out;
 }
@@ -360,15 +413,15 @@ function preview(id) {
     ['Cobblestone', T.cobblestone(S, st)],
     ['Planks', T.oak_planks(S, st)],
     ['Diamond ore', T.diamond_ore(S, st)],
-    ['Oak log', T.oak_log(S, st)],
+    ['Bookshelf', T.bookshelf(S, st)],
     ['Leaves', tint(T.oak_leaves(S, st), [72, 181, 24])],
     ['Water', tint(first(T.water_still(S, st)), [63, 118, 228])],
     ['Lava', first(T.lava_still(S, st))],
     ['Creeper', face(MOBS.creeper(st), 8, 8)],
     ['Zombie', face(MOBS.zombie(st), 8, 8)],
     ['Skeleton', face(MOBS.skeleton(st), 8, 8)],
-    ['Pig', face(MOBS.pig(st), 8, 8)],
-    ['Enderman', face(MOBS.enderman(st), 8, 8)],
+    ['Villager', face(ENT.villager(st), 8, 8)],
+    ['Diamond sword', I.diamond_sword(S, st)],
     ['Steve', skinFace(SKINS.skin('steve'))],
     ['Alex', skinFace(SKINS.skin('alex', true))],
     ['Hotbar', crop(slot, 0, 0, 24, 48)],
@@ -418,9 +471,10 @@ async function setActive(gameDir, file, mcVersion, on) {
   if (on) list = isLegacy(mcVersion) ? [entry, ...list] : [...list, entry];
   const patch = { resourcePacks: JSON.stringify(list) };
   if (!isLegacy(mcVersion)) {
-    // Don't ask "made for a different version?" for our own packs.
-    let inc = (packList(lines, 'incompatibleResourcePacks') || []).filter((p) => p !== entry);
-    if (on) inc = [...inc, entry];
+    // Our packs are built for this exact version, so keep them off the
+    // incompatible list: the game skips a listed pack for that launch when
+    // it turns out to be compatible ("removed from incompatibility list").
+    const inc = (packList(lines, 'incompatibleResourcePacks') || []).filter((p) => p !== entry);
     patch.incompatibleResourcePacks = JSON.stringify(inc);
   }
   await writeOptions(gameDir, patch);

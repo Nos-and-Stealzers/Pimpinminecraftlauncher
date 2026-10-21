@@ -1,7 +1,7 @@
 // Box-UV painting for entity textures. A model box (u, v, w, h, d) unfolds
 // into six faces on the texture exactly like the game's cube UV mapping;
 // painters work per face in fine pixels (k = 2 for the 2× "Pretty" canvases).
-const { Px, ramp, rng } = require('./lib');
+const { Px, ramp, rng, noise } = require('./lib');
 
 class Pal {
   constructor() {
@@ -59,7 +59,7 @@ class Model {
     const H = h * k;
     const inside = (fx, fy) => fx >= 0 && fy >= 0 && fx < W && fy < H;
     const F = {
-      name, w, h, k, W, H, P: this.P, side: name !== 'top' && name !== 'bottom',
+      name, w, h, k, W, H, x, y, P: this.P, side: name !== 'top' && name !== 'bottom',
       /** fine pixel */
       f: (fx, fy, i) => {
         if (inside(fx, fy) && i != null) px.set(X + fx, Y + fy, i);
@@ -122,13 +122,14 @@ function coat(F, m, { seed = 1, fur = 0.5, lift = 0, shadow = true } = {}) {
     }
   }
   if (F.P && fur > 0) {
-    const count = Math.round(((F.W * F.H) / 18) * fur);
-    for (let i = 0; i < count; i++) {
-      const x = r.i(F.W);
-      const y = r.i(Math.max(1, F.H - 2));
-      const up = r.chance(0.5);
-      F.f(x, y, m.at(base + (up ? 1 : -1)));
-      F.f(x, y + 1, m.at(base + (up ? 0 : -1)));
+    // short fur strokes on a jittered grid: a lit tip over a shaded root
+    const step = Math.max(3, Math.round(5 / fur));
+    for (let gy = 1; gy < F.H - 2; gy += step) for (let gx = 0; gx < F.W; gx += step) {
+      if (r.chance(0.3)) continue;
+      const x = gx + r.i(step - 1);
+      const y = gy + r.i(Math.max(1, step - 2));
+      F.f(x, y, m.at(base + 1));
+      F.f(x, y + 1, m.at(base - 1));
     }
   }
 }
@@ -155,18 +156,53 @@ function patches(F, m, { seed = 1, count = 2, size = 3, lift = 0 } = {}) {
   }
 }
 
-/** Woolly curls: offset rows of little lit/shaded commas. */
-function fleece(F, m, { seed = 1, lift = 0, gaps = 0.35 } = {}) {
-  const r = rng(seed + F.W * 3 + F.H);
-  F.fill(m.at(m.mid + lift + (F.name === 'bottom' ? -1 : 0)));
-  const step = 2 * F.k;
-  for (let y = 0; y < F.H; y += step) {
-    for (let x = (y / step) % 2 ? step / 2 : 0; x < F.W; x += step) {
-      if (r.chance(gaps)) continue;
-      F.f(x, y, m.at(m.mid + lift + 1));
-      F.f(x + 1, y + (F.k > 1 ? 1 : 0), m.at(m.mid + lift - 1));
-      if (F.k > 1) F.f(x + 1, y, m.at(m.mid + lift + 1));
+/**
+ * Wool: offset rows of round curls (scallops). Each curl has a lit crest and
+ * a shaded underside; no random specks, so it reads as one soft material.
+ */
+function fleece(F, m, { lift = 0 } = {}) {
+  const b = m.mid + lift + (F.name === 'bottom' ? -1 : F.name === 'top' ? 1 : 0);
+  F.fill(m.at(b));
+  if (F.k === 1) {
+    for (let y = 0; y < F.H; y++) for (let x = 0; x < F.W; x++) {
+      const row = Math.floor(y / 2);
+      const cx = (x + (row % 2) * 2) % 4;
+      if (y % 2 === 1 && (cx === 0 || cx === 3)) F.f(x, y, m.at(b - 1));
+      else if (y % 2 === 0 && (cx === 1 || cx === 2)) F.f(x, y, m.at(b + 1));
     }
+    return;
+  }
+  // 2× curls: 4×3 cells, crest 2px, body, shade arc
+  const CURL = ['.hh.', 'hbbs', 'sbbs'];
+  for (let y = 0; y < F.H; y++) for (let x = 0; x < F.W; x++) {
+    const row = Math.floor(y / 3);
+    const ch = CURL[y % 3][(x + (row % 2) * 2) % 4];
+    if (ch === 'h') F.f(x, y, m.at(b + 1));
+    else if (ch === 's') F.f(x, y, m.at(b - 1));
+  }
+}
+
+/**
+ * Spots laid out over the whole texture (not per face) so they continue
+ * round the body like real markings. Quantised to whole model units, with
+ * a lit top edge in the 2× style.
+ */
+function spots(F, m, { seed = 1, thr = 0.62, scale = 5, lift = 0 } = {}) {
+  const nz = noise(64, scale, seed);
+  const on = (ux, uy) => nz(F.x + ux, F.y + uy) > thr;
+  for (let uy = 0; uy < F.h; uy++) for (let ux = 0; ux < F.w; ux++) {
+    if (!on(ux, uy)) continue;
+    const edge = !on(ux, uy - 1);
+    F.u(ux, uy, 1, 1, (q, j) => m.at(m.mid + lift + (F.P && edge && j === 0 ? 1 : 0)));
+  }
+}
+
+/** Ragged hem: clear the last unit rows of a side face in a fixed tooth pattern. */
+function hem(F, depth = 1, period = 3) {
+  if (!F.side) return;
+  for (let ux = 0; ux < F.w; ux++) {
+    const cut = (ux % period === 1 ? depth : ux % period === 2 ? Math.max(0, depth - 1) : 0);
+    if (cut) F.u(ux, F.h - cut, 1, cut, -1);
   }
 }
 
@@ -185,4 +221,4 @@ function shag(F, m, { seed = 1, hem = 2 } = {}) {
   }
 }
 
-module.exports = { Pal, Model, coat, patches, fleece, shag };
+module.exports = { Pal, Model, coat, patches, fleece, spots, hem, shag };

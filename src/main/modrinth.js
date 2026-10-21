@@ -5,30 +5,28 @@ const { getJson, request } = require('./net');
 
 const API = 'https://api.modrinth.com/v2';
 
+// Modrinth takes arrays (facets, ids, loaders) as JSON inside the query string.
 const q = (v) => encodeURIComponent(JSON.stringify(v));
 
-/** Facets for each library tab. `ctx` narrows results to the selected instance/server. */
+// Outer array is AND, inner arrays are OR.
 function facetsFor(type, { mcVersion, loader } = {}) {
-  const facets = [];
+  let facets;
   switch (type) {
     case 'mod':
-      facets.push(['project_type:mod']);
-      facets.push(loader === 'quilt' ? ['categories:quilt', 'categories:fabric'] : [`categories:${loader || 'fabric'}`]);
+      // Quilt loads most Fabric mods, so show both
+      facets = [['project_type:mod'], loader === 'quilt' ? ['categories:quilt', 'categories:fabric'] : [`categories:${loader || 'fabric'}`]];
       break;
     case 'shader':
-      facets.push(['project_type:shader']);
-      facets.push(['categories:iris', 'categories:optifine']);
+      facets = [['project_type:shader'], ['categories:iris', 'categories:optifine']];
       break;
     case 'resourcepack':
-      facets.push(['project_type:resourcepack']);
+      facets = [['project_type:resourcepack']];
       break;
     case 'modpack':
-      facets.push(['project_type:modpack']);
-      facets.push(['categories:fabric', 'categories:quilt']);
+      facets = [['project_type:modpack'], ['categories:fabric', 'categories:quilt']];
       break;
     case 'plugin':
-      facets.push(['project_type:plugin']);
-      facets.push(['categories:paper', 'categories:spigot', 'categories:bukkit', 'categories:purpur']);
+      facets = [['project_type:plugin'], ['categories:paper', 'categories:spigot', 'categories:bukkit', 'categories:purpur']];
       break;
     default:
       throw new Error(`Unknown content type ${type}`);
@@ -66,25 +64,24 @@ async function getVersion(id) {
   return getJson(`${API}/version/${encodeURIComponent(id)}`);
 }
 
-/** Map of sha1 -> newest compatible version, for update checks. */
-async function latestForHashes(hashes, { loaders, gameVersions }) {
-  if (!hashes.length) return {};
-  const res = await request(`${API}/version_files/update`, {
+async function postJson(url, body) {
+  const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hashes, algorithm: 'sha1', loaders, game_versions: gameVersions }),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
 
+// sha1 -> newest compatible version, for update checks
+async function latestForHashes(hashes, { loaders, gameVersions }) {
+  if (!hashes.length) return {};
+  return postJson(`${API}/version_files/update`, { hashes, algorithm: 'sha1', loaders, game_versions: gameVersions });
+}
+
 async function versionsForHashes(hashes) {
   if (!hashes.length) return {};
-  const res = await request(`${API}/version_files`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hashes, algorithm: 'sha1' }),
-  });
-  return res.json();
+  return postJson(`${API}/version_files`, { hashes, algorithm: 'sha1' });
 }
 
 async function getCategories() {
