@@ -15,7 +15,12 @@ const SKINS = require('./pack-art/skins');
 const HUD = require('./pack-art/hud');
 const ENT = require('./pack-art/entities');
 const { I, LEGACY_ITEMS } = require('./pack-art/items');
+const terrain = require('./pack-art/terrain');
+const blocks3 = require('./pack-art/blocks3');
+const BABY = require('./pack-art/babies');
+const polish = require('./pack-art/polish');
 
-const T = { ...blocks.T, ...blocks2.T, ...fx.T };
+// terrain.js redraws the most common terrain (noise-quantised, low repetition)
+const T = { ...blocks.T, ...blocks2.T, ...fx.T, ...terrain.X, ...blocks3.T, ...polish.X };
 
-module.exports = { T, ORES: blocks.ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS };
+module.exports = { T, ORES: blocks.ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY };

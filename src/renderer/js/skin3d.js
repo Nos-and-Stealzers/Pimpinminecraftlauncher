@@ -93,20 +93,25 @@ function buildModel(src, S, { legacy, slim }) {
 
 /** Mounts the model into `root`. Resolves to a cleanup function, or null when the skin can't be loaded. */
 export async function mountSkin(root, player, scale = 6) {
-  let src;
   try {
-    src = await api.call('skin:get', player);
+    return await mountSkinTexture(root, await api.call('skin:get', player), { scale });
   } catch {
     return null;
   }
+}
+
+/** Direct textures keep wardrobe previews separate from account skin lookup. */
+export async function mountSkinTexture(root, src, { scale = 6, model: armModel, interactive = true } = {}) {
   const img = new Image();
   img.src = src;
-  await img.decode().catch(() => {});
-  if (!root.isConnected) return null;
+  try { await img.decode(); } catch { return null; }
+  if (!root.isConnected || img.naturalWidth !== 64 || ![32, 64].includes(img.naturalHeight)) return null;
+  const shape = analyse(img);
+  if (!shape.legacy && ['classic', 'slim'].includes(armModel)) shape.slim = armModel === 'slim';
 
-  const stage = el('div', { class: 'mc-stage', title: 'Drag to turn, click to wave' });
+  const stage = el('div', { class: 'mc-stage', title: interactive ? 'Drag to turn, click to wave' : '', role: 'img', 'aria-label': `${shape.slim ? 'Slim' : 'Classic'} Minecraft skin preview` });
   const spin = el('div', { class: 'mc-spin' });
-  const model = buildModel(src, scale, analyse(img));
+  const model = buildModel(src, scale, shape);
   spin.append(model);
   stage.append(spin);
   root.replaceChildren(stage);
@@ -170,10 +175,15 @@ export async function mountSkin(root, player, scale = 6) {
     const dy = (e.clientY - (r.top + r.height * 0.2)) / window.innerHeight;
     look = { x: Math.max(-40, Math.min(40, dx * 90)), y: Math.max(-25, Math.min(25, -dy * 60)) };
   };
+  spin.style.transform = 'rotateX(-6deg) rotateY(-25deg)';
+  if (!interactive) return () => {};
   window.addEventListener('pointermove', onMove);
   raf = requestAnimationFrame(tick);
-  return () => {
+  const cleanup = () => {
     cancelAnimationFrame(raf);
     window.removeEventListener('pointermove', onMove);
   };
+  cleanup.rotateBy = (degrees) => { yaw += degrees; vel = 0; };
+  cleanup.rotateTo = (degrees) => { yaw = degrees; vel = 0; };
+  return cleanup;
 }

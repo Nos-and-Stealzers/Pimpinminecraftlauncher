@@ -8,7 +8,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS } = require('./pack-art');
+const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY } = require('./pack-art');
 const { Image } = require('./png');
 
 const PACKS = {
@@ -23,10 +23,10 @@ const PACKS = {
       'Every animated texture made static (water, lava, fire, portals, magma, sea lanterns, prismarine)',
       'Low fire: flames cover far less of your screen',
       'Clear pumpkin, vignette and underwater overlays',
-      'About 170 calm 16× blocks (on 1.20+): the common stones, bricks, soils, eight woods, wools, storage blocks, plants and crops',
-      'Every ore (stone, deepslate and nether) with outlined gems you can spot from across a cave',
+      'About 370 calm 16× blocks (on 1.20+): terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'Every ore (stone, deepslate and nether) drawn as clustered veins you can spot from across a cave',
       'Swords, tools, food, ingots, bow and arrow drawn as one matching set',
-      'Matching mobs (incl. villager, husk, drowned), chests, default player skins, hotbar, hearts and buttons',
+      'Matching mobs (incl. villager, husk, drowned), chests, default player skins, hotbar, hearts and buttons; baby mobs on 26.1+',
       'Minimal crosshair',
     ],
     description: '§aPimpin §fPerformance §7— static, clean, low fire',
@@ -39,11 +39,11 @@ const PACKS = {
     size: 32,
     tagline: 'Rich 32× textures with soft shading and living animations.',
     features: [
-      'About 170 hand-shaded 32× blocks (on 1.20+): stones, bricks, soils, eight woods, wools, storage blocks, plants and crops',
-      'Ores with outlined gems that twinkle now and then (glow in the dark with OptiFine or Continuity)',
+      'About 370 hand-shaded 32× blocks (on 1.20+): low-noise terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass and stained glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'Ores as clustered veins that twinkle now and then (glow in the dark with OptiFine or Continuity)',
       'Connected glass with OptiFine or Continuity',
       'Smooth water and lava, living fire, swirling portals, breathing magma and pulsing sea lanterns',
-      'HD tools, weapons, food and materials; HD mobs (incl. villager, husk, drowned) and chests',
+      'HD tools, weapons, food and materials; HD mobs (incl. villager, husk, drowned), chests and baby mobs on 26.1+',
       'Nine original default player skins, a violet-and-gold hotbar and HUD',
       'Pimpin sun, moon phases, crosshair and splash texts',
     ],
@@ -86,7 +86,8 @@ const BLOCKS = {
 };
 for (let s = 0; s < 8; s++) BLOCKS[`wheat_stage${s}`] = W(`wheat_stage_${s}`);
 const DYE_LEGACY = { light_gray: 'silver' };
-for (const c of ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black']) {
+const DYES = ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black'];
+for (const c of DYES) {
   BLOCKS[`${c}_wool`] = W(`wool_colored_${DYE_LEGACY[c] || c}`);
 }
 const WOOD_LEGACY = { oak: 'oak', spruce: 'spruce', birch: 'birch', jungle: 'jungle', acacia: 'acacia', dark_oak: 'big_oak' };
@@ -98,12 +99,74 @@ for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mang
   BLOCKS[`${w}_planks`] = W(l && `planks_${l}`, since);
   BLOCKS[`${w}_leaves`] = W(l && `leaves_${l}`, since);
 }
+// Later woods/foliage use the same clean board and leaf-cluster art.
+Object.assign(BLOCKS, {
+  pale_oak_planks: W(null, [1, 21, 4]), pale_oak_leaves: W(null, [1, 21, 4]),
+  bamboo_planks: W(null, [1, 20]),
+  azalea_leaves: W(null, [1, 17]), flowering_azalea_leaves: W(null, [1, 17]),
+});
 for (const o of Object.keys(ORES)) {
   BLOCKS[o] = W(o === 'copper_ore' ? null : o, o === 'copper_ore' ? [1, 17] : undefined);
   BLOCKS[`deepslate_${o}`] = W(null, [1, 17]);
 }
 BLOCKS.nether_gold_ore = W(null, [1, 16]);
 BLOCKS.nether_quartz_ore = W('quartz_ore');
+
+// More of a normal world: polished/chiseled stone, nether and end basics,
+// farm blocks, colored glass/terracotta/concrete, stripped logs, plants.
+Object.assign(BLOCKS, {
+  polished_andesite: W('stone_andesite_smooth'), polished_diorite: W('stone_diorite_smooth'), polished_granite: W('stone_granite_smooth'),
+  polished_deepslate: W(null, [1, 17]), chiseled_deepslate: W(null, [1, 17]), cracked_deepslate_bricks: W(null, [1, 17]), cracked_deepslate_tiles: W(null, [1, 17]),
+  cut_sandstone: W('sandstone_smooth'), chiseled_sandstone: W('sandstone_carved'), cut_red_sandstone: W('red_sandstone_smooth'),
+  quartz_block_side: W('quartz_block_side'), quartz_block_top: W('quartz_block_top'), quartz_block_bottom: W('quartz_block_bottom'),
+  smooth_basalt: W(null, [1, 17]), blackstone: W(null, [1, 16]), blackstone_top: W(null, [1, 16]), polished_blackstone: W(null, [1, 16]),
+  basalt_side: W(null, [1, 16]), basalt_top: W(null, [1, 16]),
+  nether_bricks: W('nether_brick'), red_nether_bricks: W('red_nether_brick', [1, 10]), mud_bricks: W(null, [1, 19]), purpur_block: W('purpur_block', [1, 9]),
+  mud: W(null, [1, 19]), packed_mud: W(null, [1, 19]), moss_block: W(null, [1, 17]), rooted_dirt: W(null, [1, 17]),
+  mycelium_top: W('mycelium_top'), mycelium_side: W('mycelium_side'),
+  dirt_path_top: { legacy: 'grass_path_top', since: [1, 9], file: (v) => (atLeast(v, 1, 17) ? 'dirt_path_top' : 'grass_path_top') },
+  dirt_path_side: { legacy: 'grass_path_side', since: [1, 9], file: (v) => (atLeast(v, 1, 17) ? 'dirt_path_side' : 'grass_path_side') },
+  soul_soil: W(null, [1, 16]), ice: W('ice'), packed_ice: W('ice_packed'), blue_ice: W(null, [1, 13]),
+  crimson_stem: W(null, [1, 16]), crimson_stem_top: W(null, [1, 16]), warped_stem: W(null, [1, 16]), warped_stem_top: W(null, [1, 16]),
+  crimson_planks: W(null, [1, 16]), warped_planks: W(null, [1, 16]),
+  crimson_nylium: W(null, [1, 16]), crimson_nylium_side: W(null, [1, 16]), warped_nylium: W(null, [1, 16]), warped_nylium_side: W(null, [1, 16]),
+  nether_wart_block: W('nether_wart_block', [1, 10]), warped_wart_block: W(null, [1, 16]), shroomlight: W(null, [1, 16]), crying_obsidian: W(null, [1, 16]),
+  cactus_side: W('cactus_side'), cactus_top: W('cactus_top'), cactus_bottom: W('cactus_bottom'),
+  pumpkin_side: W('pumpkin_side'), pumpkin_top: W('pumpkin_top'), melon_side: W('melon_side'), melon_top: W('melon_top'),
+  hay_block_side: W('hay_block_side'), hay_block_top: W('hay_block_top'), bone_block_side: W('bone_block_side', [1, 10]), bone_block_top: W('bone_block_top', [1, 10]),
+  raw_iron_block: W(null, [1, 17]), raw_gold_block: W(null, [1, 17]), raw_copper_block: W(null, [1, 17]), copper_block: W(null, [1, 17]),
+  netherite_block: W(null, [1, 16]), amethyst_block: W(null, [1, 17]),
+  azure_bluet: W('flower_houstonia'), allium: W('flower_allium'), blue_orchid: W('flower_blue_orchid'), oxeye_daisy: W('flower_oxeye_daisy'),
+  red_tulip: W('flower_tulip_red'), orange_tulip: W('flower_tulip_orange'), white_tulip: W('flower_tulip_white'), pink_tulip: W('flower_tulip_pink'),
+  cornflower: W(null, [1, 14]), lily_of_the_valley: W(null, [1, 14]),
+  dead_bush: W('deadbush'), red_mushroom: W('mushroom_red'), brown_mushroom: W('mushroom_brown'),
+  oak_sapling: W('sapling_oak'), spruce_sapling: W('sapling_spruce'), birch_sapling: W('sapling_birch'), jungle_sapling: W('sapling_jungle'),
+  acacia_sapling: W('sapling_acacia'), dark_oak_sapling: W('sapling_roofed_oak'), cherry_sapling: W(null, [1, 20]),
+  tall_grass_bottom: W('double_plant_grass_bottom'), tall_grass_top: W('double_plant_grass_top'), large_fern_bottom: W('double_plant_fern_bottom'), large_fern_top: W('double_plant_fern_top'),
+  vine: W('vine'), lily_pad: W('waterlily'),
+});
+for (let s = 0; s < 4; s++) {
+  BLOCKS[`carrots_stage${s}`] = W(`carrots_stage_${s}`);
+  BLOCKS[`potatoes_stage${s}`] = W(`potatoes_stage_${s}`);
+  BLOCKS[`beetroots_stage${s}`] = W(`beetroots_stage_${s}`, [1, 9]);
+}
+for (const c of DYES) {
+  const l = DYE_LEGACY[c] || c;
+  BLOCKS[`${c}_stained_glass`] = W(`glass_${l}`);
+  BLOCKS[`${c}_stained_glass_pane_top`] = W(`glass_pane_top_${l}`);
+  BLOCKS[`${c}_terracotta`] = W(`hardened_clay_stained_${l}`);
+  BLOCKS[`${c}_concrete`] = W(`concrete_${l}`, [1, 12]);
+  BLOCKS[`${c}_concrete_powder`] = W(`concrete_powder_${l}`, [1, 12]);
+}
+for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry']) {
+  const since = w === 'mangrove' ? [1, 19] : w === 'cherry' ? [1, 20] : [1, 13];
+  BLOCKS[`stripped_${w}_log`] = W(null, since);
+  BLOCKS[`stripped_${w}_log_top`] = W(null, since);
+}
+for (const w of ['crimson', 'warped']) {
+  BLOCKS[`stripped_${w}_stem`] = W(null, [1, 16]);
+  BLOCKS[`stripped_${w}_stem_top`] = W(null, [1, 16]);
+}
 
 // Animated in the Pretty pack only; Performance keeps one calm frame of each.
 const ANIMATED = ['water_still', 'water_flow', 'lava_still', 'lava_flow', 'fire_0', 'fire_1', 'soul_fire_0', 'soul_fire_1', 'campfire_fire', 'nether_portal', 'magma_block', 'sea_lantern', 'prismarine'];
@@ -115,6 +178,7 @@ function blockFile(name, v) {
   if (b.since && !atLeast(v, ...b.since)) return null;
   if (isLegacy(v)) return b.legacy || null;
   if (name === 'short_grass') return atLeast(v, 1, 20, 3) ? 'short_grass' : 'grass';
+  if (typeof b.file === 'function') return b.file(v);
   return b.file || name;
 }
 // "short_grass" was "grass" in 1.13-1.20.2 and "tallgrass" before 1.13
@@ -226,7 +290,22 @@ function entityFiles(v, st) {
       add(name('cow'), () => MOBS.cow(st, c, true));
       add(name('pig'), () => MOBS.pig(st, c, true));
       add(name('chicken'), () => MOBS.chicken(st, c));
+      // 26.1 gave babies their own models and textures
+      if (v26) {
+        add(`cow/cow_${c}_baby`, () => BABY.cowBaby(st, c));
+        add(`pig/pig_${c}_baby`, () => BABY.pigBaby(st, c));
+        add(`chicken/chicken_${c}_baby`, () => BABY.chickenBaby(st, c));
+      }
     }
+  }
+  if (v26) {
+    add('zombie/zombie_baby', () => BABY.zombieBaby(st, 'zombie'));
+    add('zombie/husk_baby', () => BABY.zombieBaby(st, 'husk'));
+    add('zombie/drowned_baby', () => BABY.zombieBaby(st, 'drowned'));
+    add('zombie/drowned_outer_layer_baby', () => BABY.drownedOuterBaby(st));
+    add('villager/villager_baby', () => BABY.villagerBaby(st));
+    add('sheep/sheep_baby', () => BABY.sheepBaby(st));
+    add('sheep/sheep_wool_baby', () => BABY.sheepWoolBaby(st));
   }
   // chests: one sheet before 1.15, then separate left/right halves for doubles
   add('chest/normal', () => ENT.chest(st, 'single'));

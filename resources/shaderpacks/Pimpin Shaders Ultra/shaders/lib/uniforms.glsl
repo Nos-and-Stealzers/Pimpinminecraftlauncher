@@ -25,6 +25,7 @@ uniform vec4 entityColor;
 uniform float rainStrength;
 uniform float wetness;
 uniform float frameTimeCounter;
+uniform float sunAngle;
 uniform float viewWidth;
 uniform float viewHeight;
 uniform float near;
@@ -40,3 +41,4 @@ uniform int moonPhase;
 uniform int heldBlockLightValue;
 uniform int heldBlockLightValue2;
 uniform ivec2 eyeBrightnessSmooth;
+uniform float auroraCold; // custom uniform (shaders.properties): 1 in cold biomes, 0 elsewhere or on loaders without it

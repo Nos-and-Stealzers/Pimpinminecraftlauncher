@@ -12,4 +12,5 @@
 #include "/lib/clouds.glsl"
 #include "/lib/tonemap.glsl"
 #include "/lib/fog.glsl"
+#include "/lib/skypaint.glsl"
 #include "/program/composite_fsh.glsl"

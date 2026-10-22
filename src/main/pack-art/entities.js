@@ -189,6 +189,14 @@ function villager(st) {
     F.u(2, 4, 1, 1, dark.at(3));
     F.u(5, 4, 1, 1, dark.at(3));
     F.u(3, 8, 2, 1, skin.at(S - 2));
+    // temple creases and soft cheeks (the nose is a separate UV island)
+    F.u(0, 5, 1, 2, skin.at(S - 1));
+    F.u(7, 5, 1, 2, skin.at(S - 1));
+    if (P) {
+      F.fstamp(3, 4, ['aa.aa'], { a: skin.at(S - 1) });
+      F.fstamp(3, 12, ['aa'], { a: skin.at(S + 1) });
+      F.fstamp(11, 12, ['aa'], { a: skin.at(S + 1) });
+    }
   });
   // big nose (2×4×2)
   m.box(24, 0, 2, 4, 2, (F) => {
@@ -202,6 +210,11 @@ function villager(st) {
   const robeFace = (F) => {
     coat(F, robe, { seed: 33, fur: 0.4 });
     if (F.side) {
+      // long folds in the robe, softer than the outline and not random speckle
+      if (F.w >= 6) {
+        for (const x of [1, F.w - 2]) F.u(x, 2, 1, F.h - 3, robe.at(robe.mid - 1));
+        if (P) for (const x of [2, F.w - 3]) F.u(x, 3, 0.5, F.h - 4, robe.at(robe.mid + 1));
+      }
       // a lighter collar and a stitched hem
       F.u(0, 0, F.w, 1, robe.at(robe.mid + 1));
       F.u(0, F.h - 1, F.w, 1, robe.at(robe.mid - 2));

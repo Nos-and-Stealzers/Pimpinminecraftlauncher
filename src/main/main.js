@@ -1,8 +1,9 @@
 // Electron entry point: creates the custom frameless window and exposes the
 // launcher backend to the UI through a single whitelisted RPC channel.
 const path = require('path');
-const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard } = require('electron');
 const store = require('./store');
+const screenshots = require('./screenshots').createScreenshots({ instancesRoot: store.dirs.instances, nativeImage, clipboard });
 const auth = require('./auth');
 const minecraft = require('./minecraft');
 const instances = require('./instances');
@@ -14,6 +15,8 @@ const packs = require('./packs');
 const shaders = require('./shaders');
 const importer = require('./importer');
 const gameLogs = require('./logs');
+const wardrobe = require('./wardrobe');
+const worldBackups = require('./world-backups');
 const { getJson, request } = require('./net');
 
 let win;
@@ -213,6 +216,25 @@ const handlers = {
   'loaders:versions': (loader, mc) => minecraft.getLoaderVersions(loader, mc),
   'loaders:games': (loader) => minecraft.getLoaderGameVersions(loader),
 
+  'wardrobe:list': () => wardrobe.listSkins(),
+  'wardrobe:select': (options) => wardrobe.selectSkin(options),
+  'wardrobe:import': (options) => wardrobe.importSkin(options),
+  'wardrobe:export': (options) => wardrobe.exportSkin(options),
+  'wardrobe:delete': (options) => wardrobe.deleteSkin(options),
+
+  'worldBackups:list': (id, world) => worldBackups.list(id, world),
+  'worldBackups:create': (id, world) => worldBackups.create(id, world),
+  'worldBackups:restore': (id, world, name) => worldBackups.restore(id, world, name),
+  'worldBackups:delete': (id, world, name) => worldBackups.deleteBackup(id, world, name),
+  'worldBackups:export': async (id, world, name) => {
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: path.basename(String(name)),
+      filters: [{ name: 'World backup', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return { exported: false };
+    return worldBackups.exportBackup(id, world, name, result.filePath);
+  },
+
   'instances:list': () => instances.list(),
   'instances:get': (id) => instances.get(id),
   'instances:create': (opts) => instances.create(opts),
@@ -224,8 +246,13 @@ const handlers = {
   'instances:logs': (id) => instances.getLogs(id),
   'instances:duplicate': (id) => instances.duplicate(id),
   'instances:worlds': (id) => instances.worlds(id),
-  'instances:screenshots': (id) => instances.screenshots(id),
-  'instances:deleteScreenshot': (id, name) => instances.deleteScreenshot(id, name),
+  'instances:screenshots': async (id) => (await screenshots.list(id)).screenshots,
+  'screenshots:list': (id) => screenshots.list(id),
+  'screenshots:favorite': (id, name, on) => screenshots.favorite(id, name, on),
+  'screenshots:delete': (id, name) => screenshots.remove(id, name),
+  'screenshots:copy': (id, name) => screenshots.copy(id, name),
+  'screenshots:export': (id, name) => screenshots.exportWithDialog(id, name, (options) => dialog.showSaveDialog(win, options)),
+  'instances:deleteScreenshot': (id, name) => screenshots.remove(id, name),
   'instances:crashInfo': (id) => instances.crashInfo(id),
   'instances:repair': (id) => instances.repair(id),
   'instances:warm': (id) => instances.warm(id),

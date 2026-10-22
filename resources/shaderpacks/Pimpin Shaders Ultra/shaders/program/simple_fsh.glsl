@@ -18,7 +18,7 @@ void main() {
     vec4 c = texture2D(tex, texcoord) * glcolor;
     gl_FragData[0] = vec4(toLinear(c.rgb) * 1.6, c.a);
 #elif defined PROGRAM_CLOUDS
-#if defined ULTRA && defined VOLUMETRIC_CLOUDS && defined DIM_OVERWORLD
+#if (defined VOLUMETRIC_CLOUDS || defined CLOUDS_2D) && defined DIM_OVERWORLD
     discard;
 #endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
@@ -37,8 +37,9 @@ void main() {
 #elif defined PROGRAM_WEATHER
     vec4 c = texture2D(tex, texcoord) * glcolor;
     if (c.a < 0.01) discard;
-    vec3 col = toLinear(c.rgb) * (ambientColor() * 1.6 + blockLightColor(lmcoord.x) + 0.05);
-    gl_FragData[0] = vec4(col, c.a * 0.55);
+    vec3 tint = mix(vec3(luma(toLinear(c.rgb))), toLinear(c.rgb), 0.35);
+    vec3 col = tint * (ambientColor() * 2.0 + blockLightColor(lmcoord.x) + 0.04);
+    gl_FragData[0] = vec4(col, c.a * 0.42);
 #else
     // particles and anything else textured
     vec4 c = texture2D(tex, texcoord) * glcolor;

@@ -7,5 +7,6 @@
   "key.pimpin.minimap_zoom": "Minimap zoom",
   "key.pimpin.big_map": "Big map (hold, scroll to zoom)",
   "key.pimpin.boost": "Toggle FPS boost",
-  "key.pimpin.waypoint": "Add waypoint"
+  "key.pimpin.waypoint": "Add waypoint",
+  "key.pimpin.toggle_sprint": "Enable/disable native toggle sprint mode (not sprint itself)"
 }

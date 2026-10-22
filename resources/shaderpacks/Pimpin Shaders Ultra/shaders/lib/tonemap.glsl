@@ -1,13 +1,22 @@
-// Lottes 2016 filmic curve ("Advanced Techniques and Optimization of HDR Color Pipelines")
-vec3 lottes(vec3 x) {
-    const vec3 a = vec3(1.36);
-    const vec3 d = vec3(0.93);
-    const vec3 hdrMax = vec3(10.0);
-    const vec3 midIn = vec3(0.24);
-    const vec3 midOut = vec3(0.26);
-    vec3 b = (-pow(midIn, a) + pow(hdrMax, a) * midOut) / ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
-    vec3 c = (pow(hdrMax, a * d) * pow(midIn, a) - pow(hdrMax, a) * pow(midIn, a * d) * midOut) / ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
-    return pow(x, a) / (pow(x, a * d) * b + c);
+// ACES filmic curve: Stephen Hill's fit of the RRT + ODT (sRGB -> AP1 -> curve -> sRGB).
+// Gives more contrast in the mids and a soft, slightly desaturated roll-off in the highlights.
+vec3 acesFit(vec3 c) {
+    const mat3 inM = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+    const mat3 outM = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+    c = inM * (c * 1.6);
+    vec3 a = c * (c + 0.0245786) - 0.000090537;
+    vec3 b = c * (0.983729 * c + 0.4329510) + 0.238081;
+    return clamp(outM * (a / b), 0.0, 1.0);
+}
+
+// ACES bleaches bright saturated lights (torch flames, lava) towards white; blend a little of a
+// hue-preserving version back in so they keep their colour
+vec3 tonemap(vec3 c) {
+    vec3 t = acesFit(c);
+    vec3 hp = c * (luma(t) / max(luma(c), 1e-5));
+    hp /= max(1.0, max(hp.r, max(hp.g, hp.b)));
+    // leave display headroom for the colour grade; even a bright white surface keeps texture
+    return mix(t, hp, 0.35) * 0.97;
 }
 
 vec3 grade(vec3 c) {

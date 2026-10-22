@@ -8,11 +8,23 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 
 #define SHADOWS
 #define SOFT_SHADOWS
+#define COLORED_SHADOWS
 #define SHADOW_SOFTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define SHADOW_DISTORT 0.85
 #define SSAO
 #define SSAO_STEPS 4 // [3 4 6 8]
 #define SSAO_STRENGTH 0.8 // [0.4 0.6 0.8 1.0]
+#define SSS_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define CLOUDS_2D
+#define CLOUD_AMOUNT 1.0 // [0.0 0.5 1.0 1.5 2.0 3.0]
+#define CLOUD_PLANE_HEIGHT 260.0 // [200.0 260.0 320.0 400.0]
+#define GODRAYS
+#define GODRAY_STEPS 10 // [6 8 10 14 20]
+#define GODRAY_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define BLOOM
+#define BLOOM_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
+#define GLOWING_ORES
+#define SUN_SIZE 1.0 // [0.5 0.75 1.0 1.5 2.0]
 #define WAVING_PLANTS
 #define WAVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define WATER_WAVES
@@ -25,6 +37,10 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define STAR_BRIGHTNESS 1.0 // [0.0 0.5 1.0 2.0]
 #define CLOUD_BRIGHTNESS 1.0 // [0.6 0.8 1.0 1.2]
 #define END_SKY 1.0 // [0.5 1.0 1.5 2.0]
+#define AURORA 0 // [0 1 2]
+#define AURORA_STEPS 8 // [6 8 12 16]
+#define AURORA_BRIGHTNESS 1.0 // [0.5 1.0 1.5 2.0]
+#define WATER_CLOUD_REFLECTIONS
 #define BLOCKLIGHT_STRENGTH 1.0 // [0.6 0.8 1.0 1.2 1.5]
 #define EMISSIVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define EXPOSURE 1.0 // [0.6 0.8 1.0 1.2 1.4 1.6]
@@ -37,9 +53,21 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #endif
 #ifdef SOFT_SHADOWS
 #endif
+#ifdef COLORED_SHADOWS
+#endif
 #ifdef SSAO
+#endif
+#ifdef CLOUDS_2D
+#endif
+#ifdef GODRAYS
+#endif
+#ifdef BLOOM
+#endif
+#ifdef GLOWING_ORES
 #endif
 #ifdef WAVING_PLANTS
 #endif
 #ifdef WATER_WAVES
+#endif
+#ifdef WATER_CLOUD_REFLECTIONS
 #endif

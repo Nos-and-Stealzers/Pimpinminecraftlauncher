@@ -9,5 +9,6 @@
 #include "/lib/shadow.glsl"
 #include "/lib/waving.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/lighting.glsl"
 #include "/program/lit_fsh.glsl"

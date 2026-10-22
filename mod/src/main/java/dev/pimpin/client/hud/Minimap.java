@@ -73,12 +73,9 @@ public final class Minimap {
     /** Size and corner of the minimap on screen: {x, y, size}. */
     public static int[] layout(int screenW, int screenH) {
         PimpinConfig c = PimpinConfig.get();
-        int size = c.minimapSize;
-        boolean right = c.minimapCorner == 1 || c.minimapCorner == 3;
-        boolean bottom = c.minimapCorner >= 2;
-        int x = right ? screenW - size - 6 : 6;
-        int y = bottom ? screenH - size - (c.minimapCoords ? 18 : 6) : 6;
-        return new int[]{x, y, size};
+        int[] b=HudLayout.bounds(4,screenW,screenH,c.minimapSize,c.minimapSize+(c.minimapCoords?16:0));
+        float scale=HudLayout.effectiveScale(HudLayout.current()[4],screenW,screenH,c.minimapSize,c.minimapSize+(c.minimapCoords?16:0));
+        return new int[]{b[0],b[1],Math.max(1,Math.round(c.minimapSize*scale))};
     }
 
     public static void render(Draw g, Minecraft mc) {
@@ -92,19 +89,31 @@ public final class Minimap {
         }
         if (!c.minimap) return;
         int[] l = layout(g.width(), g.height());
-        int x = l[0], y = l[1], size = l[2];
+        float scale=HudLayout.effectiveScale(HudLayout.current()[4],g.width(),g.height(),c.minimapSize,c.minimapSize+(c.minimapCoords?16:0));
+        g.push();g.scale(scale);
+        int x=Math.round(l[0]/scale), y=Math.round(l[1]/scale), size=c.minimapSize;
         DynTex tex = SMALL.frame(mc, smallRes(c), ZOOMS[c.mapZoom], c.minimapRound, c.minimapRotate, c.minimapShading,
-                c.minimapPlayers, c.minimapMobs, death, Waypoints.here(mc), c.accent);
+                c.minimapPlayers, c.minimapMobs, death, Waypoints.visible(mc), c.accent);
         tex.draw(g, x, y, size, size);
-        labels(g, mc, SMALL, x, y, size, c.minimapRotate);
+        if(c.minimapCompass) labels(g, mc, SMALL, x, y, size, c.minimapRotate);
         if (c.minimapCoords) {
             BlockPos p = mc.player.blockPosition();
             String s = p.getX() + ", " + p.getY() + ", " + p.getZ();
-            g.centered(font, s, x + size / 2, y + size + 4, 0xFFE0E0E0);
+            g.fill(x,y+size,x+size,y+size+14,HudLayout.background());
+            s=font.plainSubstrByWidth(s,Math.max(1,size-4));
+            g.centered(font, s, x + size / 2, y + size + 3, 0xFFE0E0E0);
+        }
+        if (!c.minimapRound && size>=80) {
+            int ruler=24;
+            String range=Math.round(smallRes(c)/ZOOMS[c.mapZoom]*(ruler/(float)size))+"m";
+            g.fill(x+5,y+size-19,x+ruler+9,y+size-4,0xB0101018);
+            g.fill(x+7,y+size-6,x+7+ruler,y+size-5,0xFFE0E0E0);
+            g.text(font,range,x+7,y+size-17,0xFFE0E0E0);
         }
         if (toast != null && System.currentTimeMillis() < toastUntil) {
             g.centered(font, toast, x + size / 2, y + size / 2 - 4, 0xFFFFFFFF);
         }
+        g.pop();
     }
 
     private static void labels(Draw g, Minecraft mc, MapView view, int x, int y, int size, boolean rotate) {
@@ -114,10 +123,11 @@ public final class Minimap {
         String[] names = {"N", "E", "S", "W"};
         double[][] dirs = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
         for (int i = 0; i < 4; i++) {
-            if (!rotate && i != 0) continue;
+
             double[] d = view.screenDir(mc, rotate, dirs[i][0], dirs[i][1]);
             int lx = (int) Math.round(x + half + d[0] * inset);
             int ly = (int) Math.round(y + half + d[1] * inset) - 4;
+            g.fill(lx-4,ly-1,lx+5,ly+9,0xC0101018);
             g.centered(font, names[i], lx, ly, i == 0 ? 0xFFFF6B6B : 0xFFD8D8D8);
         }
     }
@@ -130,7 +140,7 @@ public final class Minimap {
         int x = (sw - size) / 2;
         int y = (sh - size) / 2 + 6;
         g.fill(0, 0, sw, sh, 0x66000000);
-        List<Waypoints.Point> waypoints = Waypoints.here(mc);
+        List<Waypoints.Point> waypoints = Waypoints.visible(mc);
         DynTex tex = BIG.frame(mc, 256, ZOOMS[bigZoom], false, false, c.minimapShading, c.minimapPlayers, c.minimapMobs, death, waypoints, c.accent);
         tex.draw(g, x, y, size, size);
         labels(g, mc, BIG, x, y, size, false);
@@ -139,7 +149,8 @@ public final class Minimap {
         List<int[]> placed = new java.util.ArrayList<>();
         List<Waypoints.Point> first = new java.util.ArrayList<>();
         for (Waypoints.Point w : waypoints) {
-            if (!w.shown) continue;
+            if (!w.shown || !c.minimapWaypoints || !dev.pimpin.client.feature.WaypointPreferences.labels()) continue;
+            if(c.minimapWaypointRange>0 && Math.hypot(w.x-mc.player.getX(),w.z-mc.player.getZ())>c.minimapWaypointRange) continue;
             double[] at = BIG.project(mc, ZOOMS[bigZoom], w.x + 0.5, w.z + 0.5);
             if (at == null) continue;
             int lx = x + (int) (at[0] * px);
@@ -160,7 +171,11 @@ public final class Minimap {
         for (int i = 0; i < placed.size(); i++) {
             int[] s = placed.get(i);
             String label = s[2] > 0 ? first.get(i).name + " §7+" + s[2] : first.get(i).name;
-            g.centered(font, label, s[0], s[1], first.get(i).color);
+            label = font.plainSubstrByWidth(label, Math.max(1, size - 8));
+            int halfLabel = font.width(label) / 2;
+            int lx = Math.max(x + halfLabel + 3, Math.min(x + size - halfLabel - 3, s[0]));
+            int ly = Math.min(y + size - font.lineHeight - 2, s[1]);
+            g.centered(font, label, lx, ly, first.get(i).color);
         }
         BlockPos p = mc.player.blockPosition();
         g.centered(font, "§lMap§r  " + p.getX() + ", " + p.getY() + ", " + p.getZ() + "  §7(" + ZOOM_NAMES[bigZoom] + ", scroll to zoom)", sw / 2, y - 14, 0xFFFFFFFF);

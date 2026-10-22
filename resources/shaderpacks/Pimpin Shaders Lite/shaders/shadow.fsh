@@ -8,4 +8,5 @@
 #include "/lib/shadow.glsl"
 #include "/lib/waving.glsl"
 #include "/lib/water.glsl"
+#include "/lib/clouds.glsl"
 #include "/program/shadow_fsh.glsl"

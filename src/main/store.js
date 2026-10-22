@@ -3,6 +3,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const { APPEARANCE_DEFAULTS, normalizeAppearance } = require('./appearance-settings');
 
 function defaultRoot() {
   if (process.platform === 'win32') {
@@ -112,9 +113,11 @@ const DEFAULT_SETTINGS = {
   launchOnStartup: false,
   lastInstance: null,
   activeAccount: null,
+  ...APPEARANCE_DEFAULTS,
 };
 
-const settings = { ...DEFAULT_SETTINGS, ...readJsonSync(SETTINGS_FILE, {}) };
+const savedSettings = readJsonSync(SETTINGS_FILE, {});
+const settings = { ...DEFAULT_SETTINGS, ...savedSettings, ...normalizeAppearance(savedSettings) };
 
 function getSettings() {
   return { ...settings, root: ROOT, totalMemory: totalMb() };
@@ -125,6 +128,8 @@ async function updateSettings(patch) {
   for (const [k, v] of Object.entries(patch || {})) {
     if (Object.hasOwn(DEFAULT_SETTINGS, k)) settings[k] = v;
   }
+  Object.assign(settings, normalizeAppearance(settings));
+  if (patch?.appearanceReset === true) Object.assign(settings, APPEARANCE_DEFAULTS);
   await writeJson(SETTINGS_FILE, settings);
   return getSettings();
 }

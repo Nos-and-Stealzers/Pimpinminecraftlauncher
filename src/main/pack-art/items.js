@@ -9,7 +9,7 @@ const OUTLINE = '#22181f';
 const MATERIALS = {
   wooden: { head: '#a87a45', n: 4 },
   stone: { head: '#8b8b90', n: 4 },
-  iron: { head: '#d9dade', n: 5, shine: true },
+  iron: { head: '#c9cbd1', n: 5, shine: true },
   golden: { head: '#f2c53a', n: 5, shine: true },
   diamond: { head: '#4fdcdc', n: 5, shine: true },
   netherite: { head: '#4b4049', n: 5, shine: true },
@@ -49,6 +49,32 @@ const streak = (regIndex, test) => (px, regs, k) => {
   }
 };
 
+/**
+ * Material texture on a head region: grain streaks on wood, a few pits on
+ * stone, nothing on polished metal (they get the streak instead).
+ */
+const matDetail = (regIndex, mat) => (px, regs, k) => {
+  if (mat !== 'wooden' && mat !== 'stone') return;
+  const r = regs[regIndex];
+  for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+    if (!r.has(x, y) || !r.has(x - 1, y) || !r.has(x + 1, y) || !r.has(x, y - 1) || !r.has(x, y + 1)) continue;
+    const ux = (x + 0.5) / k;
+    const uy = (y + 0.5) / k;
+    if (mat === 'wooden' && Math.abs(((ux - uy) * 0.9) % 3.2) < (k > 1 ? 0.32 : 0.5) && (x + y) % 3 !== 0) px.set(x, y, r.m.at(r.m.mid - 1));
+    if (mat === 'stone' && ((x * 7 + y * 13) % 11 === 0)) px.set(x, y, r.m.at(r.m.mid - 1));
+  }
+};
+/** Light the outer (cutting / striking) edge of a tool head one shade up. */
+const edgeLight = (regIndex, kind) => (px, regs, k) => {
+  if (kind !== 'axe') return;
+  const r = regs[regIndex];
+  for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+    if (!r.has(x, y)) continue;
+    const [a, b] = rot((x + 0.5) / k, (y + 0.5) / k, 2.4, 13.6);
+    if (b < -3.6 && (!r.has(x - 1, y) || !r.has(x, y - 1) || !r.has(x - 1, y - 1))) px.set(x, y, r.m.at(r.m.n - 1));
+  }
+};
+
 const handle = (from, to, w = 0.75) => (x, y) => {
   const [a, b] = rot(x, y, ...from);
   const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
@@ -79,7 +105,7 @@ function tool(kind, mat) {
         { ...head, shape: blade },
         { color: mat === 'wooden' ? '#6a4626' : mat === 'golden' ? '#c58a1e' : '#5a4636', n: 3, shape: guard },
         { color: mat === 'netherite' ? '#6b5560' : '#5a4636', n: 3, shape: pommel },
-      ], { extra: M.shine ? [streak(1, (x, y) => Math.abs(rot(x, y, 4.2, 11.8)[1] + 0.35) < 0.4 && rot(x, y, 4.2, 11.8)[0] < 10.5)] : [] });
+      ], { extra: [matDetail(1, mat), ...(M.shine ? [streak(1, (x, y) => Math.abs(rot(x, y, 4.2, 11.8)[1] + 0.35) < 0.4 && rot(x, y, 4.2, 11.8)[0] < 10.5)] : [])] });
     }
     const end = kind === 'shovel' ? [9.4, 6.6] : [11, 5];
     const regions = [{ ...stick, shape: handle([2.4, 13.6], end) }];
@@ -89,18 +115,31 @@ function tool(kind, mat) {
         shape: (x, y) => {
           const d = Math.hypot(x - 1.5, y - 14.5);
           const ang = Math.atan2(14.5 - y, x - 1.5); // 0 = right, pi/2 = up
-          const t = Math.min(ang - 0.08, Math.PI / 2 - 0.08 - ang); // distance from the arc ends
-          const thick = t < 0 ? -1 : Math.min(1.25, 0.55 + t * 2.2);
-          return Math.abs(d - 12.2) <= thick;
+          const t = Math.min(ang - 0.06, Math.PI / 2 - 0.06 - ang); // distance from the arc ends
+          // thick in the middle, drawn out to sharp points
+          const thick = t < 0 ? -1 : Math.min(1.45, 0.3 + t * 1.6);
+          return Math.abs(d - 12.1 - Math.max(0, 0.5 - t) * 0.6) <= thick;
         },
       });
+      // a binding collar where the haft meets the head
+      regions.push({ color: mat === 'golden' ? '#8a5a1c' : '#4a3424', n: 3, shape: (x, y) => {
+        const [a, b] = rot(x, y, 2.4, 13.6);
+        return a > 9.6 && a < 11.4 && Math.abs(b) <= 1.25;
+      } });
     } else if (kind === 'axe') {
       regions.push({
         ...head,
         shape: (x, y) => {
           const [a, b] = rot(x, y, 2.4, 13.6);
-          // a broad bit on the upper-left side of the haft, a small poll behind
-          return (a > 8.2 && a < 13.2 && b < -0.4 && b > -4.6 + Math.abs(a - 10.7) * 0.55) || (a > 9 && a < 12.4 && b >= -0.4 && b < 1.6);
+          // the bit flares out from the haft to a curved cutting edge on the
+          // upper-left; a short square poll sits behind the haft
+          const c = 10.8;
+          if (b < -0.3 && b > -5.2) {
+            const w = 1.3 + (-b - 0.3) * 0.42;
+            const edge = -5.2 + ((a - c) / (w + 0.01)) ** 2 * 0.9;
+            return Math.abs(a - c) <= w && b > edge;
+          }
+          return a > c - 1.3 && a < c + 1.3 && b >= -0.3 && b < 1.9;
         },
       });
     } else {
@@ -109,11 +148,12 @@ function tool(kind, mat) {
         shape: (x, y) => {
           const [a, b] = rot(x, y, 2.4, 13.6);
           const tip = 15.8;
-          return a > 9.4 && a < tip && Math.abs(b) <= Math.min(2.7, (tip - a) * 1.05);
+          // a rounded spade: straight shoulders, curved point
+          return a > 9.2 && a < tip && Math.abs(b) <= Math.min(2.6, Math.sqrt(Math.max(0, tip - a)) * 1.5);
         },
       });
     }
-    const extra = [];
+    const extra = [matDetail(1, mat), edgeLight(1, kind)];
     if (M.shine) extra.push(streak(1, kind === 'pickaxe' ? (x, y) => Math.abs(Math.hypot(x - 1.5, y - 14.5) - 12.6) < 0.35 : (x, y) => Math.abs(rot(x, y, 2.4, 13.6)[1] + (kind === 'axe' ? 2.4 : 0)) < 0.35));
     return item(S, regions, { extra });
   };
@@ -160,34 +200,53 @@ I.bread = (S) => item(S, [
   }
 }] });
 
-I.cooked_beef = (S) => item(S, [
-  { color: '#e8d2b0', n: 3, shape: (x, y) => (x - 8.4) ** 2 / 38 + (y - 8.6) ** 2 / 26 <= 1 },
-  { color: '#8a4a26', n: 5, mid: 2, shape: (x, y) => (x - 8.4) ** 2 / 28 + (y - 8.8) ** 2 / 18 <= 1 && !((x - 13) ** 2 + (y - 12) ** 2 < 4) },
-  { color: '#f2ece0', n: 3, shape: (x, y) => Math.hypot(x - 12.4, y - 12.2) < 1.5 },
-], { extra: [(px, regs, k) => {
-  // grill marks
-  const r = regs[1];
-  for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
-    const ux = (x + 0.5) / k;
-    const uy = (y + 0.5) / k;
-    if (r.has(x, y) && r.has(x - 1, y) && r.has(x + 1, y) && Math.abs(((ux + uy) % 4) - 2) < (k > 1 ? 0.35 : 0.5)) px.set(x, y, r.m.at(0));
-  }
-}] });
-
-I.coal = (S) => item(S, [
-  { color: '#3a383f', n: 4, shape: (x, y) => {
+I.cooked_beef = (S) => {
+  // a T-bone shaped steak: seared meat, a band of fat along the top-left rim,
+  // two diagonal grill marks and a bone poking out at the lower right
+  const meat = (x, y) => {
     const dx = x - 8;
     const dy = y - 8.4;
-    return Math.abs(dx) + Math.abs(dy) * 1.15 < 6.2 && Math.max(Math.abs(dx), Math.abs(dy)) < 4.8;
+    const ang = Math.atan2(dy, dx);
+    return Math.hypot(dx / 6.6, dy / 5.4) <= 1 + 0.08 * Math.sin(ang * 3 + 1);
+  };
+  return item(S, [
+    { color: '#e2c79a', n: 3, shape: meat },
+    { color: '#86431f', n: 5, mid: 2, shape: (x, y) => meat(x + 0.9, y + 0.9) && meat(x - 0.4, y - 0.4) },
+    { color: '#efe6d4', n: 3, shape: (x, y) => Math.hypot(x - 12.6, y - 12.4) < 1.5 || (Math.abs((x - y) - 0.2) < 0.9 && x > 10 && x < 12.4) },
+  ], { extra: [(px, regs, k) => {
+    const r = regs[1];
+    for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+      const ux = (x + 0.5) / k;
+      const uy = (y + 0.5) / k;
+      if (!r.has(x, y) || !r.has(x - 1, y) || !r.has(x + 1, y)) continue;
+      const d = (ux + uy) - 16.4;
+      if (Math.abs(Math.abs(d) - 2.2) < (k > 1 ? 0.4 : 0.55)) px.set(x, y, r.m.at(0));
+      else if (Math.hypot(ux - 6, uy - 6.6) < (k > 1 ? 1 : 0.8)) px.set(x, y, r.m.at(4));
+    }
+  }] });
+};
+
+I.coal = (S) => item(S, [
+  { color: '#3a383f', n: 5, mid: 2, contrast: 0.6, shape: (x, y) => {
+    const dx = x - 8;
+    const dy = y - 8.4;
+    const ang = Math.atan2(dy, dx);
+    // an irregular chunk: polygon-ish radius that changes with the angle
+    const rr = 5 + 0.55 * Math.cos(ang * 3 + 0.6) + 0.3 * Math.sin(ang * 5);
+    return Math.hypot(dx, dy) <= rr;
   } },
 ], { extra: [(px, regs, k) => {
-  // facets: a lit plane top-left and a few glints
+  // three flat facets: lit top-left plane, mid plane, shaded lower plane, plus glints
   const r = regs[0];
   for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+    if (!r.has(x, y)) continue;
     const ux = (x + 0.5) / k;
     const uy = (y + 0.5) / k;
-    if (r.has(x, y) && ux + uy < 14 && ux + uy > 12.8) px.set(x, y, r.m.at(0));
-    if (r.has(x, y) && Math.hypot(ux - 6, uy - 6.2) < 0.7) px.set(x, y, r.m.at(3));
+    const inner = r.has(x - 1, y) && r.has(x, y - 1) && r.has(x + 1, y) && r.has(x, y + 1);
+    if (!inner) continue;
+    if (ux + uy < 14) px.set(x, y, r.m.at(3));
+    else if (uy - ux > 2.2) px.set(x, y, r.m.at(1));
+    if (Math.hypot(ux - 6.4, uy - 5.6) < (k > 1 ? 0.75 : 0.6)) px.set(x, y, r.m.at(4));
   }
 }] });
 

@@ -73,7 +73,10 @@ vec4 renderClouds(vec3 dirView, float maxDist, float noise) {
     // far clouds fade into the sky
     float fade = exp(-t0 * 0.00045) * smoothstep(0.0, 0.06, d.y + 0.02);
     vec3 skyBehind = skyColorAt(dirView);
-    scat = mix(skyBehind * (1.0 - T), scat, fade);
+    // blend towards the sky, but let the sun disk behind thin far clouds through
+    float Tf = mix(mix(T, 1.0, 0.55), T, fade);
+    scat = mix(skyBehind * (1.0 - Tf), scat, fade);
+    T = Tf;
     return vec4(scat * CLOUD_BRIGHTNESS, T);
 }
 #endif
@@ -85,10 +88,7 @@ void main() {
     vec3 dir = normalize(vp);
     float noise = dither(gl_FragCoord.xy);
     if (depth >= 1.0) {
-        col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
-#ifdef DIM_END
-        col += endSkyDetail(dir);
-#endif
+        col = paintSky(dir, uv);
     }
 #ifdef SSAO
     else if (depth > 0.56) {

@@ -5,6 +5,7 @@ import dev.pimpin.client.compat.Compat;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.Zoom;
+import dev.pimpin.client.feature.ToggleSprint;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -47,6 +48,7 @@ public final class PimpinHud {
     }
 
     public static void tick(Minecraft client) {
+        dev.pimpin.client.screen.HudLayoutDevTest.tick(client);
         LocalPlayer p = client.player;
         if (p == null) return;
         if (!Double.isNaN(lastX)) {
@@ -104,46 +106,58 @@ public final class PimpinHud {
         Minimap.render(g, client);
         if (Minimap.bigMapOpen(client) || !c.hud) return;
 
-        float s = c.hudScale;
-        int w = (int) (sw / s);
-        int h = (int) (sh / s);
-        int lineH = font.lineHeight + 2;
-        int panelW = 0;
-        for (String l : lines) panelW = Math.max(panelW, font.width(l));
-        panelW += 10;
-        int keysH = c.keystrokes ? 74 : 0;
-        int panelH = lines.isEmpty() ? 0 : lines.size() * lineH + 6;
-        int blockW = Math.max(panelW, c.keystrokes ? 70 : 0);
-        boolean right = c.hudCorner == 1 || c.hudCorner == 3;
-        boolean bottom = c.hudCorner >= 2;
-        int x = right ? w - blockW - 4 : 4;
-        int y = bottom ? h - panelH - keysH - 46 : 4;
-        // Same corner as the minimap: stack under it (or above it at the bottom).
-        if (c.minimap && c.minimapCorner == c.hudCorner) {
-            int[] m = Minimap.layout(sw, sh);
-            int mapTop = (int) ((m[1] - 6) / s);
-            int mapBottom = (int) ((m[1] + m[2] + (c.minimapCoords ? 16 : 6)) / s);
-            if (bottom) y = Math.min(y, mapTop - panelH - keysH - 4);
-            else y = Math.max(y, mapBottom);
-        }
+        renderModules(g, client, false);
+        dev.pimpin.client.feature.WaypointNavigation.render(g, client);
+    }
 
-        g.push();
-        g.scale(s);
-        if (!lines.isEmpty()) {
-            if (c.hudBackground) {
-                g.fill(x, y, x + panelW, y + panelH, 0x88000000);
-                g.fill(x, y, x + 2, y + panelH, c.accent);
+    public static List<String> information(Minecraft client, boolean preview) {
+        List<String> text = new ArrayList<>(lines);
+        String sprint = ToggleSprint.indicator(client);
+        if (sprint != null) text.add(sprint);
+        if (preview && text.isEmpty()) text.add("144 FPS | XYZ 120 64 -80");
+        return text;
+    }
+    public static int[] moduleSize(int id, Minecraft client, boolean preview) {
+        if (id == 1) return new int[]{70,74};
+        if (id == 2) return new int[]{62,90};
+        if (id == 4) return new int[]{PimpinConfig.get().minimapSize, PimpinConfig.get().minimapSize + (PimpinConfig.get().minimapCoords ? 16 : 0)};
+        List<String> text = id == 0 ? information(client,preview) : EffectsHud.lines(client,200,PimpinConfig.get().effectHudRows);
+        if (preview && text.isEmpty()) text = List.of(id == 0 ? "144 FPS" : "Regeneration II 0:45");
+        int w = 40;
+        for (String line : text) w = Math.max(w, client.font.width(line));
+        return new int[]{w+12, Math.max(16,text.size()*(client.font.lineHeight+2)+8)};
+    }
+    public static void renderModules(Draw g, Minecraft client, boolean preview) {
+        PimpinConfig c=PimpinConfig.get();
+        for (int id=0;id<4;id++) {
+            boolean enabled = c.hud && (id==0 || id==1 && c.keystrokes || id==2 && c.armorHud || id==3 && c.effectHud);
+            if (!enabled && !preview) continue;
+            int[] size=moduleSize(id,client,preview);
+            int[] b=HudLayout.bounds(id,g.width(),g.height(),size[0],size[1]);
+            float scale=HudLayout.effectiveScale(HudLayout.current()[id],g.width(),g.height(),size[0],size[1]);
+            int x=Math.round(b[0]/scale), y=Math.round(b[1]/scale);
+            g.push(); g.scale(scale);
+            if (id==1) drawKeys(g,client,client.font,x,y,c.accent);
+            else if (id==2) {
+                if (preview) {
+                    g.fill(x,y,x+size[0],y+size[1],HudLayout.background());
+                    g.text(client.font,"Armor",x+5,y+5,0xFFFFFFFF);
+                    for(int i=0;i<4;i++) g.text(client.font,"100%",x+18,y+20+i*16,0xFF88EE88);
+                } else drawArmor(g,client,client.font,x,y);
+            } else {
+                List<String> text = id==0 ? information(client,preview) : EffectsHud.lines(client,200,c.effectHudRows);
+                if(preview && text.isEmpty()) text=List.of(id==0 ? "144 FPS" : "Regeneration II 0:45");
+                if(!text.isEmpty()) {
+                    if(c.hudBackground) {
+                        g.fill(x,y,x+size[0],y+size[1],HudLayout.background());
+                        g.fill(x,y,x+2,y+size[1],c.accent);
+                    }
+                    int ty=y+4;
+                    for(String line:text) {g.text(client.font,line,x+6,ty,enabled ? 0xFFFFFFFF : 0xFF999999);ty+=client.font.lineHeight+2;}
+                }
             }
-            int ty = y + 4;
-            for (String l : lines) {
-                g.text(font, l, x + 6, ty, 0xFFFFFFFF);
-                ty += lineH;
-            }
+            g.pop();
         }
-        if (c.keystrokes) drawKeys(g, client, font, x, y + panelH + 4, c.accent);
-        g.pop();
-
-        if (c.armorHud) drawArmor(g, client, font, sw, sh);
     }
 
     private static void drawKeys(Draw g, Minecraft client, Font font, int x, int y, int accent) {
@@ -163,15 +177,14 @@ public final class PimpinHud {
 
     private static void key(Draw g, Font font, KeyMapping bind, String label, int x, int y, int w, int h, int accent) {
         boolean down = bind.isDown();
-        g.fill(x, y, x + w, y + h, down ? (accent & 0x00FFFFFF) | 0xD0000000 : 0x88000000);
+        g.fill(x, y, x + w, y + h, down ? (accent & 0x00FFFFFF) | 0xD0000000 : HudLayout.background());
         int color = down ? 0xFF000000 : 0xFFFFFFFF;
         g.text(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2 + 1, color, !down);
     }
 
-    private static void drawArmor(Draw g, Minecraft client, Font font, int sw, int sh) {
+    private static void drawArmor(Draw g, Minecraft client, Font font, int x, int top) {
         LocalPlayer p = client.player;
-        int x = sw - 60;
-        int y = sh - 22;
+        int y = top + 72;
         List<ItemStack> items = new ArrayList<>();
         items.add(p.getMainHandItem());
         for (int i = ARMOR.length - 1; i >= 0; i--) items.add(p.getItemBySlot(ARMOR[i]));

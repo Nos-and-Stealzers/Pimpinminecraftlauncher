@@ -825,4 +825,4 @@ function wheat(S, st, stage) {
 }
 for (let s = 0; s < 8; s++) T[`wheat_stage${s}`] = (S, st) => wheat(S, st, s);
 
-module.exports = { T, DYES };
+module.exports = { T, DYES, brickWall, smoothPanel, cobbleLike, wool, woodParts, flower, blades, addMoss };

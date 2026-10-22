@@ -1,6 +1,7 @@
 package dev.pimpin.client.hud;
 
 import dev.pimpin.client.compat.DynTex;
+import dev.pimpin.client.PimpinConfig;
 import dev.pimpin.client.feature.Waypoints;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -119,7 +120,7 @@ final class MapView {
         ensure(resolution);
         LocalPlayer me = mc.player;
         long now = System.nanoTime();
-        if (now - lastCompose < 12_000_000L && rasterVersion == MapTiles.version()) return tex; // ~80 fps cap
+        if (now - lastCompose < 1_000_000_000L / Math.max(1,PimpinConfig.get().minimapRefresh)) return tex; // configurable compose/upload cap
         lastCompose = now;
 
         int bx = me.blockPosition().getX();
@@ -163,7 +164,7 @@ final class MapView {
                 } else if (u == 0 || v == 0 || u == res - 1 || v == res - 1) {
                     out[i] = border;
                     continue;
-                } else if (v == 1) {
+                } else if (v == 1 || u == 1 || v == res-2 || u == res-2) {
                     out[i] = accent;
                     continue;
                 }
@@ -183,6 +184,9 @@ final class MapView {
                 boolean isPlayer = e instanceof Player;
                 boolean hostile = e instanceof Enemy;
                 if (isPlayer ? !players : !mobs || !(e instanceof Mob)) continue;
+                PimpinConfig c = PimpinConfig.get();
+                if (!isPlayer && (hostile ? !c.minimapHostiles : !c.minimapAnimals)) continue;
+                if (Math.abs(e.getY()-me.getY()) > c.minimapEntityHeight) continue;
                 double ox = e.getX() - px;
                 double oz = e.getZ() - pz;
                 if (Math.abs(ox) > maxDist || Math.abs(oz) > maxDist) continue;
@@ -194,7 +198,14 @@ final class MapView {
             }
         }
         for (Waypoints.Point w : waypoints) {
-            if (!w.shown) continue;
+            PimpinConfig c = PimpinConfig.get();
+            if (!w.shown || !c.minimapWaypoints) continue;
+            double distance = Math.hypot(w.x-px,w.z-pz);
+            if (c.minimapWaypointRange > 0 && distance > c.minimapWaypointRange) continue;
+            double du=((w.x+.5-px)*rx+(w.z+.5-pz)*rz)*zoom;
+            double dv=((w.x+.5-px)*fx+(w.z+.5-pz)*fz)*zoom;
+            double reach=round?Math.hypot(du,dv):Math.max(Math.abs(du),Math.abs(dv));
+            if (!c.minimapEdgeMarkers && reach > res/2.0-5) continue;
             double[] at = clampToEdge(w.x + 0.5 - px, w.z + 0.5 - pz, fx, fz, rx, rz, scale, round);
             diamond((int) at[0], (int) at[1], w.color);
         }

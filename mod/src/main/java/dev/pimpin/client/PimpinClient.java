@@ -9,12 +9,15 @@ import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.LoadingScreen;
 import dev.pimpin.client.feature.Waypoints;
 import dev.pimpin.client.feature.Zoom;
+import dev.pimpin.client.feature.ToggleSprint;
+import dev.pimpin.client.feature.ClientQolDevTest;
 import dev.pimpin.client.hud.Minimap;
 import dev.pimpin.client.hud.PimpinHud;
 import dev.pimpin.client.screen.ModMenuScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.KeyMapping;
@@ -37,10 +40,12 @@ public final class PimpinClient implements ClientModInitializer {
     public static KeyMapping bigMapKey;
     public static KeyMapping boostKey;
     public static KeyMapping waypointKey;
+    public static KeyMapping toggleSprintKey;
 
     @Override
     public void onInitializeClient() {
         PimpinConfig.load();
+        ClientLifecycleEvents.CLIENT_STARTED.register(ToggleSprint::recover);
         zoomKey = Keys.register("zoom", InputConstants.KEY_Z);
         menuKey = Keys.register("menu", InputConstants.KEY_RSHIFT);
         minimapKey = Keys.register("minimap", InputConstants.KEY_M);
@@ -48,11 +53,15 @@ public final class PimpinClient implements ClientModInitializer {
         bigMapKey = Keys.register("big_map", InputConstants.KEY_J);
         boostKey = Keys.register("boost", InputConstants.UNKNOWN.getValue());
         waypointKey = Keys.register("waypoint", InputConstants.KEY_B);
+        toggleSprintKey = Keys.register("toggle_sprint", InputConstants.UNKNOWN.getValue());
 
         ClientTickEvents.END_CLIENT_TICK.register(PimpinClient::tick);
         Hud.register(PimpinHud::render);
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ToggleSprint.restore(client));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             FpsBooster.restoreBackgroundLimit(client);
+            ToggleSprint.restore(client);
+            ClientQolDevTest.stopping(client);
             PimpinConfig.save();
         });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
@@ -91,9 +100,17 @@ public final class PimpinClient implements ClientModInitializer {
         while (waypointKey.consumeClick()) {
             if (client.player == null) continue;
             Waypoints.Point w = Waypoints.addHere(client);
-            Compat.actionBar(client, "§b" + w.name + "§7 added at " + w.x + " " + w.y + " " + w.z);
+            if (w != null) Compat.actionBar(client, "§b" + w.name + "§7 added at " + w.x + " " + w.y + " " + w.z);
+            else Compat.actionBar(client, "§c" + (Waypoints.error() == null ? "Could not add waypoint here." : Waypoints.error()));
         }
         Zoom.tick(client);
+        while (toggleSprintKey.consumeClick()) {
+            if (client.player == null || Compat.screen(client) != null) continue;
+            cfg.toggleSprint = !cfg.toggleSprint;
+            PimpinConfig.save();
+        }
+        ToggleSprint.tick(client);
+        ClientQolDevTest.tick(client);
         FpsBooster.tick(client);
         DeathTracker.tick(client);
         Minimap.tick(client);
