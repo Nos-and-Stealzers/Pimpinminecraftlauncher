@@ -38,6 +38,25 @@ public final class PimpinConfig {
     public int accent = 0xFFB56CFF;
     public boolean hudBackground = true;
 
+    // Independent normalized HUD anchors; null retains legacy corner defaults.
+    public Placement[] hudLayout = null;
+    public boolean hudSnap = true;
+    public int hudOpacity = 55;
+    public boolean minimapCompass = true;
+    public boolean minimapHostiles = true;
+    public boolean minimapAnimals = true;
+    public int minimapEntityHeight = 48;
+    public int minimapRefresh = 30;
+    public boolean minimapWaypoints = true;
+    public boolean minimapEdgeMarkers = true;
+    public int minimapWaypointRange = 0;
+    public static final class Placement {
+        public float x, y, scale;
+        public Placement() { scale = 1; }
+        public Placement(float x, float y, float scale) { this.x=x; this.y=y; this.scale=scale; }
+        public Placement copy() { return new Placement(x,y,scale); }
+    }
+
     // Minimap
     public boolean minimap = true;
     public int minimapSize = 96;
@@ -95,6 +114,18 @@ public final class PimpinConfig {
             }
         }
         if (instance == null) instance = new PimpinConfig();
+        instance.hudOpacity = Math.max(0, Math.min(100, instance.hudOpacity));
+        instance.minimapRefresh = Math.max(10, Math.min(60, instance.minimapRefresh));
+        instance.minimapEntityHeight = Math.max(8, Math.min(256, instance.minimapEntityHeight));
+        if (instance.hudLayout != null) {
+            if (instance.hudLayout.length != 5) instance.hudLayout = null;
+            else for (Placement p : instance.hudLayout) {
+                if (p == null) { instance.hudLayout = null; break; }
+                p.x = Float.isFinite(p.x) ? Math.max(0, Math.min(1, p.x)) : 0;
+                p.y = Float.isFinite(p.y) ? Math.max(0, Math.min(1, p.y)) : 0;
+                p.scale = Float.isFinite(p.scale) ? Math.max(.5f, Math.min(2.5f, p.scale)) : 1;
+            }
+        }
         instance.minimapSize = Math.max(48, Math.min(192, instance.minimapSize));
         instance.hudScale = Math.max(0.5f, Math.min(2f, instance.hudScale));
         instance.mapZoom = Math.max(0, Math.min(4, instance.mapZoom));

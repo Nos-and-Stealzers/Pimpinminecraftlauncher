@@ -89,6 +89,23 @@ public final class Compat {
         return s.isEmpty() ? "Unknown" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
+    /** Invoke a real button action with the version's input signature. */
+    public static void press(net.minecraft.client.gui.components.Button button) {
+        //#if MC >= 1.21.9
+        button.onPress(new net.minecraft.client.input.KeyEvent(32, 0, 0));
+        //#else
+        button.onPress();
+        //#endif
+    }
+
+    public static void resizeScreen(net.minecraft.client.gui.screens.Screen screen, Minecraft mc, int width, int height) {
+        //#if MC >= 1.21.11
+        screen.resize(width, height);
+        //#else
+        screen.resize(mc, width, height);
+        //#endif
+    }
+
     public static String keyName(net.minecraft.client.KeyMapping key) {
         return key == null ? "?" : key.getTranslatedKeyMessage().getString();
     }

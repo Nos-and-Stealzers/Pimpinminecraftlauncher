@@ -100,7 +100,8 @@ public final class PimpinClient implements ClientModInitializer {
         while (waypointKey.consumeClick()) {
             if (client.player == null) continue;
             Waypoints.Point w = Waypoints.addHere(client);
-            Compat.actionBar(client, "§b" + w.name + "§7 added at " + w.x + " " + w.y + " " + w.z);
+            if (w != null) Compat.actionBar(client, "§b" + w.name + "§7 added at " + w.x + " " + w.y + " " + w.z);
+            else Compat.actionBar(client, "§c" + (Waypoints.error() == null ? "Could not add waypoint here." : Waypoints.error()));
         }
         Zoom.tick(client);
         while (toggleSprintKey.consumeClick()) {

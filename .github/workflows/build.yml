@@ -8,10 +8,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -19,6 +21,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,6 +30,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+        env:
+          TMPDIR: ${{ runner.temp }}
+      - name: Test release transport (offline)
+        run: node --test scripts/release-assets.test.js
         env:
           TMPDIR: ${{ runner.temp }}
       # Every build gets its own version so installed launchers can auto-update.
@@ -42,85 +50,35 @@ jobs:
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: npx electron-builder --linux --publish never
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pimpin-launcher-${{ runner.os }}
-          path: |
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.blockmap
-            dist/latest*.yml
-          if-no-files-found: error
+      # Release assets bypass Actions artifact storage. PR/manual builds still
+      # run all checks and package both platforms, but cannot stage or publish.
+      - name: Stage platform assets in private draft
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/'))
+        run: node scripts/release-assets.js stage dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TMPDIR: ${{ runner.temp }}
 
-  # Publishes the installers as a GitHub Release. Version tags (v1.2.3) and
-  # pushes to main make a normal release; claude/** branches make a test
-  # pre-release.
+  # Both successful builds are required before a release becomes visible.
   release:
     needs: build
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/'))
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
-      - name: Pick release tag
-        id: tag
-        shell: bash
-        run: |
-          version="0.1.$GITHUB_RUN_NUMBER"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            echo "name=v$version" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=v$version-test" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: softprops/action-gh-release@v2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          target_commitish: ${{ github.sha }}
-          name: Pimpin Launcher ${{ steps.tag.outputs.name }}
-          prerelease: ${{ steps.tag.outputs.prerelease }}
-          make_latest: ${{ steps.tag.outputs.prerelease == 'false' }}
-          files: |
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.blockmap
-            dist/latest*.yml
-          body: |
-            **Windows 10/11:** download `PimpinLauncher-Setup-*.exe` and run it (or `PimpinLauncher-Portable-*.exe`, no install needed).
-            The app isn't code-signed yet, so SmartScreen may warn you: click **More info → Run anyway**.
-
-            **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. On Debian/Ubuntu you can install the `.deb` instead.
-
-            Already installed with the Setup exe or AppImage? The launcher updates itself — no need to download again.
-      # Launchers check this public repo for updates (the source repo is private).
-      - name: Publish to the public downloads repo
-        if: steps.tag.outputs.prerelease == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: Nos-and-Stealzers/pimpin-launcher-releases
-          token: ${{ secrets.RELEASES_TOKEN }}
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: Pimpin Launcher ${{ steps.tag.outputs.name }}
-          make_latest: true
-          files: |
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.blockmap
-            dist/latest*.yml
-          body: |
-            **Windows 10/11:** download `PimpinLauncher-Setup-*.exe` and run it (or `PimpinLauncher-Portable-*.exe`, no install needed).
-            The app isn't code-signed yet, so SmartScreen may warn you: click **More info → Run anyway**.
-
-            **Linux:** download the `.AppImage`, run `chmod +x PimpinLauncher-*.AppImage`, then open it. On Debian/Ubuntu you can install the `.deb` instead.
-
-            Already installed with the Setup exe or AppImage? The launcher updates itself.
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate both platforms and publish complete drafts
+        run: node scripts/release-assets.js publish release-download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Restricted to public downloads; never used for the source repository.
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TMPDIR: ${{ runner.temp }}

@@ -1,0 +1,58 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const root = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'pimpin-appearance-test-'));
+process.env.PIMPIN_ROOT = root;
+const store = require('../src/main/store');
+test('appearance defaults are safe and layout settings persist across store reopen', async () => {
+  const initial = store.getSettings();
+  assert.equal(initial.density, 'comfortable');
+  assert.equal(initial.textSize, 100);
+  assert.equal(initial.sidebarWidth, 232);
+  assert.equal(initial.sidebarMode, 'auto');
+  await store.updateSettings({ uiStyle: 'system', accent: 'custom', customA1: '#12AbEF', density: 'compact', textSize: 115, sidebarWidth: 270, sidebarMode: 'compact' });
+  delete require.cache[require.resolve('../src/main/store')];
+  const reopened = require('../src/main/store').getSettings();
+  assert.equal(reopened.uiStyle, 'system');
+  assert.equal(reopened.customA1, '#12abef');
+  assert.equal(reopened.density, 'compact');
+  assert.equal(reopened.textSize, 115);
+  assert.equal(reopened.sidebarWidth, 270);
+  assert.equal(reopened.sidebarMode, 'compact');
+});
+test('invalid appearance data cannot inject CSS; numbers clamp, invalid types fall back', async () => {
+  const { normalizeAppearance, APPEARANCE_DEFAULTS } = require('../src/main/appearance-settings');
+  const invalid = normalizeAppearance({ uiStyle: 'url(evil)', accent: '__proto__', customA1: '#fff; background:url(evil)', font: {}, animations: 'false', density: [], sidebarMode: 'hidden', uiScale: Infinity, textSize: '120', sidebarWidth: NaN });
+  assert.deepEqual(invalid, APPEARANCE_DEFAULTS);
+  assert.deepEqual(normalizeAppearance(null), APPEARANCE_DEFAULTS);
+  const limits = normalizeAppearance({ uiScale: -100, textSize: 999, sidebarWidth: 9999, accent: 'ocean' });
+  assert.equal(limits.uiScale, 80);
+  assert.equal(limits.textSize, 120);
+  assert.equal(limits.sidebarWidth, 300);
+  assert.equal(limits.accent, 'blue');
+  await store.updateSettings({ customA1: 'red;display:none', density: 'oops', sidebarWidth: -100, unknownCss: 'body{}' });
+  assert.equal(store.getSettings().customA1, APPEARANCE_DEFAULTS.customA1);
+  assert.equal(store.getSettings().sidebarWidth, 190);
+  assert.equal(store.getSettings().unknownCss, undefined);
+});
+test('reset restores only appearance, preserving game and account preferences', async () => {
+  const { APPEARANCE_DEFAULTS } = require('../src/main/appearance-settings');
+  await store.updateSettings({ memoryMax: 4096, activeAccount: 'fixture', uiStyle: 'light', textSize: 120, accent: 'red' });
+  await store.updateSettings({ appearanceReset: true });
+  for (const [key, value] of Object.entries(APPEARANCE_DEFAULTS)) assert.equal(store.getSettings()[key], value);
+  assert.equal(store.getSettings().memoryMax, 4096);
+  assert.equal(store.getSettings().activeAccount, 'fixture');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'settings.json'))).appearanceReset, undefined);
+});
+test('invalid persisted appearance is normalized on startup', () => {
+  fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ uiStyle: 'css-injection', customA1: 'url(foo)', textSize: 999, sidebarMode: 'hidden' }));
+  delete require.cache[require.resolve('../src/main/store')];
+  const loaded = require('../src/main/store').getSettings();
+  assert.equal(loaded.uiStyle, 'modern');
+  assert.equal(loaded.customA1, '#8f5cf7');
+  assert.equal(loaded.textSize, 120);
+  assert.equal(loaded.sidebarMode, 'auto');
+});
+process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));

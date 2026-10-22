@@ -75,8 +75,8 @@ function renderSidebar() {
   clear(
     document.getElementById('sidebar'),
     Object.entries(PAGES).map(([key, p]) =>
-      el('button', { class: `side-item${current.page === key && !viewingId ? ' active' : ''}`, onclick: () => navigate(key) },
-        icon(p.icon), p.label,
+      el('button', { class: `side-item${current.page === key && !viewingId ? ' active' : ''}`, title: p.label, 'aria-label': p.label, 'aria-current': current.page === key ? 'page' : null, onclick: () => navigate(key) },
+        icon(p.icon), el('span', { class: 'side-text' }, p.label),
         key === 'instances' && state.instances.length ? el('span', { class: 'count' }, String(state.instances.length)) : null),
     ),
     el('div', { class: 'side-label' }, 'Recent', el('button', { title: 'New instance', onclick: () => newInstanceModal() }, icon('plus'))),
@@ -279,10 +279,12 @@ async function boot() {
   document.addEventListener('visibilitychange', () => document.body.classList.toggle('app-hidden', document.hidden));
   document.getElementById('search-slot').append(
     el('button', { class: 'palette-btn', title: 'Search (Ctrl+K)', onclick: () => commandPalette(navigate) }, icon('search'), el('span', { class: 'grow' }, 'Search'), el('span', { class: 'kbd' }, 'Ctrl K')));
+  await refreshSettings();
+  applyAppearance();
+  document.body.removeAttribute('data-appearance-pending');
   state.info = await api.call('app:info');
   document.body.classList.add(`os-${state.info.platform}`);
-  await Promise.all([refreshSettings(), refreshAccounts(), refreshInstances(), refreshServers()]);
-  applyAppearance();
+  await Promise.all([refreshAccounts(), refreshInstances(), refreshServers()]);
   if (PAGES[state.settings.startPage]) current = { page: state.settings.startPage, params: {} };
   for (const i of state.instances) if (i.running) state.game[i.id] = { state: 'running' };
   clear(document.getElementById('account-slot'), accountButton());
@@ -293,6 +295,7 @@ async function boot() {
 }
 
 boot().catch((err) => {
+  document.body.removeAttribute('data-appearance-pending');
   console.error(err);
   toast(`Failed to start: ${err.message}`, 'err', 10000);
 });

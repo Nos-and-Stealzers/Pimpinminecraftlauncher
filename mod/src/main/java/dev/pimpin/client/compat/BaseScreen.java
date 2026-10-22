@@ -24,6 +24,45 @@ public abstract class BaseScreen extends Screen {
         return false;
     }
 
+    /** Custom canvas screens can keep their action buttons above draggable content. */
+    protected final void drawWidgetsOnTop(Draw d, int x, int y, float delta) {
+        for (var child : children()) if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget) {
+            //#if MC >= 26.1
+            widget.extractRenderState(d.g, x, y, delta);
+            //#else
+            widget.render(d.g, x, y, delta);
+            //#endif
+        }
+    }
+
+    protected boolean onDrag(double x, double y, int button, double dx, double dy) { return false; }
+
+    protected boolean onRelease(double x, double y, int button) { return false; }
+
+    //#if MC >= 1.21.9
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (onDrag(event.x(), event.y(), event.button(), dx, dy)) return true;
+        return super.mouseDragged(event, dx, dy);
+    }
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (onRelease(event.x(), event.y(), event.button())) return true;
+        return super.mouseReleased(event);
+    }
+    //#else
+    @Override
+    public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        if (onDrag(x, y, button, dx, dy)) return true;
+        return super.mouseDragged(x, y, button, dx, dy);
+    }
+    @Override
+    public boolean mouseReleased(double x, double y, int button) {
+        if (onRelease(x, y, button)) return true;
+        return super.mouseReleased(x, y, button);
+    }
+    //#endif
+
     protected boolean onScroll(double x, double y, double amount) {
         return false;
     }
