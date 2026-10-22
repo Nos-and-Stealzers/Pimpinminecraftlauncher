@@ -88,6 +88,11 @@ public final class PimpinSettingsScreen extends BaseScreen {
                 r.add(toggle("Last death", () -> c.showDeath, v -> c.showDeath = v));
                 r.add(toggle("Keystrokes + CPS", () -> c.keystrokes, v -> c.keystrokes = v));
                 r.add(toggle("Armour & durability", () -> c.armorHud, v -> c.armorHud = v));
+                r.add(cycle("Durability text", () -> dev.pimpin.client.hud.DurabilityText.MODES[c.armorReadout], () -> c.armorReadout = (c.armorReadout + 1) % 3));
+                r.add(toggle("Held item in armour HUD", () -> c.armorMainHand, v -> c.armorMainHand = v));
+                r.add(toggle("Offhand in armour HUD", () -> c.armorOffHand, v -> c.armorOffHand = v));
+                Integer[] warningLevels = {0, 5, 10, 15, 20, 25, 30};
+                r.add(cycle("Low durability warning", () -> c.armorWarningPercent == 0 ? "Off" : c.armorWarningPercent + "%", () -> c.armorWarningPercent = warningLevels[next(warningLevels, c.armorWarningPercent)]));
                 r.add(toggle("Panel background", () -> c.hudBackground, v -> c.hudBackground = v));
 
                 r.add(cycle("Size", () -> Math.round(c.hudScale * 100) + "%", () -> {
@@ -148,6 +153,7 @@ public final class PimpinSettingsScreen extends BaseScreen {
                 }));
                 r.add(toggle("Active effects HUD", () -> c.effectHud, v -> c.effectHud = v));
                 r.add(cycle("Effect rows", () -> String.valueOf(c.effectHudRows), () -> c.effectHudRows = c.effectHudRows >= 12 ? 4 : c.effectHudRows + 4));
+                r.add(cycle("Copy coordinates", () -> "Open", () -> Compat.setScreen(minecraft, new CoordinatesScreen(this))));
                 r.add(cycle("Controls", () -> "Open", () -> Compat.setScreen(minecraft, keyBinds())));
             }
         }

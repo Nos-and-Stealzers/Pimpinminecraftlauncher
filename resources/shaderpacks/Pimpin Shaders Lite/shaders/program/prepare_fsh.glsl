@@ -3,16 +3,22 @@
 #define SUN_INTENSITY 2.8
 
 vec3 skyRadiance(vec3 d, vec3 sunL) {
-    float below = max(-d.y, 0.0);
+    // Continue the horizon below eye level. An arbitrary dark lower hemisphere
+    // looks like a grey sphere around the camera when terrain is out of range.
     if (d.y < 0.0) d = normalize(vec3(d.x, 0.0, d.z));
     vec3 c = vec3(0.0);
     if (sunL.y > -0.3) c += atmScatter(d, sunL) * SKY_INTENSITY;
     if (sunL.y < 0.3) c += atmScatter(d, -sunL) * SKY_INTENSITY * 0.012 * moonTint();
     // faint airglow so a moonless night is not pitch black
     c += vec3(0.0030, 0.0042, 0.0085) * (1.15 - 0.5 * d.y) * (1.0 - dayFactor());
-    c *= mix(1.0, 0.3, smoothstep(0.0, 0.5, below));
     float l = luma(c);
     c = mix(vec3(l), c, 1.12);
+    // Clear air should fade into a pale blue horizon, not a neutral grey wall.
+    // Keep the physically warm sunset and overcast colours unchanged.
+    float clearHorizon = pow(1.0 - max(d.y, 0.0), 3.0) * smoothstep(0.10, 0.55, sunL.y) * (1.0 - rainStrength);
+    vec3 blueHaze = vec3(0.48, 0.70, 1.0);
+    blueHaze *= l / luma(blueHaze);
+    c = mix(c, blueHaze, clearHorizon * 0.65);
     vec3 overcast = vec3(l) * vec3(0.92, 0.96, 1.02) * 0.7;
     return mix(c, overcast, rainStrength * 0.85);
 }

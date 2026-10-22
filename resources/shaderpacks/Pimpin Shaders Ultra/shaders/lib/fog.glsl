@@ -3,22 +3,26 @@ uniform sampler2D colortex3;
 
 float eyeSkyLight() { return float(eyeBrightnessSmooth.y) / 240.0; }
 
-// distance + height fog; its colour is the sky behind the object, so far terrain fades into the horizon
+// Atmospheric extinction uses ray length; the terrain boundary uses horizontal distance.
+// A spherical far-plane fade makes a coloured shell appear underneath elevated players.
 vec3 applyFog(vec3 col, vec3 dir, float dist) {
-    float border = smoothstep(far * 0.6, far, dist);
+    float dy = clamp(dot(dir, normalize(upPosition)), -1.0, 1.0);
+    float terrainDistance = dist * sqrt(max(1.0 - dy * dy, 0.0));
+    float border = smoothstep(max(far, 1.0) * 0.76, max(far, 1.0) * 0.99, terrainDistance);
 #if defined DIM_NETHER
     float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
     float f = 1.0 - exp(-dist * 0.0065 * FOG_DENSITY);
 #else
-    float dy = dot(dir, normalize(upPosition));
-    float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
-    // exponential height fog, integrated along the ray
-    float b = 1.0 / 28.0;
-    float h0 = (0.0035 + 0.004 * twilightFactor() + 0.012 * rainStrength) * FOG_DENSITY * exp(-b * max(cameraPosition.y - 63.0, 0.0));
-    float k = b * dy * dist;
-    float heightTerm = abs(k) > 0.001 ? (1.0 - exp(-k)) / k : 1.0;
-    float tau = base * dist + h0 * dist * heightTerm;
+    float base = (0.00045 + 0.0035 * rainStrength + 0.0002 * twilightFactor()) * FOG_DENSITY;
+    // Integrate a bounded sea-level haze layer. Density stays constant below sea
+    // level instead of growing exponentially when a ray points into a valley.
+    float startHeight = max(cameraPosition.y - 63.0, 0.0);
+    float midHeight = max(cameraPosition.y + dy * dist * 0.5 - 63.0, 0.0);
+    float endHeight = max(cameraPosition.y + dy * dist - 63.0, 0.0);
+    float layer = (exp(-startHeight / 48.0) + 4.0 * exp(-midHeight / 48.0) + exp(-endHeight / 48.0)) / 6.0;
+    float haze = (0.00075 + 0.0030 * rainStrength + 0.0004 * twilightFactor()) * FOG_DENSITY;
+    float tau = (base + haze * layer) * dist;
     float f = 1.0 - exp(-tau);
     f *= mix(0.25, 1.0, eyeSkyLight());
 #endif

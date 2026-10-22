@@ -62,6 +62,7 @@ uniform vec4 entityColor;
 uniform float rainStrength;
 uniform float wetness;
 uniform float frameTimeCounter;
+uniform float frameTime;
 uniform float sunAngle;
 uniform float viewWidth;
 uniform float viewHeight;
@@ -281,7 +282,7 @@ vec3 analyticSky(vec3 dir) {
     vec3 horizon = mix(vec3(0.025, 0.035, 0.065), vec3(0.60, 0.74, 0.95), d);
     horizon = mix(horizon, vec3(1.15, 0.48, 0.18), tw * pow(toSun, 2.5));
     vec3 c = mix(horizon, zenith, pow(max(h, 0.0), 0.45));
-    c = mix(c, horizon * 0.35, sat(-h * 2.5));
+    // The analytic fallback shares the same horizon continuation as the LUT.
     return mix(c, vec3(luma(c)) * 0.55, rainStrength * 0.85);
 }
 

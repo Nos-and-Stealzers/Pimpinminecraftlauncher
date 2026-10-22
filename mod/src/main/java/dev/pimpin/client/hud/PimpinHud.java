@@ -13,8 +13,7 @@ import dev.pimpin.client.compat.Draw;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.ItemStack;
+
 
 import java.time.LocalTime;
 import java.util.ArrayDeque;
@@ -25,7 +24,7 @@ import java.util.List;
 public final class PimpinHud {
     private static final ArrayDeque<Long> leftClicks = new ArrayDeque<>();
     private static final ArrayDeque<Long> rightClicks = new ArrayDeque<>();
-    private static final EquipmentSlot[] ARMOR = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+    private static Object lastLevel;
     private static double speed;
     private static double lastX = Double.NaN;
     private static double lastZ;
@@ -50,6 +49,10 @@ public final class PimpinHud {
     public static void tick(Minecraft client) {
         dev.pimpin.client.screen.HudLayoutDevTest.tick(client);
         LocalPlayer p = client.player;
+        if (client.level != lastLevel || p == null) {
+            reset();
+            lastLevel = client.level;
+        }
         if (p == null) return;
         if (!Double.isNaN(lastX)) {
             double d = Math.hypot(p.getX() - lastX, p.getZ() - lastZ) * 20.0;
@@ -62,6 +65,11 @@ public final class PimpinHud {
             lineTick = 0;
             buildLines(client, p);
         }
+    }
+
+    public static void reset() {
+        leftClicks.clear(); rightClicks.clear(); lines.clear();
+        speed = 0; lastX = Double.NaN; lastZ = 0; lineTick = 4; lastLevel = null;
     }
 
     private static void buildLines(Minecraft client, LocalPlayer p) {
@@ -119,7 +127,7 @@ public final class PimpinHud {
     }
     public static int[] moduleSize(int id, Minecraft client, boolean preview) {
         if (id == 1) return new int[]{70,74};
-        if (id == 2) return new int[]{62,90};
+        if (id == 2) return EquipmentHud.size(client, preview);
         if (id == 4) return new int[]{PimpinConfig.get().minimapSize, PimpinConfig.get().minimapSize + (PimpinConfig.get().minimapCoords ? 16 : 0)};
         List<String> text = id == 0 ? information(client,preview) : EffectsHud.lines(client,200,PimpinConfig.get().effectHudRows);
         if (preview && text.isEmpty()) text = List.of(id == 0 ? "144 FPS" : "Regeneration II 0:45");
@@ -139,11 +147,7 @@ public final class PimpinHud {
             g.push(); g.scale(scale);
             if (id==1) drawKeys(g,client,client.font,x,y,c.accent);
             else if (id==2) {
-                if (preview) {
-                    g.fill(x,y,x+size[0],y+size[1],HudLayout.background());
-                    g.text(client.font,"Armor",x+5,y+5,0xFFFFFFFF);
-                    for(int i=0;i<4;i++) g.text(client.font,"100%",x+18,y+20+i*16,0xFF88EE88);
-                } else drawArmor(g,client,client.font,x,y);
+                EquipmentHud.render(g,client,x,y,preview);
             } else {
                 List<String> text = id==0 ? information(client,preview) : EffectsHud.lines(client,200,c.effectHudRows);
                 if(preview && text.isEmpty()) text=List.of(id==0 ? "144 FPS" : "Regeneration II 0:45");
@@ -182,23 +186,4 @@ public final class PimpinHud {
         g.text(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2 + 1, color, !down);
     }
 
-    private static void drawArmor(Draw g, Minecraft client, Font font, int x, int top) {
-        LocalPlayer p = client.player;
-        int y = top + 72;
-        List<ItemStack> items = new ArrayList<>();
-        items.add(p.getMainHandItem());
-        for (int i = ARMOR.length - 1; i >= 0; i--) items.add(p.getItemBySlot(ARMOR[i]));
-        for (ItemStack stack : items) {
-            if (stack.isEmpty()) continue;
-            g.item(stack, x, y);
-            g.itemDecorations(font, stack, x, y);
-            if (stack.isDamageableItem()) {
-                int left = stack.getMaxDamage() - stack.getDamageValue();
-                float frac = left / (float) stack.getMaxDamage();
-                int color = frac > 0.5f ? 0xFF55FF55 : frac > 0.2f ? 0xFFFFFF55 : 0xFFFF5555;
-                g.text(font, String.valueOf(left), x + 18, y + 5, color);
-            }
-            y -= 18;
-        }
-    }
 }

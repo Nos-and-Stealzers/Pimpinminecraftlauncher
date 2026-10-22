@@ -95,6 +95,8 @@ def main():
                 if fails <= 15:
                     print("FAIL", tag, "\n", out[:1500])
     print("checked %d compiles, %d failures" % (len(jobs), fails))
+    if fails:
+        raise SystemExit(1)
 
 
 main()

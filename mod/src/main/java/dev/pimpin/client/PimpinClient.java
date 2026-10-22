@@ -57,7 +57,10 @@ public final class PimpinClient implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(PimpinClient::tick);
         Hud.register(PimpinHud::render);
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ToggleSprint.restore(client));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            ToggleSprint.restore(client);
+            PimpinHud.reset();
+        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             FpsBooster.restoreBackgroundLimit(client);
             ToggleSprint.restore(client);

@@ -17,6 +17,7 @@ const importer = require('./importer');
 const gameLogs = require('./logs');
 const wardrobe = require('./wardrobe');
 const worldBackups = require('./world-backups');
+const clientSettings = require('./client-settings');
 const { getJson, request } = require('./net');
 
 let win;
@@ -187,6 +188,9 @@ const handlers = {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
   },
   'shell:openRoot': () => shell.openPath(store.dirs.root),
+
+  'client-settings:get': (id) => clientSettings.get(id),
+  'client-settings:update': (id, patch, revision) => clientSettings.update(id, patch, revision),
 
   'settings:get': () => store.getSettings(),
   'settings:update': async (patch) => {

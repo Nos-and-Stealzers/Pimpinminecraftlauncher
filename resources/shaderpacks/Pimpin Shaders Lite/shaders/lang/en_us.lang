@@ -96,5 +96,6 @@ option.TAA.comment=Smooths jagged edges and noise by blending frames together.
 option.VOLUMETRIC_LIGHT.comment=Light shafts through trees, clouds and windows.
 option.VOLUMETRIC_CLOUDS.comment=Puffy 3D clouds instead of the flat vanilla ones. Costs a lot of FPS when looking at the sky.
 option.SSR.comment=Water (and wet ground) reflects what is on screen.
-option.AUTO_EXPOSURE.comment=Adapts brightness to what you are looking at.
+option.FOG_DENSITY.comment=Controls atmospheric haze and rain mist. Zero keeps clear air; distant terrain still blends into the sky at the render limit.
+option.AUTO_EXPOSURE.comment=Gradually adapts brightness to the whole scene without crosshair-driven flashes.
 option.NIGHT_DESAT.comment=Very dark scenes lose colour and turn slightly blue, like real night vision.
