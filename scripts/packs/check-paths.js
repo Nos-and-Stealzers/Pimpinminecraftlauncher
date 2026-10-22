@@ -49,7 +49,9 @@ for (const v of VERS) {
       if (!good) problems.push(`ASPECT ${p}: ours ${w}x${h} vs vanilla ${vw}x${vh}`);
       else ok++;
       // entity / gui files must be an exact integer scale of vanilla
-      if (good && /entity\/|gui\//.test(p) && !(w % vw === 0 && w / vw === h / vh)) problems.push(`SCALE ${p}: ${w}x${h} vs ${vw}x${vh}`);
+      // Worn armor used models/armor before modern entity/equipment paths.
+      // Both layouts must keep an exact integer UV scale, not just the aspect ratio.
+      if (good && /entity\/|models\/armor\/|gui\//.test(p) && !(w % vw === 0 && w / vw === h / vh)) problems.push(`SCALE ${p}: ${w}x${h} vs ${vw}x${vh}`);
     }
     if (!fmtOk) problems.push(`pack_format ${meta.pack_format} vs game ${want}`);
     anim.forEach(([p]) => problems.push(`animated without mcmeta: ${p}`));

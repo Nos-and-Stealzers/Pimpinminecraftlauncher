@@ -8,7 +8,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY } = require('./pack-art');
+const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY, ITEM_SPECS, equipmentArt } = require('./pack-art');
 const { Image } = require('./png');
 
 const PACKS = {
@@ -25,7 +25,7 @@ const PACKS = {
       'Clear pumpkin, vignette and underwater overlays',
       'About 370 calm 16× blocks (on 1.20+): terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
       'Every ore (stone, deepslate and nether) drawn as clustered veins you can spot from across a cave',
-      'Swords, tools, food, ingots, bow and arrow drawn as one matching set',
+      'Every food, matching tools and weapons, armour icons and ore materials drawn as one readable set',
       'Matching mobs (incl. villager, husk, drowned), chests, default player skins, hotbar, hearts and buttons; baby mobs on 26.1+',
       'Minimal crosshair',
     ],
@@ -43,7 +43,7 @@ const PACKS = {
       'Ores as clustered veins that twinkle now and then (glow in the dark with OptiFine or Continuity)',
       'Connected glass with OptiFine or Continuity',
       'Smooth water and lava, living fire, swirling portals, breathing magma and pulsing sea lanterns',
-      'HD tools, weapons, food and materials; HD mobs (incl. villager, husk, drowned), chests and baby mobs on 26.1+',
+      'Original 32× tools, weapons, every food, materials and armour icons; fitted worn armour and elytra with leather dye support',
       'Nine original default player skins, a violet-and-gold hotbar and HUD',
       'Pimpin sun, moon phases, crosshair and splash texts',
     ],
@@ -185,13 +185,15 @@ function blockFile(name, v) {
 BLOCKS.short_grass = W('tallgrass');
 
 // ------------------------------------------------------------------- items --
-const ITEMS = [
-  ...['wooden', 'stone', 'iron', 'golden', 'diamond', 'netherite'].flatMap((m) => ['sword', 'pickaxe', 'axe', 'shovel'].map((t) => `${m}_${t}`)),
-  'stick', 'apple', 'bread', 'cooked_beef', 'coal', 'diamond', 'emerald', 'iron_ingot', 'gold_ingot', 'arrow', 'bow', 'bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2',
-];
+const itemSpecs = new Map(Object.keys(I).map(name => [name, { name, legacy: LEGACY_ITEMS[name] || name }]));
+for (const spec of ITEM_SPECS) itemSpecs.set(spec.name, spec);
+const ITEMS = [...itemSpecs.keys()];
 function itemFile(name, v) {
-  if (name.startsWith('netherite') && !atLeast(v, 1, 16)) return null;
-  return isLegacy(v) ? LEGACY_ITEMS[name] || name : name;
+  const spec = itemSpecs.get(name);
+  if (spec.since && !atLeast(v, ...spec.since)) return null;
+  // This old basename was retired when elytra_broken replaced it.
+  if (name === 'broken_elytra' && atLeast(v, 1, 21, 4)) return null;
+  return isLegacy(v) ? spec.legacy : name;
 }
 
 // -------------------------------------------------- OptiFine / Continuity --
@@ -394,6 +396,9 @@ function files(id, mcVersion = '1.21.4') {
     const file = itemFile(name, v);
     if (file) add(`${tex}/${legacy ? 'items' : 'item'}/${file}.png`, I[name](S, st).toPNG());
   }
+
+  // Worn equipment follows the exact legacy/modern UV revisions for this release.
+  for (const [p, img] of equipmentArt.files(parseVersion(v).join('.'), pretty ? 'looks' : 'fast')) add(`${tex}/${p}`, img.toPNG());
 
   // mobs, chests and player skins
   for (const [p, fn] of entityFiles(v, st)) add(`${tex}/${p}`, fn().toPNG());
