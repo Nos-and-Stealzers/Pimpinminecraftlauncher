@@ -15,6 +15,7 @@ const EVENTS = [
   'instances:changed',
   'toast',
   'update:state',
+  'notifications:changed',
 ];
 
 contextBridge.exposeInMainWorld('pimpin', {

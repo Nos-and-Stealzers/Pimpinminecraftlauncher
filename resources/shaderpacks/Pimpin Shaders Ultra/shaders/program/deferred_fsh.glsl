@@ -1,5 +1,4 @@
 varying vec2 uv;
-uniform sampler2D colortex4;
 
 vec3 decodeNormal(vec2 e) {
     vec2 fe = e * 4.0 - 2.0;

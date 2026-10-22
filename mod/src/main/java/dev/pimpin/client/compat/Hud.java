@@ -12,10 +12,15 @@ public final class Hud {
     private Hud() {}
 
     public static void register(Consumer<Draw> renderer) {
+        register("hud", renderer);
+    }
+
+    /** Each layer needs its own id on 1.21.6+; later registrations draw on top. */
+    public static void register(String id, Consumer<Draw> renderer) {
         //#if MC >= 1.21.11
-        HudElementRegistry.addLast(net.minecraft.resources.Identifier.fromNamespaceAndPath("pimpin", "hud"), (graphics, tickCounter) -> renderer.accept(new Draw(graphics)));
+        HudElementRegistry.addLast(net.minecraft.resources.Identifier.fromNamespaceAndPath("pimpin", id), (graphics, tickCounter) -> renderer.accept(new Draw(graphics)));
         //#elseif MC >= 1.21.6
-        HudElementRegistry.addLast(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pimpin", "hud"), (graphics, tickCounter) -> renderer.accept(new Draw(graphics)));
+        HudElementRegistry.addLast(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pimpin", id), (graphics, tickCounter) -> renderer.accept(new Draw(graphics)));
         //#else
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> renderer.accept(new Draw(graphics)));
         //#endif

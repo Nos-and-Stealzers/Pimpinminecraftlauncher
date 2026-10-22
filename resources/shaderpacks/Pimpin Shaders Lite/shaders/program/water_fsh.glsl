@@ -72,18 +72,32 @@ void main() {
 #endif
     refl = refl * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
-        // how much water lies between this surface and the ground below it
-        float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
-        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
+        vec2 screenUV = gl_FragCoord.xy / vec2(viewWidth, viewHeight);
+        float d1 = texture2D(depthtex1, screenUV).r;
+        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(screenUV, d1)) - length(viewPos), 0.0);
+        vec2 refrUV = screenUV;
+        if (WATER_REFRACTION > 0.0 && isEyeInWater == 0) {
+            vec3 rd = refract(V, n, 0.75);
+            vec2 bent = viewToScreen(viewPos + rd * clamp(thick, 0.25, 2.5)).xy;
+            bent = mix(screenUV, bent, WATER_REFRACTION);
+            // Avoid pulling a foreground bank, hand or shoreline into the water.
+            if (bent.x > 0.0 && bent.x < 1.0 && bent.y > 0.0 && bent.y < 1.0 && texture2D(depthtex1, bent).r > gl_FragCoord.z) refrUV = bent;
+        }
+        float bd = texture2D(depthtex1, refrUV).r;
+        thick = bd >= 1.0 ? 32.0 : max(distance(screenToView(refrUV, bd), viewPos), 0.0);
         if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
-        float a = 1.0 - exp(-thick * 0.30 * WATER_FOG);
-        a = mix(0.16, 0.95, a);
-        vec3 deep = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
-        deep *= 0.85 + 0.3 * luma(texture2D(tex, texcoord).rgb);
-        F = max(F, 0.05);
-        float A = a * (1.0 - F) + F;
-        color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
-        alpha = sat(A + luma(spec));
+        vec3 absorb = waterTransmission(thick, WATER_FOG);
+        vec3 scatter = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        vec3 transmitted = texture2D(colortex4, refrUV).rgb * absorb + scatter * (1.0 - absorb);
+#ifdef SSR
+        vec3 traceR = reflect(V, normalize(mix(normalize(viewNormal), n, 0.75)));
+        vec4 hit = traceWaterReflection(colortex4, viewPos + n * 0.05, traceR, 0.5);
+        refl = mix(refl, hit.rgb, hit.a);
+#endif
+        // Replace the translucent surface with the fully composed result. No double blending
+        // against colortex0; the background above came from the stable opaque snapshot.
+        color = mix(transmitted, refl, F) + spec;
+        alpha = 1.0;
     } else {
         color = mix(color, refl, F * 0.6) + spec * 0.3;
         alpha = mix(alpha, 1.0, F * 0.5);

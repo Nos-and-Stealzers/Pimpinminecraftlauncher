@@ -7,7 +7,7 @@ Looks good, keeps your FPS: a physically based sky (sunsets go orange and red on
 night turns deep blue under a Milky Way), a round sun with glare, soft drifting clouds, sun rays
 past trees and hills, fog that fades distant land into the horizon, soft sun shadows, ambient
 occlusion in corners, light glowing through leaves, water that is clear in the shallows and deep
-blue further out with sky, cloud and sun reflections, swaying plants, bloom around lights and
+blue further out with terrain, sky, cloud and sun reflections, depth absorption and rippling refraction, swaying plants, fast anti-aliasing, bloom around lights and
 ACES filmic colours with room for bright white blocks. The End has a dark starry void, a
 purple nebula and its own lighting; optional northern lights are off by default on Lite. It costs the world
 passes plus two cheap full-screen passes.

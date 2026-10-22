@@ -43,6 +43,7 @@ bool('Quality of life', 'backgroundFps', 'Limit background FPS', true, 'Reduces 
 number('Quality of life', 'backgroundFpsLimit', 'Background FPS limit', 15, 5, 60);
 bool('Quality of life', 'menuButtons', 'Pimpin menu buttons', true);
 bool('Quality of life', 'brandedLoading', 'Pimpin loading screen', true);
+bool('Quality of life', 'launcherNotices', 'Launcher notices', true, 'Shows each new launcher notice once in a silent in-game panel.');
 const schema = Object.freeze(fields.map(Object.freeze));
 const byKey = new Map(schema.map(f => [f.key, f]));
 const hash = bytes => bytes === null ? 'absent' : createHash('sha256').update(bytes).digest('hex');

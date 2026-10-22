@@ -11,6 +11,7 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define COLORED_SHADOWS
 #define SHADOW_SOFTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define SHADOW_DISTORT 0.85
+#define FXAA
 #define SSAO
 #define SSAO_STEPS 4 // [3 4 6 8]
 #define SSAO_STRENGTH 0.8 // [0.4 0.6 0.8 1.0]
@@ -28,6 +29,10 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define WAVING_PLANTS
 #define WAVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define WATER_WAVES
+#define WATER_DETAIL
+#define SSR
+#define SSR_STEPS 12 // [8 12 16 24]
+#define WATER_REFRACTION 1.0 // [0.0 0.5 1.0 1.5]
 #define WATER_WAVE_HEIGHT 0.4 // [0.2 0.3 0.4 0.6 0.8 1.0]
 #define WATER_SPEED 1.0 // [0.5 1.0 1.5 2.0]
 #define WATER_FOG 1.0 // [0.5 1.0 1.5 2.0]
@@ -55,6 +60,8 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #endif
 #ifdef COLORED_SHADOWS
 #endif
+#ifdef FXAA
+#endif
 #ifdef SSAO
 #endif
 #ifdef CLOUDS_2D
@@ -68,6 +75,10 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #ifdef WAVING_PLANTS
 #endif
 #ifdef WATER_WAVES
+#endif
+#ifdef WATER_DETAIL
+#endif
+#ifdef SSR
 #endif
 #ifdef WATER_CLOUD_REFLECTIONS
 #endif

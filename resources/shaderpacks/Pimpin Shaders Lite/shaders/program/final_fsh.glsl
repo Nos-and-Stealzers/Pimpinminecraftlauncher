@@ -48,7 +48,11 @@ float depthAO(float depth, float noise) {
 #endif
 
 void main() {
+#ifdef FXAA
+    vec3 col = spatialAA(colortex0, uv, 1.0 / vec2(viewWidth, viewHeight));
+#else
     vec3 col = texture2D(colortex0, uv).rgb;
+#endif
     float depth = texture2D(depthtex0, uv).r;
     vec3 vp = screenToView(uv, depth);
     vec3 dir = normalize(vp);

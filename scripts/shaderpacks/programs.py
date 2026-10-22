@@ -437,18 +437,32 @@ void main() {
 #endif
     refl = refl * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
-        // how much water lies between this surface and the ground below it
-        float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
-        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
+        vec2 screenUV = gl_FragCoord.xy / vec2(viewWidth, viewHeight);
+        float d1 = texture2D(depthtex1, screenUV).r;
+        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(screenUV, d1)) - length(viewPos), 0.0);
+        vec2 refrUV = screenUV;
+        if (WATER_REFRACTION > 0.0 && isEyeInWater == 0) {
+            vec3 rd = refract(V, n, 0.75);
+            vec2 bent = viewToScreen(viewPos + rd * clamp(thick, 0.25, 2.5)).xy;
+            bent = mix(screenUV, bent, WATER_REFRACTION);
+            // Avoid pulling a foreground bank, hand or shoreline into the water.
+            if (bent.x > 0.0 && bent.x < 1.0 && bent.y > 0.0 && bent.y < 1.0 && texture2D(depthtex1, bent).r > gl_FragCoord.z) refrUV = bent;
+        }
+        float bd = texture2D(depthtex1, refrUV).r;
+        thick = bd >= 1.0 ? 32.0 : max(distance(screenToView(refrUV, bd), viewPos), 0.0);
         if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
-        float a = 1.0 - exp(-thick * 0.30 * WATER_FOG);
-        a = mix(0.16, 0.95, a);
-        vec3 deep = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
-        deep *= 0.85 + 0.3 * luma(texture2D(tex, texcoord).rgb);
-        F = max(F, 0.05);
-        float A = a * (1.0 - F) + F;
-        color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
-        alpha = sat(A + luma(spec));
+        vec3 absorb = waterTransmission(thick, WATER_FOG);
+        vec3 scatter = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        vec3 transmitted = texture2D(colortex4, refrUV).rgb * absorb + scatter * (1.0 - absorb);
+#ifdef SSR
+        vec3 traceR = reflect(V, normalize(mix(normalize(viewNormal), n, 0.75)));
+        vec4 hit = traceWaterReflection(colortex4, viewPos + n * 0.05, traceR, 0.5);
+        refl = mix(refl, hit.rgb, hit.a);
+#endif
+        // Replace the translucent surface with the fully composed result. No double blending
+        // against colortex0; the background above came from the stable opaque snapshot.
+        color = mix(transmitted, refl, F) + spec;
+        alpha = 1.0;
     } else {
         color = mix(color, refl, F * 0.6) + spec * 0.3;
         alpha = mix(alpha, 1.0, F * 0.5);
@@ -850,6 +864,8 @@ void main() {
     float depth = texture2D(depthtex0, uv).r;
     if (depth >= 1.0) col = paintSky(normalize(screenToView(uv, 1.0)), uv);
     gl_FragData[0] = vec4(col, 1.0);
+    // Snapshot opaque terrain + painted sky. Water reads this attachment without feedback.
+    gl_FragData[1] = vec4(col, 1.0);
 }
 """
 
@@ -903,7 +919,11 @@ float depthAO(float depth, float noise) {
 #endif
 
 void main() {
+#ifdef FXAA
+    vec3 col = spatialAA(colortex0, uv, 1.0 / vec2(viewWidth, viewHeight));
+#else
     vec3 col = texture2D(colortex0, uv).rgb;
+#endif
     float depth = texture2D(depthtex0, uv).r;
     vec3 vp = screenToView(uv, depth);
     vec3 dir = normalize(vp);
@@ -935,7 +955,6 @@ void main() {
 
 # ---------------------------------------------------------------- Ultra only
 DEFERRED_ULTRA = r"""varying vec2 uv;
-uniform sampler2D colortex4;
 
 vec3 decodeNormal(vec2 e) {
     vec2 fe = e * 4.0 - 2.0;
@@ -1055,37 +1074,6 @@ vec3 decodeNormal(vec2 e) {
     return vec3(fe * g, 1.0 - f / 2.0);
 }
 
-vec4 traceReflection(vec3 origin, vec3 R, float jitter) {
-    float stepLen = 0.35 + length(origin) * 0.03;
-    vec3 stepv = R * stepLen;
-    vec3 pos = origin + stepv * (0.3 + jitter);
-    for (int i = 0; i < SSR_STEPS; i++) {
-        vec3 sc = viewToScreen(pos);
-        if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) break;
-        float d = texture2D(depthtex1, sc.xy).r;
-        if (d < 1.0 && d > 0.56) {
-            vec3 sp = screenToView(sc.xy, d);
-            float diff = sp.z - pos.z;
-            if (diff > 0.0 && diff < length(stepv) * 2.5 + 0.4) {
-                for (int j = 0; j < 5; j++) {
-                    stepv *= 0.5;
-                    sc = viewToScreen(pos);
-                    sp = screenToView(sc.xy, texture2D(depthtex1, sc.xy).r);
-                    pos += (sp.z - pos.z > 0.0 ? -stepv : stepv);
-                }
-                sc = viewToScreen(pos);
-                vec2 edge = min(sc.xy, 1.0 - sc.xy);
-                float fade = clamp(min(edge.x, edge.y) * 12.0, 0.0, 1.0);
-                if (texture2D(depthtex1, sc.xy).r >= 1.0) return vec4(0.0);
-                return vec4(texture2D(colortex0, sc.xy).rgb, fade);
-            }
-        }
-        pos += stepv;
-        stepv *= 1.28;
-    }
-    return vec4(0.0);
-}
-
 #if defined VOLUMETRIC_LIGHT && defined DIM_OVERWORLD
 vec3 volumetricLight(vec3 dir, float dist, float jitter) {
     float maxD = min(dist, min(shadowDistance, VL_DISTANCE));
@@ -1161,7 +1149,7 @@ void main() {
                     bg *= 1.0 + c * 2.5 * skyL * skyL * sat(luma(sunLightColor()) * 0.5) * exp(-thick * 0.2);
                 }
 #endif
-                vec3 absorb = exp(-vec3(0.42, 0.11, 0.07) * thick * WATER_FOG);
+                vec3 absorb = waterTransmission(thick, WATER_FOG);
                 col = bg * absorb + waterScatter(skyL) * (1.0 - absorb);
             }
             F = 0.02 + 0.98 * pow(1.0 - abs(dot(dir, n)), 5.0);
@@ -1187,7 +1175,7 @@ void main() {
             vec3 R = reflect(dir, n);
             vec3 refl = skyColorAt(R) * smoothstep(0.3, 0.85, skyL) + ambientColor() * 0.03;
 #ifdef SSR
-            vec4 hit = traceReflection(vp, R, jitter);
+            vec4 hit = traceWaterReflection(colortex0, vp + n * 0.05, R, jitter);
             refl = mix(refl, hit.rgb, hit.a);
 #endif
             col = mix(col, refl, F);

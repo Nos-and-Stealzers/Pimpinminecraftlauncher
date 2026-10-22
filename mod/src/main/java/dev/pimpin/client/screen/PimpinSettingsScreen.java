@@ -151,6 +151,7 @@ public final class PimpinSettingsScreen extends BaseScreen {
                     c.toggleSprint = v;
                     ToggleSprint.tick(minecraft);
                 }));
+                r.add(toggle("Launcher notices", () -> c.launcherNotices, v -> c.launcherNotices = v));
                 r.add(toggle("Active effects HUD", () -> c.effectHud, v -> c.effectHud = v));
                 r.add(cycle("Effect rows", () -> String.valueOf(c.effectHudRows), () -> c.effectHudRows = c.effectHudRows >= 12 ? 4 : c.effectHudRows + 4));
                 r.add(cycle("Copy coordinates", () -> "Open", () -> Compat.setScreen(minecraft, new CoordinatesScreen(this))));

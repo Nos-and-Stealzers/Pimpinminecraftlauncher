@@ -36,6 +36,7 @@ public final class PimpinConfig {
     public int effectHudRows = 8;
     // Temporarily use vanilla accessibility toggle sprint during a world session.
     public boolean toggleSprint = false;
+    public boolean launcherNotices = true;
     public Boolean sprintNativeBackup = null;
     public int hudCorner = 0; // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     public float hudScale = 1.0f;

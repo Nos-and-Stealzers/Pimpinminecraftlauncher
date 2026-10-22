@@ -13,4 +13,5 @@
 #include "/lib/tonemap.glsl"
 #include "/lib/fog.glsl"
 #include "/lib/skypaint.glsl"
+#include "/lib/antialiasing.glsl"
 #include "/program/taa_fsh.glsl"

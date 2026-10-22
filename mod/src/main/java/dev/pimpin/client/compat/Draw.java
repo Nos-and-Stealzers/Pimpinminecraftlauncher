@@ -60,6 +60,14 @@ public final class Draw {
         //#endif
     }
 
+    public void text(Font font, FormattedCharSequence s, int x, int y, int argb, boolean shadow) {
+        //#if MC >= 26.1
+        g.text(font, s, x, y, argb, shadow);
+        //#else
+        g.drawString(font, s, x, y, argb, shadow);
+        //#endif
+    }
+
     public void centered(Font font, String s, int x, int y, int argb) {
         //#if MC >= 26.1
         g.centeredText(font, s, x, y, argb);

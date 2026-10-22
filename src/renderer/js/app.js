@@ -5,6 +5,7 @@ import { api, state, notify, subscribe, refreshSettings, refreshAccounts, refres
 import { accountButton, instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from './components.js';
 import { applyAppearance } from './appearance.js';
 import { installShortcuts, commandPalette, updateModal, installUpdate, whatsNew, onboarding, notifyDesktop, importInstance } from './qol.js';
+import { installNotifications } from './notifications.js';
 import * as home from './pages/home.js';
 import * as library from './pages/library.js';
 import * as instances from './pages/instances.js';
@@ -290,6 +291,7 @@ async function boot() {
   clear(document.getElementById('account-slot'), accountButton());
   render();
   renderUpdate(await api.call('update:get'));
+  installNotifications(document.getElementById('notif-slot'), navigate).catch((err) => console.error(err));
   await whatsNew();
   onboarding(navigate);
 }

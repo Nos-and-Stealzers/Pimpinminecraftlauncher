@@ -8,10 +8,10 @@ import { api, state, updateSettings } from '../state.js';
 const THEME_SWATCH = { modern: ['#111214', '#1e2024', '#e9e9eb'], midnight: ['#000', '#111114', '#e9e9eb'], light: ['#e9ebee', '#fff', '#17191d'], system: ['#17181b', '#f5f6f8', '#71747c'] };
 
 const row = (title, desc, control) => el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, title), desc ? el('span', {}, desc) : null), control);
-const section = (title, ...rows) => el('section', { class: `set-section${title === 'Appearance' ? ' appearance-section' : ''}` }, el('h2', {}, title), el('div', { class: 'set-list' }, rows));
+const section = (title, ...rows) => el('section', { class: `set-section${title === 'Appearance' ? ' appearance-section' : ''}`, id: `set-${title.toLowerCase().replace(/[^a-z]+/g, '-')}` }, el('h2', {}, title), el('div', { class: 'set-list' }, rows));
 const gb = (mb) => `${(mb / 1024).toFixed(1)} GB`;
 
-export function render(page, _params, navigate) {
+export function render(page, params, navigate) {
   const s = state.settings;
   const save = (patch, msg) => updateSettings(patch).then(() => msg && toast(msg)).catch(errorToast);
   const pick = (key, options, fallback = options[0][0]) => seg(options.map(([value, label]) => ({ value, label })), state.settings[key] ?? fallback, (v) => save({ [key]: v }));
@@ -57,7 +57,7 @@ export function render(page, _params, navigate) {
   font.querySelectorAll('button').forEach(button => button.setAttribute('aria-label', `${button.textContent} heading font`));
   const reset = el('button', { class: 'btn sm', 'aria-label': 'Reset appearance', onclick: async () => {
     await save({ appearanceReset: true }, 'Appearance reset');
-    page.replaceChildren(); render(page, _params, navigate);
+    page.replaceChildren(); render(page, params, navigate);
     page.querySelector('[aria-label="Reset appearance"]')?.focus();
   } }, 'Reset appearance');
 
@@ -118,9 +118,15 @@ export function render(page, _params, navigate) {
       row('Hide while playing', 'The launcher comes back when the game closes.', switchEl(s.closeOnLaunch, (v) => save({ closeOnLaunch: v }))),
       row('Keep running in the tray', 'Closing the window leaves Pimpin in the system tray.', switchEl(Boolean(s.minimizeToTray), (v) => save({ minimizeToTray: v }))),
       state.info?.platform !== 'linux' ? row(state.info.platform === 'darwin' ? 'Open at login' : 'Start with Windows', 'Opens in the tray when you sign in.', switchEl(Boolean(s.launchOnStartup), (v) => save({ launchOnStartup: v }))) : null,
-      row('Desktop notifications', 'Server online, game crashed, update ready. Only while the launcher is in the background.', switchEl(s.notifications !== false, (v) => save({ notifications: v }))),
       row('First-run setup', null, el('button', { class: 'btn sm', onclick: async () => { await save({ onboarded: false }); onboarding(navigate); } }, 'Run again')),
       row('Data folder', s.root, el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open'))),
+
+    section('Notifications',
+      row('Launcher updates', 'A notice when a new Pimpin version is available or ready to install.', switchEl(s.notifyLauncherUpdates !== false, (v) => save({ notifyLauncherUpdates: v }))),
+      row('Mod updates', 'Checks your instances every few hours and lists mods with newer versions. Nothing is updated without you.', switchEl(s.notifyModUpdates !== false, (v) => save({ notifyModUpdates: v }))),
+      row('Announcements', 'Short notes from the Pimpin team. Critical notices, like a broken build, are always shown.', switchEl(s.notifyAnnouncements !== false, (v) => save({ notifyAnnouncements: v }))),
+      row('Show in game', 'The Pimpin Client shows new update notices once, silently, in the corner of the screen.', switchEl(s.inGameNotices !== false, (v) => save({ inGameNotices: v }))),
+      row('Desktop notifications', 'Server online, game crashed, update ready. Only while the launcher is in the background.', switchEl(s.notifications !== false, (v) => save({ notifications: v })))),
 
     section('Updates',
       row('Install updates automatically', 'Downloads in the background and installs when you close the launcher.', switchEl(s.autoUpdate !== false, (v) => save({ autoUpdate: v }))),
@@ -132,4 +138,5 @@ export function render(page, _params, navigate) {
         `Pimpin Launcher ${state.info?.version || ''} on ${state.info?.platform} ${state.info?.arch}.`,
         el('span', {}, 'Mods, packs and plugins come from Modrinth. Paper servers by PaperMC, Purpur by PurpurMC. Not affiliated with Mojang or Microsoft.'))),
   ));
+  if (params?.section) requestAnimationFrame(() => page.querySelector(`#set-${params.section}`)?.scrollIntoView({ block: 'start' }));
 }

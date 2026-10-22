@@ -8,37 +8,6 @@ vec3 decodeNormal(vec2 e) {
     return vec3(fe * g, 1.0 - f / 2.0);
 }
 
-vec4 traceReflection(vec3 origin, vec3 R, float jitter) {
-    float stepLen = 0.35 + length(origin) * 0.03;
-    vec3 stepv = R * stepLen;
-    vec3 pos = origin + stepv * (0.3 + jitter);
-    for (int i = 0; i < SSR_STEPS; i++) {
-        vec3 sc = viewToScreen(pos);
-        if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) break;
-        float d = texture2D(depthtex1, sc.xy).r;
-        if (d < 1.0 && d > 0.56) {
-            vec3 sp = screenToView(sc.xy, d);
-            float diff = sp.z - pos.z;
-            if (diff > 0.0 && diff < length(stepv) * 2.5 + 0.4) {
-                for (int j = 0; j < 5; j++) {
-                    stepv *= 0.5;
-                    sc = viewToScreen(pos);
-                    sp = screenToView(sc.xy, texture2D(depthtex1, sc.xy).r);
-                    pos += (sp.z - pos.z > 0.0 ? -stepv : stepv);
-                }
-                sc = viewToScreen(pos);
-                vec2 edge = min(sc.xy, 1.0 - sc.xy);
-                float fade = clamp(min(edge.x, edge.y) * 12.0, 0.0, 1.0);
-                if (texture2D(depthtex1, sc.xy).r >= 1.0) return vec4(0.0);
-                return vec4(texture2D(colortex0, sc.xy).rgb, fade);
-            }
-        }
-        pos += stepv;
-        stepv *= 1.28;
-    }
-    return vec4(0.0);
-}
-
 #if defined VOLUMETRIC_LIGHT && defined DIM_OVERWORLD
 vec3 volumetricLight(vec3 dir, float dist, float jitter) {
     float maxD = min(dist, min(shadowDistance, VL_DISTANCE));
@@ -114,7 +83,7 @@ void main() {
                     bg *= 1.0 + c * 2.5 * skyL * skyL * sat(luma(sunLightColor()) * 0.5) * exp(-thick * 0.2);
                 }
 #endif
-                vec3 absorb = exp(-vec3(0.42, 0.11, 0.07) * thick * WATER_FOG);
+                vec3 absorb = waterTransmission(thick, WATER_FOG);
                 col = bg * absorb + waterScatter(skyL) * (1.0 - absorb);
             }
             F = 0.02 + 0.98 * pow(1.0 - abs(dot(dir, n)), 5.0);
@@ -140,7 +109,7 @@ void main() {
             vec3 R = reflect(dir, n);
             vec3 refl = skyColorAt(R) * smoothstep(0.3, 0.85, skyL) + ambientColor() * 0.03;
 #ifdef SSR
-            vec4 hit = traceReflection(vp, R, jitter);
+            vec4 hit = traceWaterReflection(colortex0, vp + n * 0.05, R, jitter);
             refl = mix(refl, hit.rgb, hit.a);
 #endif
             col = mix(col, refl, F);
