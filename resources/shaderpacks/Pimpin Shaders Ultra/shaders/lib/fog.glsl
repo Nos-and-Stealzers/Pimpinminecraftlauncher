@@ -9,7 +9,7 @@ vec3 applyFog(vec3 col, vec3 dir, float dist) {
 #if defined DIM_NETHER
     float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
-    float f = 1.0 - exp(-dist * 0.008 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.0065 * FOG_DENSITY);
 #else
     float dy = dot(dir, normalize(upPosition));
     float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
@@ -55,7 +55,7 @@ float exposureValue() {
 #ifdef DIM_OVERWORLD
     float eye = eyeSkyLight();
     e *= mix(1.7, 1.0, eye);
-    e *= mix(1.0, mix(1.25, 1.0, dayFactor()), eye);
+    e *= mix(1.0, mix(1.25, 0.76, dayFactor()), eye);
 #else
     e *= 1.35;
 #endif

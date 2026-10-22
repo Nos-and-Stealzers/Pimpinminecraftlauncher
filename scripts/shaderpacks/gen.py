@@ -48,6 +48,10 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define STAR_BRIGHTNESS 1.0 // [0.0 0.5 1.0 2.0]
 #define CLOUD_BRIGHTNESS 1.0 // [0.6 0.8 1.0 1.2]
 #define END_SKY 1.0 // [0.5 1.0 1.5 2.0]
+#define AURORA 0 // [0 1 2]
+#define AURORA_STEPS 8 // [6 8 12 16]
+#define AURORA_BRIGHTNESS 1.0 // [0.5 1.0 1.5 2.0]
+#define WATER_CLOUD_REFLECTIONS
 #define BLOCKLIGHT_STRENGTH 1.0 // [0.6 0.8 1.0 1.2 1.5]
 #define EMISSIVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define EXPOSURE 1.0 // [0.6 0.8 1.0 1.2 1.4 1.6]
@@ -113,6 +117,9 @@ const float drynessHalflife = 300.0;
 #define STAR_BRIGHTNESS 1.4 // [0.0 0.5 1.0 1.4 2.0]
 #define CLOUD_BRIGHTNESS 1.0 // [0.6 0.8 1.0 1.2]
 #define END_SKY 1.0 // [0.5 1.0 1.5 2.0]
+#define AURORA 1 // [0 1 2]
+#define AURORA_STEPS 14 // [6 8 12 14 20]
+#define AURORA_BRIGHTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define BLOCKLIGHT_STRENGTH 1.0 // [0.6 0.8 1.0 1.2 1.5]
 #define EMISSIVE_STRENGTH 1.3 // [0.0 0.5 1.0 1.3 1.6 2.0]
 #define EXPOSURE 1.0 // [0.6 0.8 1.0 1.2 1.4 1.6]
@@ -165,21 +172,23 @@ shadowTranslucent=true
 shadowEntities=true
 shadowBlockEntities=true
 frustum.culling=true
+# 1 in cold (snowy) biomes, fades over a few seconds; drives the aurora's "cold biomes" mode
+uniform.float.auroraCold=smooth(clamp((0.35 - temperature) * 5.0, 0.0, 1.0), 4, 4)
 """
 
 PROPS_LITE = """# Pimpin Shaders Lite
 """ + PROPS_COMMON + """
-profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !COLORED_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5 !GODRAYS !BLOOM CLOUDS_2D
-profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=10 BLOOM CLOUDS_2D
-profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=14 BLOOM CLOUDS_2D
+profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !COLORED_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5 !GODRAYS !BLOOM CLOUDS_2D !WATER_CLOUD_REFLECTIONS
+profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=10 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS
+profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=14 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS
 
 screen=<profile> <empty> [SHADOWS_PAGE] [WORLD_PAGE] [SKY_PAGE] [CAMERA_PAGE]
 screen.columns=2
 screen.SHADOWS_PAGE=SHADOWS SOFT_SHADOWS COLORED_SHADOWS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH
-screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH GLOWING_ORES
-screen.SKY_PAGE=CLOUDS_2D CLOUD_AMOUNT CLOUD_PLANE_HEIGHT CLOUD_BRIGHTNESS GODRAYS GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY
+screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG WATER_CLOUD_REFLECTIONS BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH GLOWING_ORES
+screen.SKY_PAGE=CLOUDS_2D CLOUD_AMOUNT CLOUD_PLANE_HEIGHT CLOUD_BRIGHTNESS GODRAYS GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY AURORA AURORA_STEPS AURORA_BRIGHTNESS
 screen.CAMERA_PAGE=BLOOM BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
-sliders=shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH CLOUD_AMOUNT CLOUD_PLANE_HEIGHT GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE BLOOM_STRENGTH WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+sliders=AURORA AURORA_STEPS AURORA_BRIGHTNESS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH CLOUD_AMOUNT CLOUD_PLANE_HEIGHT GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE BLOOM_STRENGTH WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
 """
 
 PROPS_ULTRA = """# Pimpin Shaders Ultra
@@ -195,10 +204,10 @@ screen.SHADOWS_PAGE=SHADOWS PCSS shadowMapResolution shadowDistance SHADOW_SAMPL
 screen.LIGHT_PAGE=SSAO SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VOLUMETRIC_LIGHT VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH
 screen.CLOUDS_PAGE=VOLUMETRIC_CLOUDS CLOUD_SHADOWS CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS CIRRUS
 screen.WATER_PAGE=WATER_WAVES WATER_DETAIL WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG CAUSTICS SSR SSR_STEPS WET_REFLECTIONS
-screen.SKY_PAGE=SUN_SIZE FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY
+screen.SKY_PAGE=SUN_SIZE FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY AURORA AURORA_STEPS AURORA_BRIGHTNESS
 screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH GLOWING_ORES
 screen.CAMERA_PAGE=TAA TAA_BLEND SHARPEN BLOOM BLOOM_STRENGTH AUTO_EXPOSURE EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
-sliders=shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS sunPathRotation ambientOcclusionLevel SSS_STRENGTH SUN_SIZE SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG SSR_STEPS FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY WAVE_STRENGTH TAA_BLEND BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+sliders=AURORA AURORA_STEPS AURORA_BRIGHTNESS shadowMapResolution shadowDistance SHADOW_SAMPLES SHADOW_SOFTNESS sunPathRotation ambientOcclusionLevel SSS_STRENGTH SUN_SIZE SSAO_SAMPLES SSAO_RADIUS SSAO_STRENGTH VL_STEPS VL_STRENGTH VL_DISTANCE BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH AMBIENT_STRENGTH CLOUD_STEPS CLOUD_AMOUNT CLOUD_HEIGHT CLOUD_THICKNESS CLOUD_BRIGHTNESS WATER_WAVE_HEIGHT WATER_SPEED WATER_REFRACTION WATER_FOG SSR_STEPS FOG_DENSITY MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY WAVE_STRENGTH TAA_BLEND BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
 """
 
 LANG = {
@@ -233,6 +242,11 @@ LANG = {
     "option.GLOWING_ORES": "Glowing Ores", "option.SUN_SIZE": "Sun Size", "option.CIRRUS": "High Cirrus Clouds",
     "option.CLOUDS_2D.comment": "Soft drifting clouds drawn into the sky. Replaces the blocky vanilla clouds.",
     "option.GODRAYS.comment": "Beams of light around the sun when it peeks past trees and hills.",
+    "option.AURORA": "Northern Lights", "option.AURORA_STEPS": "Northern Lights Quality", "option.AURORA_BRIGHTNESS": "Northern Lights Brightness",
+    "value.AURORA.0": "Off", "value.AURORA.1": "Cold Biomes", "value.AURORA.2": "Always",
+    "option.AURORA.comment": "Green and purple light curtains in the night sky. Cold Biomes shows them only in snowy places.",
+    "option.WATER_CLOUD_REFLECTIONS": "Clouds In Water",
+    "option.WATER_CLOUD_REFLECTIONS.comment": "Water mirrors the cloud layer too. Turn off for a few FPS on big oceans.",
     "option.GLOWING_ORES.comment": "The coloured bits of ore blocks glow a little, so you can spot them in caves.",
     "option.shadowMapResolution.comment": "Higher is sharper but slower.",
     "option.shadowDistance.comment": "How far shadows reach, in blocks. Lower is faster.",
@@ -255,7 +269,9 @@ Looks good, keeps your FPS: a physically based sky (sunsets go orange and red on
 night turns deep blue under a Milky Way), a round sun with glare, soft drifting clouds, sun rays
 past trees and hills, fog that fades distant land into the horizon, soft sun shadows, ambient
 occlusion in corners, light glowing through leaves, water that is clear in the shallows and deep
-blue further out, swaying plants, bloom around lights and ACES filmic colours. It costs the world
+blue further out with sky, cloud and sun reflections, swaying plants, bloom around lights and
+ACES filmic colours with room for bright white blocks. The End has a dark starry void, a
+purple nebula and its own lighting; optional northern lights are off by default on Lite. It costs the world
 passes plus two cheap full-screen passes.
 
 Profiles (Shader Settings): Fast, Balanced (default), Crisp.
@@ -272,7 +288,8 @@ harden near contact, coloured light through stained glass, god rays, ambient occ
 refraction, depth colour, caustics and screen-space reflections, wet reflective ground in rain,
 leaves that glow when backlit, glowing ores, temporal anti-aliasing, bloom, auto exposure and ACES
 filmic colours, a deep blue night with twinkling stars.
-The Nether and the End have their own lighting and fog.
+The Nether and the End have their own lighting and fog. The End has a dark starry void and
+purple nebula; northern lights appear at night in cold biomes (can be turned off or shown everywhere).
 
 Profiles (Shader Settings): Low, Medium, High (default), Ultra.
 """
@@ -340,7 +357,7 @@ def build(ultra):
     }
     libs["clouds"] = CLOUDS
     libs["skypaint"] = SKY_PAINT
-    extra_libs = ["clouds"] if ultra else []
+    extra_libs = ["clouds"]
     libs_geo = ["settings", "uniforms", "common", "atmosphere", "shadow", "waving", "water"] + extra_libs + ["lighting"]
     libs_vsh = libs_geo[:-1]
     libs_post = ["settings", "uniforms", "common", "atmosphere", "shadow", "water", "clouds", "tonemap", "fog", "skypaint"]

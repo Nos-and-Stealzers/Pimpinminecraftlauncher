@@ -43,6 +43,9 @@ void main() {
     }
 #endif
     vec3 glow = emission(alb, albedo.rgb, blockId);
+#ifdef DIM_OVERWORLD
+    glow *= 1.0 - 0.55 * dayFactor() * lm.y * lm.y;
+#endif
     color += glow;
 
     gl_FragData[0] = vec4(color, albedo.a);

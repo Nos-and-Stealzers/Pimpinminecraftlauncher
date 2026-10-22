@@ -149,7 +149,7 @@ void main() {
     }
 
 #if defined VOLUMETRIC_LIGHT && defined DIM_OVERWORLD
-    col += volumetricLight(dir, dist, jitter) * (depth0 >= 1.0 ? 0.6 : 1.0);
+    col += volumetricLight(dir, dist, jitter) * (depth0 >= 1.0 ? 0.6 - 0.3 * twilightFactor() : 1.0);
 #endif
     vec4 weather = texture2D(colortex3, uv);
     col = col * (1.0 - weather.a) + weather.rgb;

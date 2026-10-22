@@ -28,5 +28,7 @@ for (const v of VERSIONS) {
     }
   }
 }
+// Keep the spatial/temporal liquid regression checks in the normal art gate.
+require('./check-liquids');
 console.log(bad ? `${bad} problem(s)` : `pack art OK (${VERSIONS.length} versions x ${Object.keys(packs.PACKS).length} packs)`);
 process.exit(bad ? 1 : 0);

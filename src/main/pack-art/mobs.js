@@ -52,6 +52,13 @@ function zombie(st) {
   // torso: torn shirt over the belt line
   m.box(16, 16, 8, 12, 4, (F) => {
     coat(F, shirt, { seed: 7, fur: 0.4 });
+    if (F.name === 'front') {
+      // collar and side folds in the ragged shirt
+      F.u(2, 0, 4, 1, shirt.at(shirt.mid - 1));
+      F.u(3, 0, 2, 2, skin.at(S - 1));
+      F.u(0, 3, 1, 5, shirt.at(shirt.mid - 1));
+      if (P) F.fstamp(13, 8, ['a.', '.a', 'a.', 'a.'], { a: shirt.at(shirt.mid - 1) });
+    }
     if (F.side) {
       F.u(0, 10, F.w, 2, pants.at(pants.mid));
       F.u(0, 11, F.w, 1, pants.at(pants.mid - 1));
@@ -109,6 +116,10 @@ function skeleton(st) {
   m.box(0, 0, 8, 8, 8, (F) => {
     coat(F, bone, { seed: 21, fur: 0.15 });
     if (F.name === 'top' && P) F.fstamp(5, 3, ['a..', '.a.', '.aa', '...a'], { a: bone.at(B - 1) });
+    if (F.name === 'right' || F.name === 'left') {
+      F.u(1, 5, F.w - 2, 1, bone.at(B - 1)); // cheekbone, inset temple
+      if (P) F.fstamp(4, 2, ['a...', '.aa.', '..a.', '..aa'], { a: bone.at(B - 1) });
+    }
     if (F.name !== 'front') return;
     // deep sockets with a lit rim below
     for (const ex of [1, 5]) {
@@ -138,6 +149,8 @@ function skeleton(st) {
       F.u(3, 0, 2, 12, bone.at(B - 1));
       F.u(3, 0, 1, 12, bone.at(B));
       F.u(3, 10, 2, 1, dark.at(1));
+      // narrow shaded edge on the vertebrae, no change to rib gaps
+      if (P) for (let y = 1; y < F.H - 1; y += 4) F.f(6, y, bone.at(B - 2));
     }
   });
 
@@ -156,32 +169,25 @@ function skeleton(st) {
 
 // ----------------------------------------------------------------- creeper --
 function camo(F, g, seed, levels = [1, 2, 2, 3, 3, 4]) {
-  const r = rng(seed + F.W * 3 + F.H * 5 + F.name.length);
-  const grid = [];
-  for (let y = 0; y < F.h; y++) {
-    grid.push([]);
-    for (let x = 0; x < F.w; x++) {
-      let v = r.pick(levels);
-      if (x && r.chance(0.45)) v = grid[y][x - 1];
-      else if (y && r.chance(0.3)) v = grid[y - 1][x];
-      grid[y].push(v);
-      F.u(x, y, 1, 1, g.at(v + (F.name === 'top' ? 1 : F.name === 'bottom' ? -1 : 0)));
-    }
-  }
-  if (F.P) {
-    // bevel the 2×2 cells: lighter cells catch light on their top-left pixel
-    for (let y = 0; y < F.h; y++) for (let x = 0; x < F.w; x++) {
-      const v = grid[y][x];
-      if (v >= 3) F.f(x * 2, y * 2, g.at(v + 1));
-      if (v <= 1) F.f(x * 2 + 1, y * 2 + 1, g.at(v - 1));
-    }
+  // soft mossy mottling in irregular clusters, not bevelled 2x2 cells
+  // (the old every-cell glint printed a checkerboard all over the creeper)
+  const { noise } = require('./lib');
+  const nz = noise(64, 40, seed);
+  const fine = noise(64, 64, seed + 7);
+  for (let y = 0; y < F.H; y++) for (let x = 0; x < F.W; x++) {
+    const u = F.x + x / F.k;
+    const v = F.y + y / F.k;
+    const a = nz(u, v) * 0.8 + fine(u, v) * 0.2;
+    const li = Math.min(levels.length - 1, Math.max(0, Math.floor((a - 0.18) * (levels.length / 0.65))));
+    const l = levels[li] + (F.name === 'top' ? 1 : F.name === 'bottom' ? -1 : 0);
+    F.f(x, y, g.at(l));
   }
 }
 
 function creeper(st) {
   const m = new Model(64, 32, K(st));
   const { P } = m;
-  const g = m.pal.ramp('#56ad4c', 6, { contrast: 0.6, hue: 22 });
+  const g = m.pal.ramp('#56ad4c', 6, { contrast: 0.5, hue: 22 });
   const face = m.pal.add([hex('#0f130f'), hex('#26302a'), hex('#4f6b4c')]);
   m.box(0, 0, 8, 8, 8, (F) => {
     camo(F, g, 31);
@@ -213,7 +219,7 @@ function creeper(st) {
 function spider(st, eyesOnly = false) {
   const m = new Model(64, 32, K(st));
   const { P } = m;
-  const hair = m.pal.ramp('#43352f', 5, { contrast: 0.55, hue: 16 });
+  const hair = m.pal.ramp('#30282d', 5, { contrast: 0.42, hue: 16 });
   const eye = m.pal.ramp('#d8262c', 3, { contrast: 0.5, hue: 20 });
   const fang = m.pal.ramp('#c9bba0', 2, { contrast: 0.3 });
   const H = hair.mid;
@@ -331,6 +337,10 @@ function cow(st, variant = 'temperate', tall = false) {
       F.u(ex, 3, 1, 1, dark.at(0));
       if (P) F.f(ex * 2 + (ex === 1 ? 0 : 1), 6, dark.at(1));
     }
+    if (P) {
+      F.fstamp(1, 4, ['aaa'], { a: hide.at(hide.mid - 1) });
+      F.fstamp(11, 4, ['aaa'], { a: hide.at(hide.mid - 1) });
+    }
     // soft nose on the lower face
     F.u(2, 5, 4, 3, muz.at(1));
     F.u(2, 5, 4, 1, muz.at(2));
@@ -429,6 +439,10 @@ function pig(st, variant = 'temperate', tall = false) {
   m.box(0, 0, 8, 8, 8, (F) => {
     coat(F, skin, { seed: 80, fur: 0.4 });
     if (mud && F.name === 'top') spots(F, mud, { seed: 83, thr: 0.6, scale: 10 });
+    if (F.name === 'left' || F.name === 'right') {
+      F.u(1, 1, 2, 2, snout.at(1)); // pink ear interior against the hide
+      F.u(1, 1, 2, 1, skin.at(S + 1));
+    }
     if (F.name !== 'front') return;
     F.u(1, 3, 1, 1, dark.at(1));
     F.u(2, 3, 1, 1, dark.at(0));
@@ -455,6 +469,11 @@ function pig(st, variant = 'temperate', tall = false) {
   });
   m.box(28, 8, 10, 16, 8, (F) => {
     coat(F, skin, { seed: 82, fur: 0.7 });
+    if (F.side) {
+      // soft belly line, no dots on an otherwise smooth hide
+      F.u(0, F.h - 2, F.w, 1, skin.at(S - 1));
+      if (P) F.u(1, 1, Math.max(1, F.w - 2), 1, skin.at(S + 1));
+    }
     if (mud) spots(F, mud, { seed: 83, thr: 0.6, scale: 10 });
   });
   m.box(0, 16, 4, 6, 4, (F) => {
@@ -562,11 +581,21 @@ function chicken(st, variant = 'temperate') {
     if (F.side) F.u(0, 1, F.w, 1, wat.at(0));
   });
   m.box(0, 9, 6, 8, 6, (F) => {
-    coat(F, fe, { seed: 111, fur: 0.8 });
+    coat(F, fe, { seed: 111, fur: 0.4 });
+    if (F.side && P) {
+      // two rows of overlapping breast feathers, light crests, shaded tips
+      for (let yy = 3; yy < F.H - 2; yy += 4) for (let xx = (yy % 8 ? 0 : 2); xx < F.W; xx += 4) {
+        F.fstamp(xx, yy, ['.hh.', '....', 's..s'], { h: fe.at(fe.mid + 1), s: fe.at(fe.mid - 1) });
+      }
+    }
     if (F.name === 'back' || F.name === 'bottom') F.u(0, F.name === 'back' ? 6 : 0, F.w, 2, fe.at(fe.mid - 1));
   });
   m.box(24, 13, 1, 4, 6, (F) => {
-    coat(F, fe, { seed: 112, fur: 0.4 });
+    coat(F, fe, { seed: 112, fur: 0.2 });
+    if (F.side && F.w > 1) {
+      // long flight feathers on the wing
+      for (let x = 1; x < F.w; x += 2) F.u(x, 1, 1, F.h - 1, fe.at(fe.mid - 1));
+    }
     if (F.side && F.w > 1) F.u(0, 3, F.w, 1, fe.at(fe.mid - 1));
   });
   // legs: a thin shank on every side and splayed toes underneath

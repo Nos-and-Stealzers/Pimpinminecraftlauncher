@@ -11,6 +11,7 @@
 #define ID_SHINY 10030.0
 #define ID_ORE 10040.0
 #define PI 3.14159265
+#define END_LIGHT_DIR vec3(0.3, 0.88, 0.36)
 
 bool isId(float id, float want) { return abs(id - want) < 0.5; }
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }

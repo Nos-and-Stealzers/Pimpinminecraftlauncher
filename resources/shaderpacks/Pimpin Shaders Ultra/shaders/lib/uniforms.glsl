@@ -41,3 +41,4 @@ uniform int moonPhase;
 uniform int heldBlockLightValue;
 uniform int heldBlockLightValue2;
 uniform ivec2 eyeBrightnessSmooth;
+uniform float auroraCold; // custom uniform (shaders.properties): 1 in cold biomes, 0 elsewhere or on loaders without it

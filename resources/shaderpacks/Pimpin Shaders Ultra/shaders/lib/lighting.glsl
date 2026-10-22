@@ -57,8 +57,8 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
     vec3 amb = ambientColor() * (0.75 + 0.25 * NdotU);
 #endif
 #ifdef DIM_END
-    vec3 Le = normalize(mat3(gbufferModelView) * vec3(0.3, 0.88, 0.36));
-    direct = vec3(0.62, 0.36, 1.0) * 0.5 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
+    vec3 Le = normalize(mat3(gbufferModelView) * END_LIGHT_DIR);
+    direct = vec3(0.78, 0.58, 1.0) * 0.72 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
 #endif
     float bl = lm.x;
     float held = float(max(heldBlockLightValue, heldBlockLightValue2));

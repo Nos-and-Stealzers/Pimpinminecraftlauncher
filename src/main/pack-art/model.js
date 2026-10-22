@@ -106,30 +106,43 @@ class Model {
 }
 
 /**
- * Standard coat: flat base, light top edge and a soft shadow at the bottom
- * of side faces, top faces one step lighter, bottom faces one darker; in the
- * 2× style a few clustered fur strokes.
+ * Standard coat: a calm base with form shading (lit top band, shaded bottom
+ * row on side faces; top faces one step lighter, bottoms one darker) and
+ * soft one-shade mottling in clusters, so a hide reads as one material.
+ * In the 2× style `fur` >= 0.8 adds short hair strokes (lit tip, shaded
+ * root) in loose tufts instead of lone dots.
  */
 function coat(F, m, { seed = 1, fur = 0.5, lift = 0, shadow = true } = {}) {
   const r = rng(seed + F.name.length * 31 + F.W * 7 + F.H);
   const b = m.mid + lift;
   const base = F.name === 'top' ? b + 1 : F.name === 'bottom' ? b - 1 : b;
   F.fill(m.at(base));
+  // mottling: a coarse noise in model units, quantised to one shade down,
+  // plus a lighter shade on the upper part of side faces
+  const nz = noise(64, 18, seed * 7 + 3);
+  for (let fy = 0; fy < F.H; fy++) for (let fx = 0; fx < F.W; fx++) {
+    const v = nz(F.x + fx / F.k, F.y + fy / F.k);
+    if (v < (F.P ? 0.27 : 0.22)) F.f(fx, fy, m.at(base - 1));
+    else if (F.P && v > 0.8 && (!F.side || fy < F.H * 0.6)) F.f(fx, fy, m.at(base + 1));
+  }
   if (F.side && shadow) {
     for (let x = 0; x < F.W; x++) {
       F.f(x, F.H - 1, m.at(base - 1));
       if (F.P) F.f(x, 0, m.at(base + 1));
     }
   }
-  if (F.P && fur > 0) {
-    // short fur strokes on a jittered grid: a lit tip over a shaded root
-    const step = Math.max(3, Math.round(5 / fur));
-    for (let gy = 1; gy < F.H - 2; gy += step) for (let gx = 0; gx < F.W; gx += step) {
-      if (r.chance(0.3)) continue;
-      const x = gx + r.i(step - 1);
-      const y = gy + r.i(Math.max(1, step - 2));
-      F.f(x, y, m.at(base + 1));
-      F.f(x, y + 1, m.at(base - 1));
+  if (F.P && fur >= 0.8) {
+    // hair tufts: 2-3 short strokes side by side, tip lit, root shaded
+    const step = Math.max(4, Math.round(6 / fur));
+    for (let gy = 1; gy < F.H - 3; gy += step) for (let gx = 0; gx < F.W; gx += step) {
+      if (r.chance(0.35)) continue;
+      const x = gx + r.i(step - 2);
+      const y = gy + r.i(Math.max(1, step - 3));
+      for (let i = 0; i < 2 + r.i(2); i++) {
+        const len = 2 + ((i + x) % 2);
+        F.f(x + i, y + (i % 2), m.at(base + 1));
+        for (let j = 1; j < len; j++) F.f(x + i, y + (i % 2) + j, m.at(base - (j === len - 1 ? 1 : 0)));
+      }
     }
   }
 }

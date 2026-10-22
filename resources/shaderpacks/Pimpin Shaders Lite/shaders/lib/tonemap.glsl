@@ -15,7 +15,8 @@ vec3 tonemap(vec3 c) {
     vec3 t = acesFit(c);
     vec3 hp = c * (luma(t) / max(luma(c), 1e-5));
     hp /= max(1.0, max(hp.r, max(hp.g, hp.b)));
-    return mix(t, hp, 0.35);
+    // leave display headroom for the colour grade; even a bright white surface keeps texture
+    return mix(t, hp, 0.35) * 0.97;
 }
 
 vec3 grade(vec3 c) {

@@ -125,8 +125,11 @@ vec3 skyColorAt(vec3 dir) {
 #if defined DIM_NETHER
     return toLinear(fogColor) * 0.9;
 #elif defined DIM_END
+    // dark void overhead, a purple haze band around the horizon, dimmer again below
     float h = dot(dir, normalize(upPosition));
-    return mix(vec3(0.095, 0.050, 0.150), vec3(0.016, 0.008, 0.034), sat(h * 0.8 + 0.4)) * END_SKY;
+    vec3 c = mix(vec3(0.120, 0.048, 0.185), vec3(0.0045, 0.0025, 0.012), 1.0 - exp(-max(h, 0.0) * 5.0));
+    c = mix(c, vec3(0.030, 0.012, 0.055), 1.0 - exp(-max(-h, 0.0) * 5.0));
+    return c * END_SKY;
 #else
     vec4 s = texture2D(colortex5, lutCoord(dir));
     return s.a > 0.5 ? s.rgb : analyticSky(dir);
@@ -154,7 +157,7 @@ vec3 ambientColor() {
 #if defined DIM_NETHER
     return toLinear(fogColor) * 0.55 + vec3(0.10, 0.06, 0.04);
 #elif defined DIM_END
-    return vec3(0.052, 0.034, 0.105) * END_SKY;
+    return vec3(0.034, 0.026, 0.078) * END_SKY;
 #else
     vec4 t = lutTexel(1.0);
     if (t.a < 0.5) {
@@ -188,12 +191,21 @@ vec3 sunMoonGlow(vec3 dir) {
     float cs = dot(dir, normalize(sunPosition));
     if (cs > 0.0) {
         vec3 sunC = sunDiskColor();
+        float tw = twilightFactor();
         float ang = acos(min(cs, 1.0));
-        float x = ang / (0.034 * SUN_SIZE);
+        // the low sun looks bigger (and is easier to read through the haze)
+        float x = ang / (0.034 * SUN_SIZE * (1.0 + 0.45 * tw));
         float limb = sqrt(max(1.0 - x * x, 0.0));
         float disk = (1.0 - smoothstep(0.85, 1.0, x)) * (0.45 + 0.55 * limb);
-        float glare = exp(-ang * 32.0) * 0.9 + exp(-ang * 6.0) * (0.06 + 0.16 * twilightFactor());
-        col += sunC * (disk * 40.0 * horizon + glare * mix(horizon, 1.0, 0.5));
+        float glare = exp(-ang * 32.0) * (0.9 + 0.8 * tw) + exp(-ang * 6.0) * (0.06 + 0.32 * tw) + exp(-ang * 2.2) * 0.10 * tw;
+        // warm glow spreading sideways along the horizon around a low sun
+        vec3 up = normalize(upPosition);
+        float dh = dot(dir, up);
+        vec3 sh = normalize(sunPosition) - up * dot(normalize(sunPosition), up);
+        vec3 ph = dir - up * dh;
+        float az = dot(ph, sh) * inversesqrt(max(dot(ph, ph) * dot(sh, sh), 1e-8));
+        float band = exp(-abs(dh) * 9.0) * pow(max(az, 0.0), 3.0) * tw * 0.22;
+        col += sunC * (disk * 40.0 * horizon + glare * mix(horizon, 1.0, 0.5) + band * horizon);
     }
     float cm = dot(dir, normalize(moonPosition));
     if (cm > 0.0) {
@@ -230,21 +242,6 @@ vec3 nightSkyDetail(vec3 dir) {
 }
 #endif
 
-#ifdef DIM_END
-// stars and a faint nebula for the End sky
-vec3 endSkyDetail(vec3 dir) {
-    vec3 d = mat3(gbufferModelViewInverse) * dir;
-    vec2 sc = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * 60.0;
-    vec2 cell = floor(sc);
-    float h = hash12(cell);
-    vec2 f = fract(sc) - 0.5 - (vec2(hash12(cell + 7.1), hash12(cell + 3.7)) - 0.5) * 0.6;
-    float star = step(0.985, h) * smoothstep(0.2, 0.0, length(f)) * (0.5 + 2.0 * fract(h * 91.7));
-    vec2 q = sc * 0.025;
-    float neb = valueNoise(q) * valueNoise(q * 2.3 + 5.0);
-    vec3 nebC = mix(vec3(0.35, 0.12, 0.55), vec3(0.10, 0.30, 0.45), valueNoise(q * 0.7 + 9.0));
-    return (vec3(0.9, 0.85, 1.0) * star * 0.6 + nebC * neb * neb * 0.6) * END_SKY;
-}
-#endif
 
 vec3 blockLightColor(float bl) {
     // treat the light level as distance from the source: bright warm pools that fall off quickly,

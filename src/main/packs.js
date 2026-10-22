@@ -99,6 +99,12 @@ for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mang
   BLOCKS[`${w}_planks`] = W(l && `planks_${l}`, since);
   BLOCKS[`${w}_leaves`] = W(l && `leaves_${l}`, since);
 }
+// Later woods/foliage use the same clean board and leaf-cluster art.
+Object.assign(BLOCKS, {
+  pale_oak_planks: W(null, [1, 21, 4]), pale_oak_leaves: W(null, [1, 21, 4]),
+  bamboo_planks: W(null, [1, 20]),
+  azalea_leaves: W(null, [1, 17]), flowering_azalea_leaves: W(null, [1, 17]),
+});
 for (const o of Object.keys(ORES)) {
   BLOCKS[o] = W(o === 'copper_ore' ? null : o, o === 'copper_ore' ? [1, 17] : undefined);
   BLOCKS[`deepslate_${o}`] = W(null, [1, 17]);

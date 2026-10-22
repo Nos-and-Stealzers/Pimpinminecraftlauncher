@@ -62,8 +62,6 @@ vec4 cloudPlane(vec3 dirView, float height, float scale, float cover, float stre
     light *= mix(1.0, 0.45, rainStrength) * CLOUD_BRIGHTNESS;
     float fade = exp(-t * 0.00011) * smoothstep(0.01, 0.12, d.y);
     float a = c * opacity * fade;
-    // distant parts melt into the sky colour
-    light = mix(skyColorAt(dirView) * 1.05, light, fade);
     return vec4(light * a, 1.0 - a);
 }
 #endif

@@ -57,8 +57,20 @@ void main() {
 #else
     // reflections use a calmer normal than the glint so the sky does not break into white blotches
     vec3 R = reflect(V, normalize(mix(normalize(viewNormal), n, 0.55)));
+    R = normalize(R + up * max(0.03 - dot(R, up), 0.0));
     float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
-    vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
+    vec3 refl = skyColorAt(R);
+#ifdef DIM_OVERWORLD
+    if (water) {
+#ifdef WATER_CLOUD_REFLECTIONS
+        vec4 cl = cloudPlane(R, CLOUD_PLANE_HEIGHT, 0.0021, 0.42 + CLOUD_AMOUNT * 0.12 + rainStrength * 0.3, 1.0, 0.92);
+        refl = refl * cl.a + cl.rgb;
+#endif
+        // the sun itself, broken up by the full wave normal (shadowed parts of the water get none)
+        refl += sunMoonGlow(reflect(V, n)) * lit * 0.6;
+    }
+#endif
+    refl = refl * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
         // how much water lies between this surface and the ground below it
         float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;

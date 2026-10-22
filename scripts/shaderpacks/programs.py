@@ -261,8 +261,8 @@ vec3 shadeSurface(vec3 alb, vec3 n, vec2 lm, vec3 shadowP, float foliage, vec3 v
     vec3 amb = ambientColor() * (0.75 + 0.25 * NdotU);
 #endif
 #ifdef DIM_END
-    vec3 Le = normalize(mat3(gbufferModelView) * vec3(0.3, 0.88, 0.36));
-    direct = vec3(0.62, 0.36, 1.0) * 0.5 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
+    vec3 Le = normalize(mat3(gbufferModelView) * END_LIGHT_DIR);
+    direct = vec3(0.78, 0.58, 1.0) * 0.72 * END_SKY * (foliage > 0.5 ? 0.6 : max(dot(n, Le), 0.0));
 #endif
     float bl = lm.x;
     float held = float(max(heldBlockLightValue, heldBlockLightValue2));
@@ -343,6 +343,9 @@ void main() {
     }
 #endif
     vec3 glow = emission(alb, albedo.rgb, blockId);
+#ifdef DIM_OVERWORLD
+    glow *= 1.0 - 0.55 * dayFactor() * lm.y * lm.y;
+#endif
     color += glow;
 
     gl_FragData[0] = vec4(color, albedo.a);
@@ -419,8 +422,20 @@ void main() {
 #else
     // reflections use a calmer normal than the glint so the sky does not break into white blotches
     vec3 R = reflect(V, normalize(mix(normalize(viewNormal), n, 0.55)));
+    R = normalize(R + up * max(0.03 - dot(R, up), 0.0));
     float skyVis = smoothstep(0.4, 0.9, lmcoord.y);
-    vec3 refl = skyColorAt(R) * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
+    vec3 refl = skyColorAt(R);
+#ifdef DIM_OVERWORLD
+    if (water) {
+#ifdef WATER_CLOUD_REFLECTIONS
+        vec4 cl = cloudPlane(R, CLOUD_PLANE_HEIGHT, 0.0021, 0.42 + CLOUD_AMOUNT * 0.12 + rainStrength * 0.3, 1.0, 0.92);
+        refl = refl * cl.a + cl.rgb;
+#endif
+        // the sun itself, broken up by the full wave normal (shadowed parts of the water get none)
+        refl += sunMoonGlow(reflect(V, n)) * lit * 0.6;
+    }
+#endif
+    refl = refl * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
         // how much water lies between this surface and the ground below it
         float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
@@ -570,7 +585,8 @@ void main() {
 #endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
 #ifdef DIM_END
-    gl_FragData[0] = vec4(toLinear(c.rgb) * vec3(0.85, 0.7, 1.15) * 0.9 * END_SKY, c.a);
+    // the flat grey vanilla End sky is replaced by the painted void + nebula in deferred
+    discard;
 #else
     // only the moon (and custom sky textures in other dimensions) get here
     vec3 col = toLinear(c.rgb) * 1.6 * MOON_BRIGHTNESS * vec3(0.85, 0.92, 1.0);
@@ -590,7 +606,7 @@ void main() {
 
 PREPARE_FSH = r"""// renders the sky-view LUT plus the sun and ambient colours into a corner of colortex5
 #define SKY_INTENSITY 9.0
-#define SUN_INTENSITY 3.3
+#define SUN_INTENSITY 2.8
 
 vec3 skyRadiance(vec3 d, vec3 sunL) {
     float below = max(-d.y, 0.0);
@@ -618,7 +634,7 @@ void main() {
     } else if (px.x < 1.0) {
         vec3 sunC = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(0.0, 0.06, sinE);
         vec3 moonC = sunTransmittance(max(-sinE, 0.0)) * 0.065 * moonTint() * smoothstep(0.0, 0.06, -sinE);
-        col = (sunC * vec3(1.05, 0.98, 0.90) + moonC) * (1.0 - 0.85 * rainStrength);
+        col = (sunC * vec3(1.07, 0.98, 0.87) + moonC) * (1.0 - 0.85 * rainStrength);
     } else if (px.x < 3.0 && px.x >= 2.0) {
         // the sun disk colour: reddened by the long path through the air, kept until the sun has set
         col = sunTransmittance(max(sinE, 0.0)) * SUN_INTENSITY * smoothstep(-0.06, 0.0, sinE) * (1.0 - 0.9 * rainStrength);
@@ -629,7 +645,7 @@ void main() {
         col += (skyRadiance(vec3(0.99, 0.14, 0.0), sunL) + 2.0 * skyRadiance(vec3(0.0, 0.14, 0.99), sunL) + skyRadiance(vec3(-0.99, 0.14, 0.0), sunL)) * 0.3;
         col /= 5.2;
         // a little saturation so shade stays blue instead of grey
-        col = mix(vec3(luma(col)), col, 1.1) * AMBIENT_STRENGTH;
+        col = mix(vec3(luma(col)), col, 0.8) * 1.15 * AMBIENT_STRENGTH;
         col += vec3(0.006, 0.009, 0.018) * MOON_BRIGHTNESS * (1.0 - dayFactor());
     } else {
         discard;
@@ -649,7 +665,7 @@ vec3 applyFog(vec3 col, vec3 dir, float dist) {
 #if defined DIM_NETHER
     float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
-    float f = 1.0 - exp(-dist * 0.008 * FOG_DENSITY);
+    float f = 1.0 - exp(-dist * 0.0065 * FOG_DENSITY);
 #else
     float dy = dot(dir, normalize(upPosition));
     float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
@@ -695,7 +711,7 @@ float exposureValue() {
 #ifdef DIM_OVERWORLD
     float eye = eyeSkyLight();
     e *= mix(1.7, 1.0, eye);
-    e *= mix(1.0, mix(1.25, 1.0, dayFactor()), eye);
+    e *= mix(1.0, mix(1.25, 0.76, dayFactor()), eye);
 #else
     e *= 1.35;
 #endif
@@ -726,6 +742,73 @@ vec3 finishColor(vec3 col, vec2 uv, float exposure) {
 """
 
 SKY_PAINT = r"""// the full sky behind the world: atmosphere, sun disk + glare, moon glow, stars, Milky Way, flat clouds
+#ifdef DIM_END
+// seamless fbm on the view sphere: three planar projections blended by the direction
+float sphereFbm(vec3 d, float s) {
+    vec3 w = d * d;
+    w *= w;
+    w /= w.x + w.y + w.z;
+    return cloudFbm(d.yz * s) * w.x + cloudFbm(d.zx * s + 17.0) * w.y + cloudFbm(d.xy * s + 31.0) * w.z;
+}
+
+// the End sky: a dark void with a purple and teal nebula band, dust lanes and sharp stars
+vec3 endSkyDetail(vec3 dir) {
+    vec3 d = mat3(gbufferModelViewInverse) * dir;
+    // stars from 3D cells on the sphere (no seam anywhere)
+    vec3 sp = d * 110.0;
+    vec3 cell = floor(sp);
+    float h = hash12(cell.xy + cell.z * 37.17);
+    vec3 jit = vec3(hash12(cell.xy + 7.1 + cell.z), hash12(cell.yz + 3.7), hash12(cell.zx + 1.3));
+    float star = step(0.90, h) * smoothstep(0.30, 0.0, length(fract(sp) - 0.2 - jit * 0.6)) * (0.25 + 2.5 * pow(fract(h * 91.7), 4.0));
+    vec3 starC = mix(vec3(1.0, 0.85, 1.0), vec3(0.75, 0.85, 1.0), fract(h * 37.3));
+    // nebula: a tilted band of fbm clouds, purple with teal edges and pink cores, cut by dark dust
+    vec3 bandN = normalize(vec3(0.35, 0.75, -0.55));
+    float b = dot(d, bandN);
+    float band = exp(-b * b * 6.0);
+    float n1 = sphereFbm(d, 2.2);
+    float n2 = sphereFbm(d, 5.5);
+    float cloud = smoothstep(0.38, 0.85, n1 * 0.65 + n2 * 0.35 + band * 0.22);
+    vec3 nebC = mix(vec3(0.50, 0.14, 0.78), vec3(0.10, 0.42, 0.62), smoothstep(0.35, 0.7, n2));
+    nebC = mix(nebC, vec3(1.0, 0.45, 0.85), pow(cloud, 3.0) * 0.45);
+    float dust = smoothstep(0.52, 0.72, sphereFbm(d, 4.0) * 0.6 + n2 * 0.4) * band;
+    vec3 neb = nebC * cloud * (0.12 + 0.88 * band) * (1.0 - 0.7 * dust) * 0.16;
+    float vis = mix(0.45, 1.0, smoothstep(-0.25, 0.1, d.y));
+    // a soft violet glow where the End's light comes from
+    float glow = exp(-acos(clamp(dot(d, normalize(END_LIGHT_DIR)), -1.0, 1.0)) * 5.0) * 0.05;
+    return (starC * star * 0.55 * (1.0 - 0.6 * dust) + neb + vec3(0.55, 0.35, 0.9) * glow) * vis * END_SKY;
+}
+#endif
+
+#if defined DIM_OVERWORLD && AURORA > 0
+// northern lights: curtains of a thin wavy filament pattern, extruded upwards by marching a few height slices
+vec3 aurora(vec3 dirView) {
+#if AURORA == 1
+    float amount = auroraCold;
+#else
+    float amount = 1.0;
+#endif
+    amount *= (1.0 - dayFactor()) * (1.0 - rainStrength);
+    vec3 d = mat3(gbufferModelViewInverse) * dirView;
+    if (amount < 0.01 || d.y < 0.0) return vec3(0.0);
+    float noise = dither(gl_FragCoord.xy);
+    float T = frameTimeCounter;
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < AURORA_STEPS; i++) {
+        float h = (float(i) + noise) / float(AURORA_STEPS);
+        float t = (1.0 + h * 1.4) / (d.y + 0.06);
+        vec2 p = d.xz * t * 0.55;
+        p += vec2(0.0, h * 0.06);
+        float n = valueNoise(p * 1.1 + vec2(T * 0.012, -T * 0.008)) * 0.75 + valueNoise(p * 2.9 - vec2(T * 0.02, 0.0)) * 0.25;
+        float line = pow(1.0 - abs(n - 0.5) * 2.0, 14.0);
+        float patchy = smoothstep(0.25, 0.65, valueNoise(p * 0.22 + 4.0));
+        vec3 c = mix(vec3(0.10, 1.0, 0.45), vec3(0.55, 0.20, 1.0), pow(h, 1.3));
+        acc += c * line * patchy * exp(-h * 2.2);
+    }
+    float fade = smoothstep(0.0, 0.18, d.y);
+    return acc / float(AURORA_STEPS) * 0.65 * amount * fade * AURORA_BRIGHTNESS;
+}
+#endif
+
 vec3 paintSky(vec3 dir, vec2 uv) {
     vec3 col = skyColorAt(dir) + texture2D(colortex2, uv).rgb;
 #ifdef DIM_END
@@ -733,6 +816,9 @@ vec3 paintSky(vec3 dir, vec2 uv) {
 #endif
 #ifdef DIM_OVERWORLD
     col += sunMoonGlow(dir) + nightSkyDetail(dir);
+#if AURORA > 0
+    col += aurora(dir);
+#endif
 #ifdef CLOUDS_2D
     vec4 cl = cloudPlane(dir, CLOUD_PLANE_HEIGHT, 0.0021, 0.42 + CLOUD_AMOUNT * 0.12 + rainStrength * 0.3, 1.0, 0.92);
     col = col * cl.a + cl.rgb;
@@ -913,7 +999,10 @@ vec4 renderClouds(vec3 dirView, float maxDist, float noise) {
     // far clouds fade into the sky
     float fade = exp(-t0 * 0.00045) * smoothstep(0.0, 0.06, d.y + 0.02);
     vec3 skyBehind = skyColorAt(dirView);
-    scat = mix(skyBehind * (1.0 - T), scat, fade);
+    // blend towards the sky, but let the sun disk behind thin far clouds through
+    float Tf = mix(mix(T, 1.0, 0.55), T, fade);
+    scat = mix(skyBehind * (1.0 - Tf), scat, fade);
+    T = Tf;
     return vec4(scat * CLOUD_BRIGHTNESS, T);
 }
 #endif
@@ -1097,7 +1186,7 @@ void main() {
     }
 
 #if defined VOLUMETRIC_LIGHT && defined DIM_OVERWORLD
-    col += volumetricLight(dir, dist, jitter) * (depth0 >= 1.0 ? 0.6 : 1.0);
+    col += volumetricLight(dir, dist, jitter) * (depth0 >= 1.0 ? 0.6 - 0.3 * twilightFactor() : 1.0);
 #endif
     vec4 weather = texture2D(colortex3, uv);
     col = col * (1.0 - weather.a) + weather.rgb;

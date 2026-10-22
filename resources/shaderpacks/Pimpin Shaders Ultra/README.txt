@@ -9,6 +9,7 @@ harden near contact, coloured light through stained glass, god rays, ambient occ
 refraction, depth colour, caustics and screen-space reflections, wet reflective ground in rain,
 leaves that glow when backlit, glowing ores, temporal anti-aliasing, bloom, auto exposure and ACES
 filmic colours, a deep blue night with twinkling stars.
-The Nether and the End have their own lighting and fog.
+The Nether and the End have their own lighting and fog. The End has a dark starry void and
+purple nebula; northern lights appear at night in cold biomes (can be turned off or shown everywhere).
 
 Profiles (Shader Settings): Low, Medium, High (default), Ultra.

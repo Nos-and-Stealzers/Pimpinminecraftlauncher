@@ -51,9 +51,9 @@ for (const v of VERS) {
       // entity / gui files must be an exact integer scale of vanilla
       if (good && /entity\/|gui\//.test(p) && !(w % vw === 0 && w / vw === h / vh)) problems.push(`SCALE ${p}: ${w}x${h} vs ${vw}x${vh}`);
     }
-    bad += problems.length;
     if (!fmtOk) problems.push(`pack_format ${meta.pack_format} vs game ${want}`);
     anim.forEach(([p]) => problems.push(`animated without mcmeta: ${p}`));
+    bad += problems.length;
     rows.push({ v, id, files: files.length, textures_ok: ok, problems, fmt: `${meta.pack_format}/${want ?? '?'}` });
   }
 }

@@ -9,7 +9,8 @@ void main() {
 #endif
     vec4 c = texture2D(tex, texcoord) * glcolor;
 #ifdef DIM_END
-    gl_FragData[0] = vec4(toLinear(c.rgb) * vec3(0.85, 0.7, 1.15) * 0.9 * END_SKY, c.a);
+    // the flat grey vanilla End sky is replaced by the painted void + nebula in deferred
+    discard;
 #else
     // only the moon (and custom sky textures in other dimensions) get here
     vec3 col = toLinear(c.rgb) * 1.6 * MOON_BRIGHTNESS * vec3(0.85, 0.92, 1.0);
