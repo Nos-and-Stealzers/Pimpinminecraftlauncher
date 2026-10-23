@@ -22,7 +22,13 @@ public final class Hud {
         //#elseif MC >= 1.21.6
         HudElementRegistry.addLast(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("pimpin", id), (graphics, tickCounter) -> renderer.accept(new Draw(graphics)));
         //#else
-        HudRenderCallback.EVENT.register((graphics, tickDelta) -> renderer.accept(new Draw(graphics)));
+        // Mark the registration so the legacy wrapper leaves Pimpin's own HUDs alone.
+        dev.pimpin.client.hud.ForeignHuds.setOwnRegistering(true);
+        try {
+            HudRenderCallback.EVENT.register((graphics, tickDelta) -> renderer.accept(new Draw(graphics)));
+        } finally {
+            dev.pimpin.client.hud.ForeignHuds.setOwnRegistering(false);
+        }
         //#endif
     }
 }

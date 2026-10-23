@@ -9,6 +9,8 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Every Pimpin Client setting, saved as config/pimpin-client.json. */
 public final class PimpinConfig {
@@ -60,6 +62,17 @@ public final class PimpinConfig {
         public Placement() { scale = 1; }
         public Placement(float x, float y, float scale) { this.x=x; this.y=y; this.scale=scale; }
         public Placement copy() { return new Placement(x,y,scale); }
+    }
+
+    // Third-party HUD transforms: element key -> nudge/scale/hide (see ForeignHuds). null = untouched.
+    public LinkedHashMap<String, ForeignPlacement> foreign = null;
+
+    /** Move/scale/hide values for one HUD element drawn by another mod. */
+    public static final class ForeignPlacement {
+        public float dx;
+        public float dy;
+        public float scale = 1;
+        public boolean hidden;
     }
 
     // Minimap
@@ -134,6 +147,19 @@ public final class PimpinConfig {
             }
         }
         instance.minimapSize = Math.max(48, Math.min(192, instance.minimapSize));
+        if (instance.foreign != null) {
+            LinkedHashMap<String, ForeignPlacement> foreign = new LinkedHashMap<>();
+            for (var e : instance.foreign.entrySet()) {
+                ForeignPlacement p = e.getValue();
+                if (e.getKey() == null || p == null) continue;
+                p.dx = Float.isFinite(p.dx) ? Math.max(-4000, Math.min(4000, p.dx)) : 0;
+                p.dy = Float.isFinite(p.dy) ? Math.max(-4000, Math.min(4000, p.dy)) : 0;
+                p.scale = Float.isFinite(p.scale) ? Math.max(.25f, Math.min(3f, p.scale)) : 1;
+                foreign.put(e.getKey(), p);
+            }
+            instance.foreign = foreign;
+        }
+        if (instance.foreign != null && instance.foreign.isEmpty()) instance.foreign = null;
         instance.hudScale = Math.max(0.5f, Math.min(2f, instance.hudScale));
         instance.mapZoom = Math.max(0, Math.min(4, instance.mapZoom));
         instance.minimapCorner = Math.floorMod(instance.minimapCorner, 4);
