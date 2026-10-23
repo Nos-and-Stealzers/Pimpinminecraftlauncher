@@ -458,8 +458,24 @@ async function drawContent(root, inst, navigate) {
     draw();
   });
 
-  // Drag & drop: jar files land straight in the mods folder (same machinery as the Files tab).
-  const hint = el('div', { class: 'file-drop' }, icon('upload'), el('b', {}, 'Drop jar files to install'), el('span', { class: 'muted' }, 'They land in the mods folder'));
+  // Drag & drop: jars land in mods; with the Shaders / Resource packs filter
+  // active, .zip packs go straight into their folder (same machinery as the Files tab).
+  const hintTitle = el('b', {}, 'Drop jar files to install');
+  const hintSub = el('span', { class: 'muted' }, 'They land in the mods folder');
+  const hint = el('div', { class: 'file-drop' }, icon('upload'), hintTitle, hintSub);
+  const dropHint = () => {
+    if (filter === 'shader') {
+      hintTitle.textContent = 'Drop shader packs to install';
+      hintSub.textContent = '.zip files land in the shaderpacks folder — jars still go to mods';
+    } else if (filter === 'resourcepack') {
+      hintTitle.textContent = 'Drop resource packs to install';
+      hintSub.textContent = '.zip files land in the resourcepacks folder — jars still go to mods';
+    } else {
+      hintTitle.textContent = 'Drop jar files to install';
+      hintSub.textContent = 'They land in the mods folder';
+    }
+  };
+  dropHint();
   const hasFiles = (ev) => [...(ev.dataTransfer?.types || [])].includes('Files');
   let depth = 0;
   const browser = el('div', { class: 'content-browser' },
@@ -469,7 +485,7 @@ async function drawContent(root, inst, navigate) {
         { value: 'mod', label: 'Mods' },
         { value: 'shader', label: 'Shaders' },
         { value: 'resourcepack', label: 'Resource packs' },
-      ], filter, (v) => { filter = v; draw(); }),
+      ], filter, (v) => { filter = v; dropHint(); draw(); }),
       el('div', { class: 'search' }, icon('search'), searchIn),
       el('span', { class: 'grow' }),
       updSlot,
@@ -497,14 +513,26 @@ async function drawContent(root, inst, navigate) {
     browser.classList.remove('dragging');
     const paths = [...(ev.dataTransfer?.files || [])].map((f) => api.pathForFile(f)).filter(Boolean);
     if (!paths.length) return;
+    const zipTarget = filter === 'shader' ? 'shaderpacks' : filter === 'resourcepack' ? 'resourcepacks' : null;
     const jars = paths.filter((p) => /\.jar$/i.test(p));
-    if (!jars.length) {
-      toast('Only .jar mod files can be dropped here.', 'info');
+    const packs = zipTarget ? paths.filter((p) => /\.zip$/i.test(p)) : [];
+    if (!jars.length && !packs.length) {
+      toast(zipTarget
+        ? 'Only .zip files can be dropped here.'
+        : 'Only .jar mod files can be dropped here. Pick the Shaders or Resource packs filter to drop .zip packs.', 'info');
       return;
     }
     try {
-      await api.call('files:import', target, 'mods', jars);
-      toast(jars.length === 1 ? 'Installed 1 mod file' : `Installed ${jars.length} mod files`);
+      const done = [];
+      if (jars.length) {
+        await api.call('files:import', target, 'mods', jars);
+        done.push(`${jars.length} mod file${jars.length === 1 ? '' : 's'}`);
+      }
+      if (packs.length) {
+        await api.call('files:import', target, zipTarget, packs);
+        done.push(`${packs.length} ${zipTarget === 'shaderpacks' ? 'shader pack' : 'resource pack'}${packs.length === 1 ? '' : 's'}`);
+      }
+      toast(`Installed ${done.join(' and ')}`);
       await load(false);
     } catch (err) {
       errorToast(err);

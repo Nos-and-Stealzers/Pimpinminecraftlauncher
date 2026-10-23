@@ -221,6 +221,7 @@ function commands(navigate) {
     { label: 'Import a modpack or instance', sub: '.mrpack or Pimpin .zip', icon: 'upload', run: () => importInstance(navigate) },
     { label: 'Update all mods in every instance', icon: 'refresh', run: () => updateAllMods() },
     { label: 'Check for launcher updates', icon: 'download', run: () => updateModal() },
+    { label: 'Keep window on top', sub: 'Toggle always-on-top', icon: 'pin', run: () => api.call('window:top') },
     { label: 'Browse mods', icon: 'puzzle', run: () => navigate('library', { type: 'mod' }) },
     { label: 'Browse shaders', icon: 'sun', run: () => navigate('library', { type: 'shader' }) },
     { label: 'Browse resource packs', icon: 'palette', run: () => navigate('library', { type: 'resourcepack' }) },
