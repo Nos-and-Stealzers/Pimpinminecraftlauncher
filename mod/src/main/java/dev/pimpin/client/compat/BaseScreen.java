@@ -24,6 +24,9 @@ public abstract class BaseScreen extends Screen {
         return false;
     }
 
+    /** True when the click being processed held Shift; captured in mouseClicked. */
+    protected boolean lastShift;
+
     /** Custom canvas screens can keep their action buttons above draggable content. */
     protected final void drawWidgetsOnTop(Draw d, int x, int y, float delta) {
         for (var child : children()) if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget) {
@@ -87,12 +90,14 @@ public abstract class BaseScreen extends Screen {
     //#if MC >= 1.21.9
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        lastShift = (event.modifiers() & 0x0001) != 0; // GLFW_MOD_SHIFT
         if (onClick(event.x(), event.y(), event.button())) return true;
         return super.mouseClicked(event, doubleClick);
     }
     //#else
     @Override
     public boolean mouseClicked(double x, double y, int button) {
+        lastShift = Screen.hasShiftDown();
         if (onClick(x, y, button)) return true;
         return super.mouseClicked(x, y, button);
     }

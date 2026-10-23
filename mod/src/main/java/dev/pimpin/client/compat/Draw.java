@@ -108,6 +108,23 @@ public final class Draw {
         //#endif
     }
 
+    /** Accepts the version's own 2D drawing object, whatever this build calls it. */
+    public static Draw of(Object graphics) {
+        //#if MC >= 26.1
+        return new Draw((GuiGraphicsExtractor) graphics);
+        //#else
+        return new Draw((GuiGraphics) graphics);
+        //#endif
+    }
+
+    public void translate(float x, float y) {
+        //#if MC >= 1.21.6
+        g.pose().translate(x, y);
+        //#else
+        g.pose().translate(x, y, 0);
+        //#endif
+    }
+
     public void pop() {
         //#if MC >= 1.21.6
         g.pose().popMatrix();

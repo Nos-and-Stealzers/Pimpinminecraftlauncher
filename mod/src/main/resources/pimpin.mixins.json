@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "dev.pimpin.client.mixin",
   "compatibilityLevel": "${mixin_java}",
-  "client": ["GameRendererMixin", "LoadingOverlayMixin", "MouseHandlerMixin"],
+  "client": ["GameRendererMixin", "LoadingOverlayMixin", "MouseHandlerMixin", "HudElementRegistryMixin", "ForeignHudEventMixin"],
   "injectors": { "defaultRequire": ${mixin_require} }
 }

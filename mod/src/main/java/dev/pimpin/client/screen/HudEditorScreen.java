@@ -9,6 +9,7 @@ import dev.pimpin.client.hud.HudLayout;
 import dev.pimpin.client.hud.Minimap;
 import dev.pimpin.client.hud.PimpinHud;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -31,11 +32,13 @@ public final class HudEditorScreen extends BaseScreen {
     }
     @Override protected void init() {
         dragging=false;
-        int gap=4, bw=Math.min(76,(width-24)/4), x=(width-(bw*4+gap*3))/2, y=height-26;
+        int gap=4, bw=Math.min(68,(width-24)/5), x=(width-(bw*5+gap*4))/2, y=height-26;
         addRenderableWidget(Button.builder(Component.literal("Save"),b->saveLayout()).bounds(x,y,bw,20).build());
         addRenderableWidget(Button.builder(Component.literal("Cancel"),b->onClose()).bounds(x+bw+gap,y,bw,20).build());
         addRenderableWidget(Button.builder(Component.literal("Reset"),b->resetDraft()).bounds(x+2*(bw+gap),y,bw,20).build());
         addRenderableWidget(Button.builder(Component.literal("Snap: "+(snap?"ON":"OFF")),b->{snap=!snap;b.setMessage(Component.literal("Snap: "+(snap?"ON":"OFF")));}).bounds(x+3*(bw+gap),y,bw,20).build());
+        addRenderableWidget(Button.builder(Component.literal("Other HUDs"),b->Compat.setScreen(minecraft,new ForeignHudsScreen(this))).bounds(x+4*(bw+gap),y,bw,20)
+                .tooltip(Tooltip.create(Component.literal("Move, scale or hide HUDs other mods draw"))).build());
     }
     public void resetDraft() { draft=HudLayout.defaults(); selected=-1; dragging=false; }
     public void saveLayout() {
