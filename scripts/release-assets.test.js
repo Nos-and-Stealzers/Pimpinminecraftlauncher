@@ -78,6 +78,10 @@ test('PRs (including main-shaped refs), manual runs and other branches never cal
 });
 test('version/tag rules preserve main, version tags and private claude prereleases', () => {
   assert.equal(release.config(baseEnv).tag, 'v0.1.42');
+  assert.equal(release.config({ ...baseEnv, PIMPIN_VERSION: '0.1.27' }).version, '0.1.27');
+  assert.equal(release.config({ ...baseEnv, PIMPIN_VERSION: '0.1.27' }).tag, 'v0.1.27');
+  // A tag ref always wins, even when PIMPIN_VERSION disagrees.
+  assert.equal(release.config({ ...baseEnv, PIMPIN_VERSION: '9.9.9', GITHUB_REF: 'refs/tags/v1.2.3' }).version, '1.2.3');
   assert.equal(release.config({ ...baseEnv, GITHUB_REF: 'refs/tags/v1.2.3' }).version, '1.2.3');
   assert.equal(release.config({ ...baseEnv, GITHUB_REF: 'refs/heads/claude/test' }).tag, 'v0.1.42-test');
   assert.throws(() => release.config({ ...baseEnv, GITHUB_SHA: 'main' }), /SHA/);

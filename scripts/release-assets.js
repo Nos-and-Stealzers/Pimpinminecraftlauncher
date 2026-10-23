@@ -19,7 +19,9 @@ function config(env = process.env) {
   check(/^[a-f0-9]{40}$/.test(env.GITHUB_SHA || ''), 'Invalid source SHA');
   check(/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID || ''), 'Invalid run ID');
   check(/^[1-9][0-9]*$/.test(env.GITHUB_RUN_NUMBER || ''), 'Invalid run number');
-  const version = ref.startsWith('refs/tags/v') ? ref.slice(11) : `0.1.${env.GITHUB_RUN_NUMBER}`;
+  // Version comes from a tag, the build job's own choice (PIMPIN_VERSION, set
+  // from main's VERSION file), or the run number for unversioned branches.
+  const version = ref.startsWith('refs/tags/v') ? ref.slice(11) : (env.PIMPIN_VERSION || `0.1.${env.GITHUB_RUN_NUMBER}`);
   check(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version), 'Invalid release version');
   const prerelease = ref.startsWith('refs/heads/claude/');
   const tag = `v${version}${prerelease ? '-test' : ''}`;

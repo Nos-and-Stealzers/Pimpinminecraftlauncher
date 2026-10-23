@@ -19,6 +19,8 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,14 +39,16 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
       # Every build gets its own version so installed launchers can auto-update.
-      # Tag wins; otherwise the committed VERSION file, falling back to run numbers.
+      # Tag wins; main uses the committed VERSION file, all else fall back to run numbers.
       - name: Set version
+        id: version
         shell: bash
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
-          elif [[ -s VERSION ]]; then v="$(cat VERSION | tr -d '[:space:]')"
+          elif [[ -s VERSION && "$GITHUB_REF" == "refs/heads/main" ]]; then v="$(cat VERSION | tr -d '[:space:]')"
           else v="0.1.$GITHUB_RUN_NUMBER"; fi
           echo "Building version $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
           npm version "$v" --no-git-tag-version --allow-same-version
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -61,6 +65,7 @@ jobs:
         run: node scripts/release-assets.js stage dist
         env:
           GH_TOKEN: ${{ github.token }}
+          PIMPIN_VERSION: ${{ steps.version.outputs.version }}
           TMPDIR: ${{ runner.temp }}
 
   # Both successful builds are required before a release becomes visible.
@@ -83,6 +88,7 @@ jobs:
         run: node scripts/release-assets.js publish release-download
         env:
           GH_TOKEN: ${{ github.token }}
+          PIMPIN_VERSION: ${{ needs.build.outputs.version }}
           # Restricted to public downloads; never used for the source repository.
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           TMPDIR: ${{ runner.temp }}
