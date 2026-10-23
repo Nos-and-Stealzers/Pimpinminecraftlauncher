@@ -228,8 +228,12 @@ async function install(holder, { projectId, type, versionId }, onProgress) {
         await fsp.rm(path.join(folder, existing.file), { force: true });
         await fsp.rm(path.join(folder, `${existing.file}.disabled`), { force: true });
       }
+      const wasPinned = existing?.pinned;
       meta.content = meta.content.filter((c) => c.projectId !== pid);
-      meta.content.push(toRecord(kind, version, file, project));
+      const record = toRecord(kind, version, file, project);
+      // A pin is the user's choice for this project, not for one version: keep it.
+      record.pinned = Boolean(wasPinned);
+      meta.content.push(record);
       installed.push(project?.title || file.filename);
 
       if (kind === 'mod' || kind === 'plugin') {
@@ -280,7 +284,7 @@ async function list(holder) {
       const file = enabled ? name : name.slice(0, -'.disabled'.length);
       if (type !== 'shader' && type !== 'resourcepack' && !file.endsWith('.jar')) continue;
       const rec = records.find((r) => r.file === file && r.type === type);
-      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: rec?.projectId || null, versionNumber: rec?.versionNumber || null });
+      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: rec?.projectId || null, versionNumber: rec?.versionNumber || null, pinned: Boolean(rec?.pinned) });
     }
   }
   return out.sort((a, b) => a.title.localeCompare(b.title));
@@ -305,10 +309,22 @@ async function setEnabled(holder, { type, file, enabled }) {
   if (!enabled && fs.existsSync(on)) await fsp.rename(on, off);
 }
 
-/** Find newer compatible versions of tracked mods/plugins. */
+/** Pin (or unpin) a tracked mod so update checks skip it: the user keeps their version on purpose. */
+async function setPinned(holder, { type, file, pinned }) {
+  return withLock(holder.dir, async () => {
+    const meta = await holder.load();
+    const rec = (meta.content || []).find((c) => c.file === file && c.type === type);
+    if (!rec || !rec.projectId) throw new Error('Only mods installed from the library can be pinned.');
+    rec.pinned = Boolean(pinned);
+    await holder.save(meta);
+    return rec.pinned;
+  });
+}
+
+/** Find newer compatible versions of tracked mods/plugins. Pinned ones stay untouched on purpose. */
 async function checkUpdates(holder) {
   const meta = await holder.load();
-  const items = (meta.content || []).filter((c) => c.sha1 && (c.type === 'mod' || c.type === 'plugin'));
+  const items = (meta.content || []).filter((c) => c.sha1 && !c.pinned && (c.type === 'mod' || c.type === 'plugin'));
   const byType = {};
   for (const c of items) (byType[c.type] = byType[c.type] || []).push(c);
   const updates = [];
@@ -439,6 +455,7 @@ module.exports = {
   list,
   remove,
   setEnabled,
+  setPinned,
   checkUpdates,
   applyUpdates,
   featureState,

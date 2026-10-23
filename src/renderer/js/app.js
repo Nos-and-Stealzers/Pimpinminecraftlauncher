@@ -110,7 +110,8 @@ const IMPORTABLE = /\.(mrpack|zip)$/i;
 
 function installDropImport() {
   let depth = 0;
-  const outside = (e) => e.dataTransfer?.types.includes('Files') && !e.target.closest?.('.file-browser');
+  // The Files tab and the instance Content tab have their own drop targets.
+  const outside = (e) => e.dataTransfer?.types.includes('Files') && !e.target.closest?.('.file-browser, .content-browser');
   document.addEventListener('dragenter', (e) => {
     if (!outside(e)) return;
     depth++;
@@ -143,6 +144,11 @@ function installDropImport() {
 // --------------------------------------------------------------- events --
 function wireEvents() {
   document.querySelectorAll('[data-win]').forEach((b) => b.addEventListener('click', () => api.call(`window:${b.dataset.win}`)));
+  // The frameless window still honors the classic double-click-the-titlebar action.
+  document.querySelector('.titlebar').addEventListener('dblclick', (e) => {
+    if (e.target.closest('[data-win]') || e.target.closest('.titlebar-right') || e.target.closest('.titlebar-center')) return;
+    api.call('window:maximize');
+  });
 
   api.on('game:progress', (p) => {
     const wasPreparing = state.game[p.id]?.state === 'preparing';
@@ -178,7 +184,10 @@ function wireEvents() {
   });
   api.on('toast', (t) => toast(t.text, t.kind));
   api.on('update:state', renderUpdate);
-  api.on('window:state', (w) => document.body.classList.toggle('maximized', w.maximized));
+  api.on('window:state', (w) => {
+    document.body.classList.toggle('maximized', !!w.maximized);
+    document.body.classList.toggle('on-top', !!w.alwaysOnTop);
+  });
 
   subscribe((topic) => {
     if (topic === 'accounts' || topic === 'settings') clear(document.getElementById('account-slot'), accountButton());

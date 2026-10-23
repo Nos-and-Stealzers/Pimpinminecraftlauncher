@@ -56,6 +56,7 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.once('ready-to-show', () => {
     if (!process.argv.includes('--hidden')) win.show();
+    sendWindowState();
   });
   win.on('close', (e) => {
     if (!quitting && store.getSettings().minimizeToTray) {
@@ -64,8 +65,10 @@ function createWindow() {
       ensureTray();
     }
   });
-  win.on('maximize', () => send('window:state', { maximized: true }));
-  win.on('unmaximize', () => send('window:state', { maximized: false }));
+  const sendWindowState = () => send('window:state', { maximized: win.isMaximized(), alwaysOnTop: win.isAlwaysOnTop() });
+  win.on('maximize', sendWindowState);
+  win.on('unmaximize', sendWindowState);
+  win.on('always-on-top-change', sendWindowState);
   // Never navigate the launcher window away; open links in the real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
@@ -185,6 +188,7 @@ const handlers = {
   'app:info': () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, root: store.dirs.root }),
   'window:minimize': () => win.minimize(),
   'window:maximize': () => (win.isMaximized() ? win.unmaximize() : win.maximize()),
+  'window:top': () => win.setAlwaysOnTop(!win.isAlwaysOnTop()),
   'window:close': () => win.close(),
   'window:zoom': (factor) => win.webContents.setZoomFactor(Math.min(1.5, Math.max(0.7, Number(factor) || 1))),
   'shell:openExternal': (url) => {
@@ -339,6 +343,7 @@ const handlers = {
   'content:install': async (target, item) => content.install(await holderFor(target), item, progressFor(target)),
   'content:remove': async (target, item) => content.remove(await holderFor(target), item),
   'content:toggle': async (target, item) => content.setEnabled(await holderFor(target), item),
+'content:setPinned': async (target, item) => content.setPinned(await holderFor(target), item),
   'content:checkUpdates': async (target) => content.checkUpdates(await holderFor(target)),
   'content:applyUpdates': async (target, updates) => content.applyUpdates(await holderFor(target), updates, progressFor(target)),
   'content:identify': async (target) => content.identifyLocal(await holderFor(target)),
