@@ -1,7 +1,7 @@
 // Instances: the list (search, sort, group, grid or table) and the detail
 // view with features, Pimpin Specials, content, worlds, screenshots, files,
 // logs and per-instance settings.
-import { el, icon, clear, errorToast, toast, confirmModal, timeAgo, fmtDuration, switchEl, seg } from '../dom.js';
+import { el, icon, clear, errorToast, toast, confirmModal, modal, timeAgo, fmtDuration, switchEl, seg } from '../dom.js';
 import { api, state, subscribe, refreshInstances, selectInstance, getVersions, LOADER_LABEL, ICON_KEYS } from '../state.js';
 import { instIcon, instSubtitle, playInstance, stopInstance, newInstanceModal } from '../components.js';
 import { featureGrid } from './home.js';
@@ -314,7 +314,7 @@ async function drawContent(root, inst, navigate) {
     const shown = items.filter((i) => (filter === 'all' || i.type === filter) && (!query || i.title.toLowerCase().includes(query) || i.file.toLowerCase().includes(query)));
     if (!shown.length) {
       clear(list, el('div', { class: 'card empty' }, icon('box'), el('h3', {}, items.length ? 'No matches' : 'Nothing installed'),
-        el('div', {}, items.length ? 'Try another filter.' : 'Add mods, shaders and resource packs from the library, or drop jar files into the Files tab.')));
+        el('div', {}, items.length ? 'Try another filter.' : 'Add mods, shaders and resource packs from the library, or drop jar files right here to install them.')));
       return;
     }
     clear(list, shown.map((i) => {
@@ -324,11 +324,22 @@ async function drawContent(root, inst, navigate) {
         updBtn = el('button', { class: 'chip accent click', title: `${upd.versionNumber || 'installed'} → ${upd.newVersionNumber}` }, icon('download'), upd.newVersionNumber);
         updBtn.addEventListener('click', () => applyUpdates([upd], updBtn));
       }
+      // Mods/plugins tracked in Modrinth can be pinned and offered other versions.
+      const tracked = i.projectId && (i.type === 'mod' || i.type === 'plugin');
+      const pinBtn = tracked ? el('button', {
+        class: `btn ghost icon sm${i.pinned ? ' active' : ''}`,
+        title: i.pinned ? 'Pinned: update checks skip this mod. Click to unpin.' : 'Pin: keep this version, update checks stop bothering it',
+      }, icon('pin')) : null;
+      if (pinBtn) pinBtn.addEventListener('click', () => togglePin(i));
+      const verBtn = tracked ? el('button', { class: 'btn ghost icon sm', title: 'Other versions / downgrade' }, icon('history')) : null;
+      if (verBtn) verBtn.addEventListener('click', () => pickVersion(i));
       return el('div', { class: `content-row${i.enabled ? '' : ' off'}` },
         i.icon ? el('img', { src: i.icon, alt: '', loading: 'lazy' }) : el('div', { class: 'ph' }, icon(i.type === 'shader' ? 'sun' : i.type === 'resourcepack' ? 'palette' : 'puzzle')),
-        el('div', { class: 'grow' }, el('b', {}, i.title), el('span', {}, `${TYPE_LABEL[i.type]} · ${i.file}`)),
+        el('div', { class: 'grow' }, el('b', { class: i.pinned ? 'pinned' : undefined }, i.title), el('span', {}, `${TYPE_LABEL[i.type]} · ${i.file}`)),
         updBtn,
         el('span', { class: 'ver', title: i.versionNumber || '' }, i.versionNumber || ''),
+        pinBtn,
+        verBtn,
         switchEl(i.enabled, async (on) => {
           try {
             await api.call('content:toggle', target, { type: i.type, file: i.file, enabled: on });
@@ -355,8 +366,62 @@ async function drawContent(root, inst, navigate) {
     }));
   };
 
-  const check = async (loud) => {
-    if (!items.some((i) => i.projectId && i.type === 'mod')) {
+  /** Show the Modrinth version list for an installed item; picking one installs it (downgrades included). */
+  const pickVersion = async (item) => {
+    const body = el('div', { class: 'row muted', style: { padding: '30px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading versions');
+    const m = modal({ title: item.title, body });
+    try {
+      const opts = {};
+      if (item.type === 'mod') {
+        opts.gameVersions = [inst.mcVersion];
+        opts.loaders = inst.loader === 'quilt' ? ['quilt', 'fabric'] : [inst.loader];
+      }
+      const versions = await api.call('library:versions', item.projectId, opts);
+      const rows = versions.slice(0, 50).map((v) => {
+        const current = v.version_number === item.versionNumber;
+        const b = el(
+          'button',
+          { class: `version-row${current ? ' current' : ''}` },
+          el('span', { class: 'grow' }, v.version_number, el('span', { class: 'muted' }, ` · ${v.game_versions.slice(-2).join(', ')}${v.version_type !== 'release' ? ` (${v.version_type})` : ''}`)),
+          current ? el('span', { class: 'chip ok' }, icon('check'), 'Installed') : el('span', { class: 'chip' }, icon('download'), 'Switch'),
+        );
+        b.addEventListener('click', async () => {
+          if (current) return;
+          b.disabled = true;
+          b.lastChild.replaceChildren(el('span', { class: 'spin xs' }), 'Switching');
+          try {
+            await api.call('content:install', target, { projectId: item.projectId, type: item.type, versionId: v.id });
+            toast(`Switched ${item.title} to ${v.version_number}`);
+            m.close();
+            await load(false);
+          } catch (err) {
+            errorToast(err);
+            b.disabled = false;
+            b.lastChild.replaceChildren(icon('download'), 'Switch');
+          }
+        });
+        return b;
+      });
+      clear(body, el('div', { class: 'version-list' }, rows.length ? rows : el('div', { class: 'card empty' }, 'No compatible versions for this toggle.')));
+    } catch (err) {
+      clear(body, el('div', { class: 'empty' }, err.message));
+    }
+  };
+
+  const togglePin = async (item) => {
+    try {
+      const pinned = await api.call('content:setPinned', target, { type: item.type, file: item.file, pinned: !item.pinned });
+      item.pinned = pinned;
+      if (pinned) updates.delete(item.projectId);
+      toast(pinned ? `Pinned ${item.title} — update checks skip it now` : `Unpinned ${item.title} — update checks resume`);
+      drawUpdateSlot();
+      draw();
+    } catch (err) {
+      errorToast(err);
+    }
+  };
+
+  const check = async (loud) => {    if (!items.some((i) => i.projectId && i.type === 'mod')) {
       if (loud) toast('No mods from Modrinth to check');
       return;
     }
@@ -393,7 +458,11 @@ async function drawContent(root, inst, navigate) {
     draw();
   });
 
-  root.append(
+  // Drag & drop: jar files land straight in the mods folder (same machinery as the Files tab).
+  const hint = el('div', { class: 'file-drop' }, icon('upload'), el('b', {}, 'Drop jar files to install'), el('span', { class: 'muted' }, 'They land in the mods folder'));
+  const hasFiles = (ev) => [...(ev.dataTransfer?.types || [])].includes('Files');
+  let depth = 0;
+  const browser = el('div', { class: 'content-browser' },
     el('div', { class: 'filter-row' },
       seg([
         { value: 'all', label: 'All' },
@@ -407,7 +476,41 @@ async function drawContent(root, inst, navigate) {
       el('button', { class: 'btn sm', onclick: () => api.call('instances:open', inst.id, filter === 'all' ? 'mods' : TYPE_FOLDER[filter]) }, icon('folder'), 'Folder'),
       el('button', { class: 'btn sm primary', onclick: () => navigate('library', { type: filter === 'all' ? 'mod' : filter, instanceId: inst.id }) }, icon('plus'), 'Add content')),
     list,
+    hint,
   );
+  browser.addEventListener('dragenter', (ev) => {
+    if (!hasFiles(ev)) return;
+    ev.preventDefault();
+    depth++;
+    browser.classList.add('dragging');
+  });
+  browser.addEventListener('dragover', (ev) => hasFiles(ev) && ev.preventDefault());
+  browser.addEventListener('dragleave', () => {
+    if (--depth <= 0) {
+      depth = 0;
+      browser.classList.remove('dragging');
+    }
+  });
+  browser.addEventListener('drop', async (ev) => {
+    ev.preventDefault();
+    depth = 0;
+    browser.classList.remove('dragging');
+    const paths = [...(ev.dataTransfer?.files || [])].map((f) => api.pathForFile(f)).filter(Boolean);
+    if (!paths.length) return;
+    const jars = paths.filter((p) => /\.jar$/i.test(p));
+    if (!jars.length) {
+      toast('Only .jar mod files can be dropped here.', 'info');
+      return;
+    }
+    try {
+      await api.call('files:import', target, 'mods', jars);
+      toast(jars.length === 1 ? 'Installed 1 mod file' : `Installed ${jars.length} mod files`);
+      await load(false);
+    } catch (err) {
+      errorToast(err);
+    }
+  });
+  root.append(browser);
   drawUpdateSlot();
   clear(list, el('div', { class: 'row muted' }, el('span', { class: 'spin xs' }), 'Loading'));
   load().catch(errorToast);
