@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pimpin Launcher – a Minecraft launcher with everything built in</title>
+<meta name="description" content="Pimpin Launcher is a Minecraft: Java Edition launcher with mods, shaders, resource packs, modpacks and local servers built in. Download for Windows and Linux.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sky:#2f79c9; --grass:#5a9a36; --dirt:#7a5233; --stone:#7d7d82; --deep:#3c3d46;
+  --ink:#1b1b1b; --paper:#eef0e8;
+  --gold:#f2c14e; --diamond:#4bd3d6; --redstone:#d9453a; --emerald:#3fce6e; --lapis:#4a6fe0;
+  --px:"Pixelify Sans","Courier New",monospace;
+  --body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:400 1.0625rem/1.6 var(--body);color:var(--paper);background:#2c2d34}
+img,canvas{display:block}
+a{color:inherit}
+:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.wrap{width:min(1180px,100% - 48px);margin-inline:auto}
+
+/* buttons, styled like the in-game ones */
+.mc{display:inline-block;font:700 1.05rem/1 var(--px);text-decoration:none;color:#fff;text-align:center;
+  background:#5c9a3b;border:3px solid;border-color:#9ad873 #2f5a1c #2f5a1c #9ad873;
+  box-shadow:0 0 0 3px #111;padding:.85em 1.4em;margin:3px;text-shadow:2px 2px 0 rgba(0,0,0,.35);cursor:pointer}
+.mc:hover{background:#6bb046}
+.mc:active{border-color:#2f5a1c #9ad873 #9ad873 #2f5a1c}
+.mc.big{font-size:1.3rem;padding:1em 1.7em}
+.mc.alt{background:#7d7d82;border-color:#c4c4c8 #46464b #46464b #c4c4c8}
+.mc.alt:hover{background:#8c8c92}
+
+/* hero */
+.hero{position:relative;min-height:600px;height:min(94vh,780px);overflow:hidden;background:var(--sky)}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 100%;image-rendering:pixelated}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,36,84,.32),transparent 62%);pointer-events:none}
+.hero-in{position:relative;z-index:1;padding-top:clamp(56px,11vh,120px)}
+h1{font:700 clamp(3.2rem,10vw,7.6rem)/.92 var(--px);margin:0 0 .3em;color:#fff;
+  text-shadow:.055em .055em 0 rgba(6,24,56,.55);letter-spacing:-.01em}
+.lead{max-width:30ch;font-size:clamp(1.15rem,2.4vw,1.5rem);line-height:1.4;margin:0 0 1.6rem;color:#fff;text-shadow:0 2px 0 rgba(6,24,56,.55)}
+.cta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ver{margin:1.1rem 3px 0;font-size:.95rem;color:#fff;text-shadow:0 1px 0 rgba(6,24,56,.6)}
+
+/* layers */
+.layer{padding:clamp(56px,9vw,104px) 0;image-rendering:pixelated}
+.dirt{background:linear-gradient(rgba(24,12,4,.3),rgba(24,12,4,.3)),var(--t-dirt) 0 0/auto,#6e4a2e;background-size:auto,112px}
+.stone{background:linear-gradient(rgba(14,14,20,.62),rgba(14,14,20,.62)),var(--t-stone);background-size:auto,112px;background-color:#4b4b50}
+.deep{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.25)),var(--t-deep);background-size:auto,112px;background-color:#2c2d34;padding:48px 0 64px}
+h2{font:700 clamp(2rem,4.5vw,3rem)/1.05 var(--px);margin:0 0 1.2rem;text-shadow:3px 3px 0 rgba(0,0,0,.4)}
+
+/* download panel = inventory screen */
+.split{display:grid;grid-template-columns:minmax(0,560px) minmax(0,1fr);gap:48px;align-items:start}
+.gui{background:#c6c6c6;color:#3f3f3f;border:4px solid;border-color:#fff #555 #555 #fff;box-shadow:0 0 0 4px #111,10px 10px 0 4px rgba(0,0,0,.3);padding:18px}
+.gui h3{font:700 1.25rem/1 var(--px);margin:2px 0 14px;color:#3f3f3f}
+.slot{display:grid;grid-template-columns:64px 1fr auto;gap:14px;align-items:center;padding:12px 0;border-top:3px solid #8b8b8b}
+.slot:first-of-type{border-top:0;padding-top:0}
+.ico{width:64px;height:64px;background:#8b8b8b;border:3px solid;border-color:#373737 #fff #fff #373737;display:grid;place-items:center}
+.ico svg{width:36px;height:36px;shape-rendering:crispEdges}
+.info b{display:block;font:700 1.1rem/1.2 var(--px);color:#1d1d1d}
+.info span{display:block;font-size:.93rem;line-height:1.4;margin-top:2px}
+.info code{display:block;margin-top:5px;font:600 .8rem/1.3 ui-monospace,Consolas,monospace;color:#555;overflow-wrap:anywhere}
+.slot .mc{font-size:.95rem;padding:.8em 1em;white-space:nowrap}
+.note{margin:1.4rem 0 0;font-size:.95rem;max-width:56ch;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+.note a{text-decoration-thickness:2px}
+.shot{margin:0}
+.shot img{width:100%;height:auto;border:4px solid #111;box-shadow:10px 10px 0 rgba(0,0,0,.35)}
+.shot figcaption{margin-top:14px;font-size:.92rem;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+
+/* features */
+.feats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:34px 56px}
+.feats li{position:relative;padding-left:34px}
+.feats li::before{content:"";position:absolute;left:0;top:.38em;width:18px;height:18px;background:var(--c);
+  box-shadow:inset -4px -4px 0 rgba(0,0,0,.28),inset 4px 4px 0 rgba(255,255,255,.3),0 0 0 3px rgba(0,0,0,.45)}
+.feats h3{font:700 1.3rem/1.2 var(--px);margin:0 0 .35em}
+.feats p{margin:0;max-width:46ch;color:#e3e5dc}
+.small{margin-top:3rem;font-size:.95rem;color:#c9ccc2;max-width:60ch}
+
+footer p{margin:.4rem 0;font-size:.92rem;color:#b9bcb2;max-width:70ch}
+footer nav{display:flex;flex-wrap:wrap;gap:8px 26px;margin-bottom:1rem}
+footer nav a{font:500 1.05rem var(--px);color:#fff}
+
+/* F3-style depth readout */
+#y{position:fixed;right:12px;bottom:12px;z-index:5;font:500 .95rem/1 var(--px);color:#fff;
+  background:rgba(0,0,0,.6);padding:7px 10px;pointer-events:none}
+
+@media (max-width:920px){
+  .split{grid-template-columns:minmax(0,1fr);gap:40px}
+  .feats{grid-template-columns:1fr}
+}
+@media (max-width:520px){
+  .slot{grid-template-columns:52px 1fr}
+  .ico{width:52px;height:52px}
+  .slot .mc{grid-column:1/-1}
+  .hero{min-height:560px}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="wrap hero-in">
+    <h1>Pimpin<br>Launcher</h1>
+    <p class="lead">Minecraft: Java Edition with your mods, shaders, packs and servers built in. One big Play button.</p>
+    <div class="cta">
+      <a class="mc big" href="#download">Downloads</a>
+      <a class="mc big alt" href="#features">What’s inside</a>
+    </div>
+    <p class="ver" id="ver">Windows 10/11 and Linux. Free.</p>
+  </div>
+</header>
+
+<main>
+<section class="layer dirt" id="download">
+  <div class="wrap split">
+    <div>
+      <h2>Download</h2>
+      <div class="gui">
+        <h3>Choose your copy</h3>
+
+        <div class="slot" data-kind="setup">
+          <div class="ico"><svg viewBox="0 0 8 8"><path fill="#1d6fd1" d="M0 0h3v3H0zM4 0h4v3H4zM0 4h3v4H0zM4 4h4v4H4z"/></svg></div>
+          <div class="info"><b>Windows installer</b><span>Best for most people. Updates itself.</span><code class="file">PimpinLauncher-Setup.exe</code></div>
+          <a class="mc dl" href="https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases/download/v0.1.30/PimpinLauncher-Setup-0.1.30.exe">Download</a>
+        </div>
+
+        <div class="slot" data-kind="portable">
+          <div class="ico"><svg viewBox="0 0 8 8"><path fill="#e0a52c" d="M0 2h8v6H0z"/><path fill="#f6d36b" d="M0 2l2-2h4l2 2z"/><path fill="#a56d12" d="M3 4h2v1H3z"/></svg></div>
+          <div class="info"><b>Windows portable</b><span>No install. Run it from any folder or a USB stick.</span><code class="file">PimpinLauncher-Portable.exe</code></div>
+          <a class="mc dl alt" href="https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases/download/v0.1.30/PimpinLauncher-Portable-0.1.30.exe">Download</a>
+        </div>
+
+        <div class="slot" data-kind="deb">
+          <div class="ico"><svg viewBox="0 0 8 8"><path fill="#c9382f" d="M0 2l4-2 4 2v5l-4 1-4-1z"/><path fill="#e8665c" d="M0 2l4 2 4-2L4 0z"/><path fill="#8c1f19" d="M4 4v4l4-1V2z"/></svg></div>
+          <div class="info"><b>Linux .deb</b><span>Debian and Ubuntu. Install with <i>sudo apt install ./file.deb</i></span><code class="file">PimpinLauncher .deb</code></div>
+          <a class="mc dl alt" href="https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases/latest">Download</a>
+        </div>
+      </div>
+
+      <p class="note">The Windows build isn’t code-signed yet, so SmartScreen may warn you the first time. Choose More info, then Run anyway. The portable and .deb copies don’t update themselves; download a new copy when there’s a new version.
+      Want an AppImage or an older version? <a href="https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases">Browse every release on GitHub</a>.</p>
+    </div>
+
+    <figure class="shot">
+      <img src="https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/raw/main/docs/home.png" alt="The Pimpin Launcher home screen" loading="lazy" onerror="this.closest('figure').remove()">
+      <figcaption>The home screen: jump back into a world, or press Play.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="layer stone" id="features">
+  <div class="wrap">
+    <h2>What’s inside</h2>
+    <ul class="feats">
+      <li style="--c:var(--emerald)"><h3>Just press Play</h3><p>It downloads the game, libraries, assets and the right Java for each version. You don’t install Java yourself.</p></li>
+      <li style="--c:var(--diamond)"><h3>Instances for everything</h3><p>Every instance has its own version, loader (Vanilla, Fabric or Quilt), mods, worlds, memory and Java settings. From 1.8.9 up to the newest releases.</p></li>
+      <li style="--c:var(--gold)"><h3>Mods, shaders and packs</h3><p>Browse the Modrinth library and install in one click, dependencies included. Modpacks become ready-to-play instances.</p></li>
+      <li style="--c:var(--redstone)"><h3>Pimpin Client</h3><p>Our own Fabric and Quilt mod: HUD, minimap, big map, waypoints, zoom, an FPS booster and an in-game mod menu, with a movable HUD layout.</p></li>
+      <li style="--c:var(--lapis)"><h3>Our own packs and shaders</h3><p>Pimpin Performance and Pimpin Pretty resource packs, plus Shaders Lite and Ultra. Pick Max FPS, Balanced or Max Pretty and everything is set up for you.</p></li>
+      <li style="--c:var(--emerald)"><h3>Local servers</h3><p>Start a Paper, Purpur or Vanilla server, add plugins, use the console, back up the world and join with one click.</p></li>
+      <li style="--c:var(--diamond)"><h3>Safe with your stuff</h3><p>Sign in with Microsoft, with tokens kept in your system keychain. World backups make a safety copy before any restore.</p></li>
+      <li style="--c:var(--gold)"><h3>The small things</h3><p>Dark, Midnight and Light themes, a wardrobe with 3D previews, a screenshot manager, a crash helper that explains what went wrong, and Ctrl+K to find anything.</p></li>
+    </ul>
+    <p class="small">Forge and NeoForge aren’t supported yet. Fabric and Quilt are.</p>
+  </div>
+</section>
+</main>
+
+<footer class="layer deep">
+  <div class="wrap">
+    <nav>
+      <a href="https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher">Source on GitHub</a>
+      <a href="https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases">All releases</a>
+      <a href="https://github.com/Nos-and-Stealzers/Pimpinminecraftlauncher/issues">Report a bug</a>
+    </nav>
+    <p>Pimpin Launcher is not affiliated with Mojang or Microsoft. Minecraft is a trademark of Mojang Studios.</p>
+  </div>
+</footer>
+
+<div id="y" aria-hidden="true">Y: 64</div>
+
+<script>
+(function(){
+  /* seeded random so the landscape is the same every visit */
+  var s=7;function r(){s|=0;s=s+0x6D2B79F5|0;var t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
+
+  /* hero landscape, drawn at 200x112 and scaled up with crisp pixels */
+  var c=document.getElementById('sky'),x=c.getContext('2d'),W=c.width=200,H=c.height=112;
+  function R(col,a,b,w,h){x.fillStyle=col;x.fillRect(a,b,w,h)}
+  var bands=['#2f79c9','#3a84d0','#4690d6','#539ddc','#62a9e1','#72b5e6','#83c0ea','#95cbee'];
+  bands.forEach(function(b,i){R(b,0,i*14,W,14)});
+  x.globalAlpha=.35;R('#fff2a8',146,10,20,20);x.globalAlpha=1;R('#fffbe0',150,14,12,12);
+  x.globalAlpha=.93;
+  [[16,18,28],[92,34,34],[158,52,24]].forEach(function(k){
+    R('#fff',k[0],k[1],k[2],4);R('#fff',k[0]+5,k[1]-3,k[2]-13,3);R('#dbe9f6',k[0],k[1]+4,k[2],1);
+  });
+  x.globalAlpha=1;
+  for(var i=0;i<W;i++){var f=Math.round(68+Math.sin(i*.03)*6+Math.sin(i*.09+2)*3);R('#5f9d8a',i,f,1,H-f);R('#76b3a0',i,f,1,1)}
+  var hs=[];
+  for(i=0;i<W;i++){var q=(i>>1)<<1;hs[i]=Math.round(82+Math.sin(q*.04+.5)*5+Math.sin(q*.1+1)*2.5+Math.sin(q*.017+2)*5)}
+  var dp=['#7a5233','#6e4a2e','#845a3a','#5f3f27','#8a6040'];
+  for(i=0;i<W;i++){
+    var h=hs[i];R('#78bd4c',i,h,1,1);
+    R(r()<.5?'#5a9a36':'#538f31',i,h+1,1,2);
+    for(var y=h+3;y<H;y++)R(dp[(r()*5)|0],i,y,1,1);
+  }
+  [22,64,113,158,185].forEach(function(t){
+    var g=hs[t];R('#6b4a2b',t,g-8,2,8);R('#5a3d22',t+1,g-8,1,8);
+    R('#3f7d2a',t-4,g-12,10,3);R('#3f7d2a',t-3,g-15,8,3);R('#4a8c31',t-1,g-17,4,2);
+    for(var k=0;k<16;k++)R('#2f6320',t-4+((r()*10)|0),g-17+((r()*5)|0)*2,1,1);
+  });
+
+  /* tiny block textures for the dirt, stone and deepslate layers */
+  function tile(pal){
+    var t=document.createElement('canvas');t.width=t.height=16;var g=t.getContext('2d');
+    for(var a=0;a<16;a++)for(var b=0;b<16;b++){g.fillStyle=pal[(r()*pal.length)|0];g.fillRect(a,b,1,1)}
+    return 'url('+t.toDataURL()+')';
+  }
+  var st=document.documentElement.style;
+  st.setProperty('--t-dirt',tile(dp));
+  st.setProperty('--t-stone',tile(['#7d7d82','#73737a','#86868b','#6a6a70','#7a7a80']));
+  st.setProperty('--t-deep',tile(['#3c3d46','#34353d','#444550','#2c2d34']));
+
+  /* depth readout, like the F3 screen: Y falls as you scroll down */
+  var yEl=document.getElementById('y');
+  function depth(){
+    var m=document.documentElement.scrollHeight-innerHeight,p=m>0?scrollY/m:0;
+    yEl.textContent='Y: '+Math.round(64-p*112);
+  }
+  addEventListener('scroll',depth,{passive:true});addEventListener('resize',depth);depth();
+
+  /* point the buttons at the newest release and show file names and sizes */
+  var ver=document.getElementById('ver');
+  var match={setup:/setup.*\.exe$/i,portable:/portable.*\.exe$/i,deb:/\.deb$/i};
+  fetch('https://api.github.com/repos/Nos-and-Stealzers/pimpin-launcher-releases/releases/latest')
+    .then(function(res){return res.ok?res.json():Promise.reject()})
+    .then(function(rel){
+      Object.keys(match).forEach(function(k){
+        var asset=(rel.assets||[]).filter(function(a){return match[k].test(a.name)})[0];
+        if(!asset)return;
+        var row=document.querySelector('[data-kind="'+k+'"]');
+        row.querySelector('.dl').href=asset.browser_download_url;
+        row.querySelector('.file').textContent=asset.name+'  ('+(asset.size/1048576).toFixed(0)+' MB)';
+      });
+      ver.textContent='Version '+String(rel.tag_name).replace(/^v/,'')+'. Windows 10/11 and Linux. Free.';
+    })
+    .catch(function(){});
+})();
+</script>
+</body>
+</html>
