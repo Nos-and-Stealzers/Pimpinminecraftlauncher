@@ -28,10 +28,15 @@ public final class PimpinConfig {
     public boolean showDeath = true;
     public boolean keystrokes = true;
     public boolean armorHud = true;
+    public int armorReadout = 0; // remaining, percent, both; keeps the old remaining readout
+    public boolean armorMainHand = true; // the existing panel already included the held item
+    public boolean armorOffHand = false;
+    public int armorWarningPercent = 0; // opt-in visual warning, zero disables it
     public boolean effectHud = false;
     public int effectHudRows = 8;
     // Temporarily use vanilla accessibility toggle sprint during a world session.
     public boolean toggleSprint = false;
+    public boolean launcherNotices = true;
     public Boolean sprintNativeBackup = null;
     public int hudCorner = 0; // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
     public float hudScale = 1.0f;
@@ -114,6 +119,8 @@ public final class PimpinConfig {
             }
         }
         if (instance == null) instance = new PimpinConfig();
+        if (instance.armorReadout < 0 || instance.armorReadout > 2) instance.armorReadout = 0;
+        instance.armorWarningPercent = Math.max(0, Math.min(100, instance.armorWarningPercent));
         instance.hudOpacity = Math.max(0, Math.min(100, instance.hudOpacity));
         instance.minimapRefresh = Math.max(10, Math.min(60, instance.minimapRefresh));
         instance.minimapEntityHeight = Math.max(8, Math.min(256, instance.minimapEntityHeight));

@@ -437,18 +437,32 @@ void main() {
 #endif
     refl = refl * skyVis + ambientColor() * 0.03 * (1.0 - skyVis);
     if (water) {
-        // how much water lies between this surface and the ground below it
-        float d1 = texture2D(depthtex1, gl_FragCoord.xy / vec2(viewWidth, viewHeight)).r;
-        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(gl_FragCoord.xy / vec2(viewWidth, viewHeight), d1)) - length(viewPos), 0.0);
+        vec2 screenUV = gl_FragCoord.xy / vec2(viewWidth, viewHeight);
+        float d1 = texture2D(depthtex1, screenUV).r;
+        float thick = d1 >= 1.0 ? 32.0 : max(length(screenToView(screenUV, d1)) - length(viewPos), 0.0);
+        vec2 refrUV = screenUV;
+        if (WATER_REFRACTION > 0.0 && isEyeInWater == 0) {
+            vec3 rd = refract(V, n, 0.75);
+            vec2 bent = viewToScreen(viewPos + rd * clamp(thick, 0.25, 2.5)).xy;
+            bent = mix(screenUV, bent, WATER_REFRACTION);
+            // Avoid pulling a foreground bank, hand or shoreline into the water.
+            if (bent.x > 0.0 && bent.x < 1.0 && bent.y > 0.0 && bent.y < 1.0 && texture2D(depthtex1, bent).r > gl_FragCoord.z) refrUV = bent;
+        }
+        float bd = texture2D(depthtex1, refrUV).r;
+        thick = bd >= 1.0 ? 32.0 : max(distance(screenToView(refrUV, bd), viewPos), 0.0);
         if (isEyeInWater == 1) { thick = 0.5; F *= 0.35; }
-        float a = 1.0 - exp(-thick * 0.30 * WATER_FOG);
-        a = mix(0.16, 0.95, a);
-        vec3 deep = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
-        deep *= 0.85 + 0.3 * luma(texture2D(tex, texcoord).rgb);
-        F = max(F, 0.05);
-        float A = a * (1.0 - F) + F;
-        color = (deep * a * (1.0 - F) + refl * F + spec) / max(A, 0.001);
-        alpha = sat(A + luma(spec));
+        vec3 absorb = waterTransmission(thick, WATER_FOG);
+        vec3 scatter = vec3(0.014, 0.085, 0.115) * (ambientColor() * lmcoord.y * lmcoord.y * 1.3 + sunLightColor() * 0.10 * lit + blockLightColor(lmcoord.x) * 0.5 + minimumLight());
+        vec3 transmitted = texture2D(colortex4, refrUV).rgb * absorb + scatter * (1.0 - absorb);
+#ifdef SSR
+        vec3 traceR = reflect(V, normalize(mix(normalize(viewNormal), n, 0.75)));
+        vec4 hit = traceWaterReflection(colortex4, viewPos + n * 0.05, traceR, 0.5);
+        refl = mix(refl, hit.rgb, hit.a);
+#endif
+        // Replace the translucent surface with the fully composed result. No double blending
+        // against colortex0; the background above came from the stable opaque snapshot.
+        color = mix(transmitted, refl, F) + spec;
+        alpha = 1.0;
     } else {
         color = mix(color, refl, F * 0.6) + spec * 0.3;
         alpha = mix(alpha, 1.0, F * 0.5);
@@ -609,16 +623,22 @@ PREPARE_FSH = r"""// renders the sky-view LUT plus the sun and ambient colours i
 #define SUN_INTENSITY 2.8
 
 vec3 skyRadiance(vec3 d, vec3 sunL) {
-    float below = max(-d.y, 0.0);
+    // Continue the horizon below eye level. An arbitrary dark lower hemisphere
+    // looks like a grey sphere around the camera when terrain is out of range.
     if (d.y < 0.0) d = normalize(vec3(d.x, 0.0, d.z));
     vec3 c = vec3(0.0);
     if (sunL.y > -0.3) c += atmScatter(d, sunL) * SKY_INTENSITY;
     if (sunL.y < 0.3) c += atmScatter(d, -sunL) * SKY_INTENSITY * 0.012 * moonTint();
     // faint airglow so a moonless night is not pitch black
     c += vec3(0.0030, 0.0042, 0.0085) * (1.15 - 0.5 * d.y) * (1.0 - dayFactor());
-    c *= mix(1.0, 0.3, smoothstep(0.0, 0.5, below));
     float l = luma(c);
     c = mix(vec3(l), c, 1.12);
+    // Clear air should fade into a pale blue horizon, not a neutral grey wall.
+    // Keep the physically warm sunset and overcast colours unchanged.
+    float clearHorizon = pow(1.0 - max(d.y, 0.0), 3.0) * smoothstep(0.10, 0.55, sunL.y) * (1.0 - rainStrength);
+    vec3 blueHaze = vec3(0.48, 0.70, 1.0);
+    blueHaze *= l / luma(blueHaze);
+    c = mix(c, blueHaze, clearHorizon * 0.65);
     vec3 overcast = vec3(l) * vec3(0.92, 0.96, 1.02) * 0.7;
     return mix(c, overcast, rainStrength * 0.85);
 }
@@ -659,22 +679,26 @@ uniform sampler2D colortex3;
 
 float eyeSkyLight() { return float(eyeBrightnessSmooth.y) / 240.0; }
 
-// distance + height fog; its colour is the sky behind the object, so far terrain fades into the horizon
+// Atmospheric extinction uses ray length; the terrain boundary uses horizontal distance.
+// A spherical far-plane fade makes a coloured shell appear underneath elevated players.
 vec3 applyFog(vec3 col, vec3 dir, float dist) {
-    float border = smoothstep(far * 0.6, far, dist);
+    float dy = clamp(dot(dir, normalize(upPosition)), -1.0, 1.0);
+    float terrainDistance = dist * sqrt(max(1.0 - dy * dy, 0.0));
+    float border = smoothstep(max(far, 1.0) * 0.76, max(far, 1.0) * 0.99, terrainDistance);
 #if defined DIM_NETHER
     float f = 1.0 - exp(-dist * 0.02 * FOG_DENSITY);
 #elif defined DIM_END
     float f = 1.0 - exp(-dist * 0.0065 * FOG_DENSITY);
 #else
-    float dy = dot(dir, normalize(upPosition));
-    float base = (0.0010 + 0.009 * rainStrength + 0.0007 * twilightFactor()) * FOG_DENSITY;
-    // exponential height fog, integrated along the ray
-    float b = 1.0 / 28.0;
-    float h0 = (0.0035 + 0.004 * twilightFactor() + 0.012 * rainStrength) * FOG_DENSITY * exp(-b * max(cameraPosition.y - 63.0, 0.0));
-    float k = b * dy * dist;
-    float heightTerm = abs(k) > 0.001 ? (1.0 - exp(-k)) / k : 1.0;
-    float tau = base * dist + h0 * dist * heightTerm;
+    float base = (0.00045 + 0.0035 * rainStrength + 0.0002 * twilightFactor()) * FOG_DENSITY;
+    // Integrate a bounded sea-level haze layer. Density stays constant below sea
+    // level instead of growing exponentially when a ray points into a valley.
+    float startHeight = max(cameraPosition.y - 63.0, 0.0);
+    float midHeight = max(cameraPosition.y + dy * dist * 0.5 - 63.0, 0.0);
+    float endHeight = max(cameraPosition.y + dy * dist - 63.0, 0.0);
+    float layer = (exp(-startHeight / 48.0) + 4.0 * exp(-midHeight / 48.0) + exp(-endHeight / 48.0)) / 6.0;
+    float haze = (0.00075 + 0.0030 * rainStrength + 0.0004 * twilightFactor()) * FOG_DENSITY;
+    float tau = (base + haze * layer) * dist;
     float f = 1.0 - exp(-tau);
     f *= mix(0.25, 1.0, eyeSkyLight());
 #endif
@@ -840,6 +864,8 @@ void main() {
     float depth = texture2D(depthtex0, uv).r;
     if (depth >= 1.0) col = paintSky(normalize(screenToView(uv, 1.0)), uv);
     gl_FragData[0] = vec4(col, 1.0);
+    // Snapshot opaque terrain + painted sky. Water reads this attachment without feedback.
+    gl_FragData[1] = vec4(col, 1.0);
 }
 """
 
@@ -893,7 +919,11 @@ float depthAO(float depth, float noise) {
 #endif
 
 void main() {
+#ifdef FXAA
+    vec3 col = spatialAA(colortex0, uv, 1.0 / vec2(viewWidth, viewHeight));
+#else
     vec3 col = texture2D(colortex0, uv).rgb;
+#endif
     float depth = texture2D(depthtex0, uv).r;
     vec3 vp = screenToView(uv, depth);
     vec3 dir = normalize(vp);
@@ -925,7 +955,6 @@ void main() {
 
 # ---------------------------------------------------------------- Ultra only
 DEFERRED_ULTRA = r"""varying vec2 uv;
-uniform sampler2D colortex4;
 
 vec3 decodeNormal(vec2 e) {
     vec2 fe = e * 4.0 - 2.0;
@@ -1045,37 +1074,6 @@ vec3 decodeNormal(vec2 e) {
     return vec3(fe * g, 1.0 - f / 2.0);
 }
 
-vec4 traceReflection(vec3 origin, vec3 R, float jitter) {
-    float stepLen = 0.35 + length(origin) * 0.03;
-    vec3 stepv = R * stepLen;
-    vec3 pos = origin + stepv * (0.3 + jitter);
-    for (int i = 0; i < SSR_STEPS; i++) {
-        vec3 sc = viewToScreen(pos);
-        if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) break;
-        float d = texture2D(depthtex1, sc.xy).r;
-        if (d < 1.0 && d > 0.56) {
-            vec3 sp = screenToView(sc.xy, d);
-            float diff = sp.z - pos.z;
-            if (diff > 0.0 && diff < length(stepv) * 2.5 + 0.4) {
-                for (int j = 0; j < 5; j++) {
-                    stepv *= 0.5;
-                    sc = viewToScreen(pos);
-                    sp = screenToView(sc.xy, texture2D(depthtex1, sc.xy).r);
-                    pos += (sp.z - pos.z > 0.0 ? -stepv : stepv);
-                }
-                sc = viewToScreen(pos);
-                vec2 edge = min(sc.xy, 1.0 - sc.xy);
-                float fade = clamp(min(edge.x, edge.y) * 12.0, 0.0, 1.0);
-                if (texture2D(depthtex1, sc.xy).r >= 1.0) return vec4(0.0);
-                return vec4(texture2D(colortex0, sc.xy).rgb, fade);
-            }
-        }
-        pos += stepv;
-        stepv *= 1.28;
-    }
-    return vec4(0.0);
-}
-
 #if defined VOLUMETRIC_LIGHT && defined DIM_OVERWORLD
 vec3 volumetricLight(vec3 dir, float dist, float jitter) {
     float maxD = min(dist, min(shadowDistance, VL_DISTANCE));
@@ -1151,7 +1149,7 @@ void main() {
                     bg *= 1.0 + c * 2.5 * skyL * skyL * sat(luma(sunLightColor()) * 0.5) * exp(-thick * 0.2);
                 }
 #endif
-                vec3 absorb = exp(-vec3(0.42, 0.11, 0.07) * thick * WATER_FOG);
+                vec3 absorb = waterTransmission(thick, WATER_FOG);
                 col = bg * absorb + waterScatter(skyL) * (1.0 - absorb);
             }
             F = 0.02 + 0.98 * pow(1.0 - abs(dot(dir, n)), 5.0);
@@ -1177,7 +1175,7 @@ void main() {
             vec3 R = reflect(dir, n);
             vec3 refl = skyColorAt(R) * smoothstep(0.3, 0.85, skyL) + ambientColor() * 0.03;
 #ifdef SSR
-            vec4 hit = traceReflection(vp, R, jitter);
+            vec4 hit = traceWaterReflection(colortex0, vp + n * 0.05, R, jitter);
             refl = mix(refl, hit.rgb, hit.a);
 #endif
             col = mix(col, refl, F);
@@ -1197,6 +1195,27 @@ void main() {
 
 TAA_ULTRA = r"""varying vec2 uv;
 uniform sampler2D colortex7;
+const bool colortex0MipmapEnabled = true;
+
+// Full-scene metering needs varying UV derivatives. A constant vec2(0.5)
+// gives zero derivatives: texture2D's bias then samples the centre pixel,
+// not a high mip, and exposure flashes whenever the crosshair crosses a light.
+float adaptedExposure() {
+    float base = exposureValue();
+#ifdef AUTO_EXPOSURE
+    float average = luma(texture2D(colortex0, uv, 14.0).rgb);
+    float target = base * mix(1.0, clamp(0.2 / max(average * base, 0.0001), 0.6, 1.3), 0.5);
+    // History alpha is uniform across the buffer and independent of TAA motion
+    // reprojection; scene cuts, resize/reload and invalid history start cleanly.
+    float previous = texture2D(colortex7, vec2(0.5)).a;
+    if (frameCounter < 2 || !(previous > 0.05 && previous < 8.0)
+            || length(cameraPosition - previousCameraPosition) > 64.0) return target;
+    float response = 1.0 - exp(-clamp(frameTime, 0.001, 0.25) * 1.5);
+    return exp2(mix(log2(previous), log2(max(target, 0.0001)), response));
+#else
+    return base;
+#endif
+}
 
 // temporal anti-aliasing: reproject last frame, clamp it to this frame's neighbourhood, blend
 vec3 toYCoCg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
@@ -1236,8 +1255,9 @@ void main() {
 #else
     vec3 res = cur;
 #endif
-    gl_FragData[0] = vec4(res, 1.0);
-    gl_FragData[1] = vec4(res, 1.0);
+    float exposure = adaptedExposure();
+    gl_FragData[0] = vec4(res, exposure);
+    gl_FragData[1] = vec4(res, exposure);
 }
 """
 
@@ -1275,9 +1295,8 @@ void main() {
 #endif
     float exposure = exposureValue();
 #ifdef AUTO_EXPOSURE
-    float avg = luma(texture2D(colortex0, vec2(0.5), 14.0).rgb);
-    float autoExp = clamp(0.2 / max(avg * exposure, 0.0001), 0.6, 1.3);
-    exposure *= mix(1.0, autoExp, 0.5);
+    // Metered and time-smoothed in composite1, before final colour grading.
+    exposure = texture2D(colortex0, uv).a;
 #endif
     gl_FragData[0] = vec4(finishColor(col, uv, exposure), 1.0);
 }

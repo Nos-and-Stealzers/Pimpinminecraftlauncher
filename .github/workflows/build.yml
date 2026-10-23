@@ -37,10 +37,14 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
       # Every build gets its own version so installed launchers can auto-update.
+      # Tag wins; otherwise the committed VERSION file, falling back to run numbers.
       - name: Set version
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.1.$GITHUB_RUN_NUMBER"; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
+          elif [[ -s VERSION ]]; then v="$(cat VERSION | tr -d '[:space:]')"
+          else v="0.1.$GITHUB_RUN_NUMBER"; fi
+          echo "Building version $v"
           npm version "$v" --no-git-tag-version --allow-same-version
       - name: Package (Windows)
         if: runner.os == 'Windows'

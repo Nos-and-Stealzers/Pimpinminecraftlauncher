@@ -7,6 +7,8 @@ import dev.pimpin.client.compat.Keys;
 import dev.pimpin.client.feature.DeathTracker;
 import dev.pimpin.client.feature.FpsBooster;
 import dev.pimpin.client.feature.LoadingScreen;
+import dev.pimpin.client.feature.LauncherNotices;
+import dev.pimpin.client.hud.NoticeHud;
 import dev.pimpin.client.feature.Waypoints;
 import dev.pimpin.client.feature.Zoom;
 import dev.pimpin.client.feature.ToggleSprint;
@@ -57,11 +59,16 @@ public final class PimpinClient implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(PimpinClient::tick);
         Hud.register(PimpinHud::render);
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ToggleSprint.restore(client));
+        Hud.register("launcher_notices", NoticeHud::render);
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            ToggleSprint.restore(client);
+            PimpinHud.reset();
+        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             FpsBooster.restoreBackgroundLimit(client);
             ToggleSprint.restore(client);
             ClientQolDevTest.stopping(client);
+            LauncherNotices.flush();
             PimpinConfig.save();
         });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
@@ -84,6 +91,7 @@ public final class PimpinClient implements ClientModInitializer {
 
     private static void tick(Minecraft client) {
         PimpinConfig cfg = PimpinConfig.get();
+        LauncherNotices.tick(client);
         while (menuKey.consumeClick()) {
             if (Compat.screen(client) == null) Compat.setScreen(client, new ModMenuScreen(null));
         }

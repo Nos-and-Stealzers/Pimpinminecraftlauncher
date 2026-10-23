@@ -1,6 +1,7 @@
 uniform sampler2D tex;
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
+uniform sampler2D colortex4;
 uniform sampler2D colortex5;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
@@ -25,6 +26,7 @@ uniform vec4 entityColor;
 uniform float rainStrength;
 uniform float wetness;
 uniform float frameTimeCounter;
+uniform float frameTime;
 uniform float sunAngle;
 uniform float viewWidth;
 uniform float viewHeight;

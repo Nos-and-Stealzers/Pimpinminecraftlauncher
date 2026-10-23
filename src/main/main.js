@@ -1,6 +1,7 @@
 // Electron entry point: creates the custom frameless window and exposes the
 // launcher backend to the UI through a single whitelisted RPC channel.
 const path = require('path');
+const { createHash } = require('crypto');
 const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard } = require('electron');
 const store = require('./store');
 const screenshots = require('./screenshots').createScreenshots({ instancesRoot: store.dirs.instances, nativeImage, clipboard });
@@ -17,6 +18,8 @@ const importer = require('./importer');
 const gameLogs = require('./logs');
 const wardrobe = require('./wardrobe');
 const worldBackups = require('./world-backups');
+const clientSettings = require('./client-settings');
+const noticeLib = require('./notifications');
 const { getJson, request } = require('./net');
 
 let win;
@@ -118,6 +121,7 @@ function applySystemSettings(s) {
 
 function emit(channel, payload) {
   send(channel, payload);
+  if (channel === 'game:state' && payload.state === 'running') syncInGameNotices([payload.id]);
   if (channel === 'game:state' && store.getSettings().closeOnLaunch && win) {
     if (payload.state === 'running') win.hide();
     if (payload.state === 'stopped') win.show();
@@ -188,10 +192,14 @@ const handlers = {
   },
   'shell:openRoot': () => shell.openPath(store.dirs.root),
 
+  'client-settings:get': (id) => clientSettings.get(id),
+  'client-settings:update': (id, patch, revision) => clientSettings.update(id, patch, revision),
+
   'settings:get': () => store.getSettings(),
   'settings:update': async (patch) => {
     const next = await store.updateSettings(patch);
     if ('minimizeToTray' in patch || 'launchOnStartup' in patch) applySystemSettings(next);
+    if (NOTICE_SETTINGS.some((k) => k in patch)) applyNoticeSettings(patch);
     return next;
   },
   'dialog:pickJava': async () => {
@@ -300,6 +308,13 @@ const handlers = {
   },
   'shell:showItem': (id, sub, name) => shell.showItemInFolder(store.safeJoin(instances.dirOf(id), sub, name)),
 
+  'notifications:list': () => notices.list(),
+  'notifications:read': (ids) => notices.markRead(Array.isArray(ids) ? ids.map(String) : null).then(() => notices.list()),
+  'notifications:dismiss': (id) => notices.dismiss(String(id)).then(() => notices.list()),
+  'notifications:check': async () => {
+    await Promise.allSettled([checkAnnouncements(), scanModUpdates()]);
+    return notices.list();
+  },
   'update:get': () => setUpdate({}),
   'update:check': () => checkForUpdates(),
   'update:download': () => {
@@ -518,6 +533,143 @@ ipcMain.handle('rpc', async (_e, channel, args) => {
 
 app.on('second-instance', showWindow);
 
+// ---------------------------------------------------------- notifications --
+// One list for launcher updates, mod updates and announcements. Announcements
+// come from notices.json in the public releases repo, so a notice can go out
+// without shipping a build. Running Pimpin Client games get a copy to show.
+const NOTICE_SETTINGS = ['notifyLauncherUpdates', 'notifyModUpdates', 'notifyAnnouncements', 'inGameNotices'];
+const notices = noticeLib.createNotifications({
+  file: path.join(store.dirs.root, 'notifications.json'),
+  onChange: (snap, fresh) => {
+    send('notifications:changed', { ...snap, fresh });
+    syncInGameNotices();
+  },
+});
+
+let inGameChain = Promise.resolve();
+/** Copies the in-game notices into running instances (or the given ones). */
+function syncInGameNotices(ids) {
+  inGameChain = inGameChain.then(async () => {
+    const payload = store.getSettings().inGameNotices === false ? { version: 1, notices: [] } : await notices.inGamePayload();
+    const targets = ids || (await instances.list()).filter((i) => i.running).map((i) => i.id);
+    for (const id of targets) {
+      await noticeLib.writeInGameFile(instances.dirOf(id), payload).catch((err) => console.warn(`[notices] ${id}: ${err.message}`));
+    }
+  }).catch((err) => console.warn(`[notices] ${err.message}`));
+  return inGameChain;
+}
+
+function noteUpdateState(u) {
+  const v = u.version;
+  if (u.state === 'up-to-date') {
+    notices.removeWhere((x) => x.kind === 'launcher-update').catch(() => {});
+    return;
+  }
+  if (!v || store.getSettings().notifyLauncherUpdates === false) return;
+  if (noticeLib.compareVersions(v, app.getVersion()) <= 0) return;
+  const action = { type: 'update', label: u.state === 'ready' ? 'Restart and update' : 'View update' };
+  let n = null;
+  if (u.state === 'ready') {
+    n = { rev: `${v}-ready`, title: `Pimpin ${v} is ready`, body: 'Restart the launcher to install it. It also installs when you close the launcher.' };
+  } else if (u.state === 'manual') {
+    n = { rev: `${v}-manual`, title: `Pimpin ${v} is available`, body: "This copy can't update itself. Download the new installer to update." };
+  } else if (u.state === 'available' || u.state === 'downloading') {
+    n = { rev: `${v}-available`, title: `Pimpin ${v} is available`, body: u.state === 'downloading' ? 'Downloading in the background. You can keep playing.' : 'Download it when you are ready.' };
+  }
+  // keep the "available" text once the download starts, so it isn't re-announced
+  if (n && !(u.state === 'downloading' && lastUpdateNotice === `${v}-available`)) {
+    lastUpdateNotice = n.rev;
+    notices.upsert({ id: 'launcher-update', kind: 'launcher-update', severity: 'info', action, ...n }).catch((err) => console.warn(`[notices] ${err.message}`));
+  }
+}
+let lastUpdateNotice = null;
+
+async function checkAnnouncements() {
+  const s = store.getSettings();
+  const url = process.env.PIMPIN_NOTICES_URL || `https://raw.githubusercontent.com/${REPO}/main/notices.json`;
+  let raw = '';
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { 'Cache-Control': 'no-cache' } });
+    if (res.status === 404) raw = '';
+    else if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    else {
+      const len = Number(res.headers.get('content-length') || 0);
+      if (len > noticeLib.FEED_MAX_BYTES) throw new Error('feed too large');
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of res.body) {
+        size += chunk.length;
+        if (size > noticeLib.FEED_MAX_BYTES) throw new Error('feed too large');
+        chunks.push(Buffer.from(chunk));
+      }
+      raw = Buffer.concat(chunks).toString('utf8');
+    }
+  } catch (err) {
+    console.warn(`[notices] announcements: ${err.message}`);
+    return; // offline: keep what we have
+  }
+  let list;
+  try {
+    list = noticeLib.parseFeed(raw, { version: app.getVersion(), platform: process.platform, channel: s.updateChannel === 'beta' ? 'beta' : 'stable' });
+  } catch (err) {
+    console.warn(`[notices] announcements: ${err.message}`);
+    return;
+  }
+  // critical notices (security, broken builds) still show with announcements off
+  if (s.notifyAnnouncements === false) list = list.filter((x) => x.severity === 'critical');
+  await notices.replaceKind('announcement', list);
+}
+
+let modScan = null;
+async function scanModUpdates() {
+  if (store.getSettings().notifyModUpdates === false) return;
+  if (modScan) return modScan;
+  modScan = (async () => {
+    const found = [];
+    for (const inst of await instances.list()) {
+      try {
+        const updates = await content.checkUpdates(await instances.holder(inst.id));
+        if (!updates.length) continue;
+        const names = updates.map((u) => u.title || u.name || u.file).filter(Boolean);
+        found.push({
+          id: `mods-${inst.id}`.slice(0, 100),
+          kind: 'mod-updates',
+          rev: createHash('sha256').update(updates.map((u) => `${u.projectId}:${u.newVersionId}`).sort().join(',')).digest('hex'),
+          title: `${updates.length} mod update${updates.length > 1 ? 's' : ''} for ${inst.name}`,
+          body: names.slice(0, 4).join(', ') + (names.length > 4 ? ` and ${names.length - 4} more` : ''),
+          action: { type: 'instance', id: inst.id, tab: 'content', label: 'Review updates' },
+          inGame: false,
+        });
+      } catch (err) {
+        console.warn(`[notices] mod updates for ${inst.id}: ${err.message}`);
+        found.push(...(await notices.list()).items.filter((x) => x.id === `mods-${inst.id}`)); // keep the old one on a failed check
+      }
+    }
+    await notices.replaceKind('mod-updates', found);
+  })().finally(() => {
+    modScan = null;
+  });
+  return modScan;
+}
+
+function applyNoticeSettings(patch) {
+  if (patch.notifyModUpdates === false) notices.removeWhere((x) => x.kind === 'mod-updates').catch(() => {});
+  if (patch.notifyModUpdates === true) scanModUpdates().catch(() => {});
+  if (patch.notifyLauncherUpdates === false) notices.removeWhere((x) => x.kind === 'launcher-update').catch(() => {});
+  if (patch.notifyLauncherUpdates === true) noteUpdateState(updateState);
+  if ('notifyAnnouncements' in patch) checkAnnouncements().catch(() => {});
+  if ('inGameNotices' in patch) syncInGameNotices();
+}
+
+function setupNotices() {
+  // an installed update leaves its notice behind; clear it on the next start
+  notices.removeWhere((x) => x.kind === 'launcher-update' && /^[\d.]+/.test(x.rev) && noticeLib.compareVersions(x.rev.split('-')[0], app.getVersion()) <= 0).catch(() => {});
+  setTimeout(() => checkAnnouncements().catch(() => {}), 12000);
+  setInterval(() => checkAnnouncements().catch(() => {}), 2 * 3600e3);
+  setTimeout(() => scanModUpdates().catch(() => {}), 90000);
+  setInterval(() => scanModUpdates().catch(() => {}), 6 * 3600e3);
+}
+
 // ---------------------------------------------------------------- updates --
 // PIMPIN_UPDATE_REPO only exists to test the update screens against another repo
 // Installers are published to a public repo (the source repo is private), so
@@ -541,6 +693,7 @@ function newer(a, b) {
 function setUpdate(patch) {
   updateState = { ...updateState, ...patch, current: app.getVersion(), selfUpdate: canSelfUpdate() };
   send('update:state', updateState);
+  noteUpdateState(updateState);
   return updateState;
 }
 
@@ -597,6 +750,7 @@ function setupUpdater() {
 
 app.whenReady().then(() => {
   createWindow();
+  setupNotices();
   setupUpdater();
   applySystemSettings(store.getSettings());
 });

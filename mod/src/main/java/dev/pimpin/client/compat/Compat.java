@@ -58,6 +58,10 @@ public final class Compat {
         //#endif
     }
 
+    public static void copyText(Minecraft mc, String text) {
+        mc.keyboardHandler.setClipboard(text);
+    }
+
     public static void actionBar(Minecraft mc, String text) {
         if (mc.player == null) return;
         //#if MC >= 26.1

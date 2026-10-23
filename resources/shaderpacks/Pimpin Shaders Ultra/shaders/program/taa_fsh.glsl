@@ -1,5 +1,26 @@
 varying vec2 uv;
 uniform sampler2D colortex7;
+const bool colortex0MipmapEnabled = true;
+
+// Full-scene metering needs varying UV derivatives. A constant vec2(0.5)
+// gives zero derivatives: texture2D's bias then samples the centre pixel,
+// not a high mip, and exposure flashes whenever the crosshair crosses a light.
+float adaptedExposure() {
+    float base = exposureValue();
+#ifdef AUTO_EXPOSURE
+    float average = luma(texture2D(colortex0, uv, 14.0).rgb);
+    float target = base * mix(1.0, clamp(0.2 / max(average * base, 0.0001), 0.6, 1.3), 0.5);
+    // History alpha is uniform across the buffer and independent of TAA motion
+    // reprojection; scene cuts, resize/reload and invalid history start cleanly.
+    float previous = texture2D(colortex7, vec2(0.5)).a;
+    if (frameCounter < 2 || !(previous > 0.05 && previous < 8.0)
+            || length(cameraPosition - previousCameraPosition) > 64.0) return target;
+    float response = 1.0 - exp(-clamp(frameTime, 0.001, 0.25) * 1.5);
+    return exp2(mix(log2(previous), log2(max(target, 0.0001)), response));
+#else
+    return base;
+#endif
+}
 
 // temporal anti-aliasing: reproject last frame, clamp it to this frame's neighbourhood, blend
 vec3 toYCoCg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
@@ -39,6 +60,7 @@ void main() {
 #else
     vec3 res = cur;
 #endif
-    gl_FragData[0] = vec4(res, 1.0);
-    gl_FragData[1] = vec4(res, 1.0);
+    float exposure = adaptedExposure();
+    gl_FragData[0] = vec4(res, exposure);
+    gl_FragData[1] = vec4(res, exposure);
 }

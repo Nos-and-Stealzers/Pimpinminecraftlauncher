@@ -14,13 +14,19 @@ const MOBS = require('./pack-art/mobs');
 const SKINS = require('./pack-art/skins');
 const HUD = require('./pack-art/hud');
 const ENT = require('./pack-art/entities');
-const { I, LEGACY_ITEMS } = require('./pack-art/items');
+const { I: baseItems, LEGACY_ITEMS } = require('./pack-art/items');
 const terrain = require('./pack-art/terrain');
 const blocks3 = require('./pack-art/blocks3');
 const BABY = require('./pack-art/babies');
 const polish = require('./pack-art/polish');
+const foodArt = require('./pack-art/food-art');
+const gearArt = require('./pack-art/gear-art');
+const oreArt = require('./pack-art/ore-art');
+const equipmentArt = require('./pack-art/equipment-art');
 
 // terrain.js redraws the most common terrain (noise-quantised, low repetition)
-const T = { ...blocks.T, ...blocks2.T, ...fx.T, ...terrain.X, ...blocks3.T, ...polish.X };
+const T = { ...blocks.T, ...blocks2.T, ...fx.T, ...terrain.X, ...blocks3.T, ...polish.X, ...oreArt.X };
+const I = { ...baseItems, ...gearArt.I, ...foodArt.I };
+const ITEM_SPECS = [...gearArt.ITEM_SPECS, ...foodArt.ITEM_SPECS];
 
-module.exports = { T, ORES: blocks.ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY };
+module.exports = { T, ORES: blocks.ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY, ITEM_SPECS, equipmentArt };

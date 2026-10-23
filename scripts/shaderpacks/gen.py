@@ -22,6 +22,7 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define COLORED_SHADOWS
 #define SHADOW_SOFTNESS 1.0 // [0.5 1.0 1.5 2.0]
 #define SHADOW_DISTORT 0.85
+#define FXAA
 #define SSAO
 #define SSAO_STEPS 4 // [3 4 6 8]
 #define SSAO_STRENGTH 0.8 // [0.4 0.6 0.8 1.0]
@@ -39,6 +40,10 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define WAVING_PLANTS
 #define WAVE_STRENGTH 1.0 // [0.0 0.5 1.0 1.5 2.0]
 #define WATER_WAVES
+#define WATER_DETAIL
+#define SSR
+#define SSR_STEPS 12 // [8 12 16 24]
+#define WATER_REFRACTION 1.0 // [0.0 0.5 1.0 1.5]
 #define WATER_WAVE_HEIGHT 0.4 // [0.2 0.3 0.4 0.6 0.8 1.0]
 #define WATER_SPEED 1.0 // [0.5 1.0 1.5 2.0]
 #define WATER_FOG 1.0 // [0.5 1.0 1.5 2.0]
@@ -132,6 +137,7 @@ BUFFERS_LITE = """/*
 const int colortex0Format = RGBA16F;
 const int colortex2Format = RGBA16F;
 const int colortex3Format = RGBA16F;
+const int colortex4Format = RGBA16F;
 const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
 const vec4 colortex2ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
@@ -178,17 +184,17 @@ uniform.float.auroraCold=smooth(clamp((0.35 - temperature) * 5.0, 0.0, 1.0), 4, 
 
 PROPS_LITE = """# Pimpin Shaders Lite
 """ + PROPS_COMMON + """
-profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !COLORED_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5 !GODRAYS !BLOOM CLOUDS_2D !WATER_CLOUD_REFLECTIONS
-profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=10 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS
-profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=14 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS
+profile.FAST=shadowMapResolution=1024 shadowDistance=64.0 !SOFT_SHADOWS !COLORED_SHADOWS !SSAO !WATER_WAVES WAVE_STRENGTH=0.5 !GODRAYS !BLOOM CLOUDS_2D !FXAA !WATER_CLOUD_REFLECTIONS !SSR !WATER_DETAIL WATER_REFRACTION=0.0
+profile.BALANCED=shadowMapResolution=1536 shadowDistance=80.0 SOFT_SHADOWS SSAO SSAO_STEPS=4 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=10 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS FXAA SSR SSR_STEPS=12 WATER_DETAIL WATER_REFRACTION=1.0
+profile.CRISP=shadowMapResolution=2048 shadowDistance=96.0 SOFT_SHADOWS SSAO SSAO_STEPS=6 WATER_WAVES WAVE_STRENGTH=1.0 GODRAYS GODRAY_STEPS=14 BLOOM CLOUDS_2D WATER_CLOUD_REFLECTIONS FXAA SSR SSR_STEPS=12 WATER_DETAIL WATER_REFRACTION=1.0
 
 screen=<profile> <empty> [SHADOWS_PAGE] [WORLD_PAGE] [SKY_PAGE] [CAMERA_PAGE]
 screen.columns=2
 screen.SHADOWS_PAGE=SHADOWS SOFT_SHADOWS COLORED_SHADOWS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH
-screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG WATER_CLOUD_REFLECTIONS BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH GLOWING_ORES
+screen.WORLD_PAGE=WAVING_PLANTS WAVE_STRENGTH WATER_WAVES WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG WATER_DETAIL WATER_REFRACTION SSR SSR_STEPS WATER_CLOUD_REFLECTIONS BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH GLOWING_ORES
 screen.SKY_PAGE=CLOUDS_2D CLOUD_AMOUNT CLOUD_PLANE_HEIGHT CLOUD_BRIGHTNESS GODRAYS GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS END_SKY AURORA AURORA_STEPS AURORA_BRIGHTNESS
-screen.CAMERA_PAGE=BLOOM BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
-sliders=AURORA AURORA_STEPS AURORA_BRIGHTNESS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH CLOUD_AMOUNT CLOUD_PLANE_HEIGHT GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE BLOOM_STRENGTH WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+screen.CAMERA_PAGE=FXAA BLOOM BLOOM_STRENGTH EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
+sliders=AURORA AURORA_STEPS AURORA_BRIGHTNESS shadowMapResolution shadowDistance SHADOW_SOFTNESS sunPathRotation SSAO_STEPS SSAO_STRENGTH ambientOcclusionLevel SSS_STRENGTH CLOUD_AMOUNT CLOUD_PLANE_HEIGHT GODRAY_STEPS GODRAY_STRENGTH SUN_SIZE BLOOM_STRENGTH WAVE_STRENGTH WATER_WAVE_HEIGHT WATER_SPEED WATER_FOG WATER_REFRACTION SSR_STEPS BLOCKLIGHT_STRENGTH EMISSIVE_STRENGTH FOG_DENSITY AMBIENT_STRENGTH MOON_BRIGHTNESS STAR_BRIGHTNESS CLOUD_BRIGHTNESS END_SKY EXPOSURE SATURATION NIGHT_DESAT VIGNETTE
 """
 
 PROPS_ULTRA = """# Pimpin Shaders Ultra
@@ -222,6 +228,7 @@ LANG = {
     "option.SHADOW_SAMPLES": "Shadow Quality", "option.COLORED_SHADOWS": "Coloured Glass Shadows",
     "option.SSAO": "Ambient Occlusion", "option.SSAO_STEPS": "AO Quality", "option.SSAO_SAMPLES": "AO Quality",
     "option.SSAO_RADIUS": "AO Radius", "option.SSAO_STRENGTH": "AO Strength",
+    "option.FXAA": "Fast Anti-Aliasing", "option.FXAA.comment": "Smooths jagged edges without temporal ghosting. Fast profile disables it.",
     "option.TAA": "Temporal Anti-Aliasing", "option.TAA_BLEND": "TAA Smoothness", "option.SHARPEN": "Sharpen",
     "option.VOLUMETRIC_LIGHT": "God Rays", "option.VL_STEPS": "God Ray Quality",
     "option.VL_STRENGTH": "God Ray Strength", "option.VL_DISTANCE": "God Ray Distance",
@@ -231,7 +238,7 @@ LANG = {
     "option.WET_REFLECTIONS": "Wet Ground In Rain", "option.CAUSTICS": "Water Caustics", "option.WATER_REFRACTION": "Water Refraction",
     "option.BLOOM": "Bloom", "option.BLOOM_STRENGTH": "Bloom Strength",
     "option.AUTO_EXPOSURE": "Auto Exposure", "option.WAVING_PLANTS": "Waving Plants", "option.WAVE_STRENGTH": "Wind Strength",
-    "option.WATER_WAVES": "Water Waves", "option.WATER_DETAIL": "Detailed Water", "option.WATER_WAVE_HEIGHT": "Wave Height",
+    "option.WATER_WAVES": "Water Waves", "option.WATER_DETAIL": "Wind Ripples", "option.WATER_WAVE_HEIGHT": "Wave Height",
     "option.WATER_SPEED": "Wave Speed", "option.WATER_FOG": "Water Murkiness",
     "option.FOG_DENSITY": "Fog Density", "option.AMBIENT_STRENGTH": "Sky Light", "option.MOON_BRIGHTNESS": "Moonlight",
     "option.STAR_BRIGHTNESS": "Stars", "option.CLOUD_BRIGHTNESS": "Cloud Brightness", "option.END_SKY": "End Brightness",
@@ -256,7 +263,8 @@ LANG = {
     "option.VOLUMETRIC_LIGHT.comment": "Light shafts through trees, clouds and windows.",
     "option.VOLUMETRIC_CLOUDS.comment": "Puffy 3D clouds instead of the flat vanilla ones. Costs a lot of FPS when looking at the sky.",
     "option.SSR.comment": "Water (and wet ground) reflects what is on screen.",
-    "option.AUTO_EXPOSURE.comment": "Adapts brightness to what you are looking at.",
+    "option.FOG_DENSITY.comment": "Controls atmospheric haze and rain mist. Zero keeps clear air; distant terrain still blends into the sky at the render limit.",
+    "option.AUTO_EXPOSURE.comment": "Gradually adapts brightness to the whole scene without crosshair-driven flashes.",
     "option.NIGHT_DESAT.comment": "Very dark scenes lose colour and turn slightly blue, like real night vision.",
 }
 
@@ -269,7 +277,7 @@ Looks good, keeps your FPS: a physically based sky (sunsets go orange and red on
 night turns deep blue under a Milky Way), a round sun with glare, soft drifting clouds, sun rays
 past trees and hills, fog that fades distant land into the horizon, soft sun shadows, ambient
 occlusion in corners, light glowing through leaves, water that is clear in the shallows and deep
-blue further out with sky, cloud and sun reflections, swaying plants, bloom around lights and
+blue further out with terrain, sky, cloud and sun reflections, depth absorption and rippling refraction, swaying plants, fast anti-aliasing, bloom around lights and
 ACES filmic colours with room for bright white blocks. The End has a dark starry void, a
 purple nebula and its own lighting; optional northern lights are off by default on Lite. It costs the world
 passes plus two cheap full-screen passes.
@@ -357,10 +365,11 @@ def build(ultra):
     }
     libs["clouds"] = CLOUDS
     libs["skypaint"] = SKY_PAINT
+    libs["antialiasing"] = ANTIALIASING
     extra_libs = ["clouds"]
     libs_geo = ["settings", "uniforms", "common", "atmosphere", "shadow", "waving", "water"] + extra_libs + ["lighting"]
     libs_vsh = libs_geo[:-1]
-    libs_post = ["settings", "uniforms", "common", "atmosphere", "shadow", "water", "clouds", "tonemap", "fog", "skypaint"]
+    libs_post = ["settings", "uniforms", "common", "atmosphere", "shadow", "water", "clouds", "tonemap", "fog", "skypaint", "antialiasing"]
     libs_prepare = ["settings", "uniforms", "common", "atmosphere"]
 
     st = libs["settings"]
@@ -384,7 +393,7 @@ def build(ultra):
         write(os.path.join(sh, "program", k + ".glsl"), v)
 
     # (program file, body, drawbuffers)
-    posts = [("deferred", "deferred_fsh", "0")]
+    posts = [("deferred", "deferred_fsh", "0" if ultra else "04")]
     if ultra:
         posts += [("composite", "composite_fsh", "0"), ("composite1", "taa_fsh", "07")]
     posts += [("final", "final_fsh", "0")]

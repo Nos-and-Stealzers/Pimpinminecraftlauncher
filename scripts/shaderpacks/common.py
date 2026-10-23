@@ -38,6 +38,7 @@ block.10030=iron_block gold_block diamond_block emerald_block copper_block expos
 UNIFORMS = """uniform sampler2D tex;
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
+uniform sampler2D colortex4;
 uniform sampler2D colortex5;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
@@ -62,6 +63,7 @@ uniform vec4 entityColor;
 uniform float rainStrength;
 uniform float wetness;
 uniform float frameTimeCounter;
+uniform float frameTime;
 uniform float sunAngle;
 uniform float viewWidth;
 uniform float viewHeight;
@@ -281,7 +283,7 @@ vec3 analyticSky(vec3 dir) {
     vec3 horizon = mix(vec3(0.025, 0.035, 0.065), vec3(0.60, 0.74, 0.95), d);
     horizon = mix(horizon, vec3(1.15, 0.48, 0.18), tw * pow(toSun, 2.5));
     vec3 c = mix(horizon, zenith, pow(max(h, 0.0), 0.45));
-    c = mix(c, horizon * 0.35, sat(-h * 2.5));
+    // The analytic fallback shares the same horizon continuation as the LUT.
     return mix(c, vec3(luma(c)) * 0.55, rainStrength * 0.85);
 }
 
@@ -447,28 +449,101 @@ vec3 waveOffset(vec3 wp, float id, bool top, float sky) {
 }
 """
 
-WATER = """// procedural water surface: travelling directional waves plus a noise layer
-float waterHeight(vec2 p) {
+WATER = """// Directional gravity waves and wind ripples. Analytic slopes avoid four full noise evaluations.
+// Return value-noise height and its exact x/z derivatives from the same four corner hashes.
+vec3 waterNoiseGradient(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    vec2 du = 6.0 * f * (1.0 - f);
+    float a = hash12(i), b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0));
+    return vec3(mix(mix(a, b, u.x), mix(c, d, u.x), u.y),
+                mix(b - a, d - c, u.y) * du.x, mix(c - a, d - b, u.x) * du.y);
+}
+
+// Shared phase/amplitude definitions keep the testable height and derivative in sync.
+vec3 waterWaveData(vec2 p) {
     float t = frameTimeCounter * WATER_SPEED;
-    float h = 0.0;
-    h += sin(dot(p, vec2(0.80, 0.60)) * 0.9 + t * 1.2) * 0.50;
-    h += sin(dot(p, vec2(-0.55, 0.83)) * 1.7 + t * 1.7) * 0.26;
-    h += sin(dot(p, vec2(0.96, -0.28)) * 3.1 + t * 2.4) * 0.12;
-    h += valueNoise(p * 1.6 + vec2(t * 0.6, t * 0.35)) * 0.35;
+    vec3 h = vec3(0.0);
+    vec2 k = vec2(0.80, 0.60) * 0.9;
+    float a = dot(p, k) + t * 1.2;
+    h += vec3(sin(a), cos(a) * k) * 0.50;
+    k = vec2(-0.55, 0.83) * 1.7;
+    a = dot(p, k) + t * 1.7;
+    h += vec3(sin(a), cos(a) * k) * 0.26;
+    k = vec2(0.96, -0.28) * 3.1;
+    a = dot(p, k) + t * 2.4;
+    h += vec3(sin(a), cos(a) * k) * 0.12;
+    vec3 noise = waterNoiseGradient(p * 1.6 + vec2(t * 0.6, t * 0.35));
+    h += noise * vec3(0.35, 0.56, 0.56);
 #ifdef WATER_DETAIL
-    h += valueNoise(p * 3.7 - vec2(t * 0.7, -t * 0.5)) * 0.12;
-    h += valueNoise(p * 7.3 + vec2(t * 1.1, t * 0.9)) * 0.05;
+    // Opposing capillary ripples: low amplitudes but visible glints, no repeated full fbm.
+    k = vec2(0.45, 0.89) * 5.7;
+    a = dot(p, k) - t * 3.0;
+    h += vec3(sin(a), cos(a) * k) * 0.025;
+    k = vec2(-0.93, 0.36) * 8.1;
+    a = dot(p, k) + t * 3.7;
+    h += vec3(sin(a), cos(a) * k) * 0.012;
 #endif
     return h;
 }
+float waterHeight(vec2 p) { return waterWaveData(p).x; }
+vec2 waterSlope(vec2 p) { return waterWaveData(p).yz; }
 
 vec3 waterNormalWorld(vec2 p) {
-    float e = 0.06;
-    float hx = waterHeight(p + vec2(e, 0.0)) - waterHeight(p - vec2(e, 0.0));
-    float hz = waterHeight(p + vec2(0.0, e)) - waterHeight(p - vec2(0.0, e));
-    float s = WATER_WAVE_HEIGHT * 0.22 / e;
-    return normalize(vec3(-hx * s, 1.0, -hz * s));
+    vec2 slope = waterSlope(p);
+    // Calm distant water instead of turning sub-pixel ripples into white shimmer.
+    float distanceFade = 1.0 / (1.0 + length(p - cameraPosition.xz) * 0.012);
+    slope *= WATER_WAVE_HEIGHT * 0.62 * distanceFade;
+    return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
+
+// Per-channel Beer-Lambert transmission; red disappears fastest in clear water.
+vec3 waterTransmission(float thickness, float murk) {
+    return exp(-vec3(0.42, 0.11, 0.07) * max(thickness, 0.0) * murk);
+}
+
+#ifdef SSR
+// Geometric steps cover a useful distance in twelve taps. Only refine a front-to-back
+// crossing; revalidate the final depth and fade at screen edges, never reflect the sky as terrain.
+vec4 traceWaterReflection(sampler2D scene, vec3 origin, vec3 R, float jitter) {
+    float stepSize = 0.28 + length(origin) * 0.015;
+    float previousT = 0.0;
+    float t = stepSize * (0.75 + jitter * 0.5);
+    for (int i = 0; i < SSR_STEPS; i++) {
+        vec3 pos = origin + R * t;
+        if (pos.z >= -near) break;
+        vec3 sc = viewToScreen(pos);
+        if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) break;
+        float d = texture2D(depthtex1, sc.xy).r;
+        float gap = d >= 1.0 ? -1.0 : screenToView(sc.xy, d).z - pos.z;
+        if (d > 0.56 && gap > 0.0 && gap < stepSize * 2.0 + 0.25) {
+            float lo = previousT, hi = t;
+            for (int j = 0; j < 4; j++) {
+                float mid = (lo + hi) * 0.5;
+                vec3 mp = origin + R * mid;
+                vec3 ms = viewToScreen(mp);
+                float md = texture2D(depthtex1, ms.xy).r;
+                if (md < 1.0 && screenToView(ms.xy, md).z > mp.z) hi = mid;
+                else lo = mid;
+            }
+            vec3 hitPos = origin + R * hi;
+            sc = viewToScreen(hitPos);
+            d = texture2D(depthtex1, sc.xy).r;
+            float error = abs(screenToView(sc.xy, d).z - hitPos.z);
+            float confidence = 1.0 - smoothstep(0.12 + hi * 0.008, 0.5 + hi * 0.02, error);
+            vec2 edge = min(sc.xy, 1.0 - sc.xy);
+            confidence *= clamp(min(edge.x, edge.y) * 16.0, 0.0, 1.0);
+            if (d >= 1.0 || d <= 0.56) return vec4(0.0);
+            return vec4(texture2D(scene, sc.xy).rgb, confidence);
+        }
+        previousT = t;
+        t += stepSize;
+        stepSize *= 1.5;
+    }
+    return vec4(0.0);
+}
+#endif
 
 // light focused by the waves onto whatever is under the water (iterated warp pattern)
 float waterCaustics(vec3 wp) {
@@ -584,6 +659,37 @@ vec4 cloudPlane(vec3 dirView, float height, float scale, float cover, float stre
     float fade = exp(-t * 0.00011) * smoothstep(0.01, 0.12, d.y);
     float a = c * opacity * fade;
     return vec4(light * a, 1.0 - a);
+}
+#endif
+"""
+
+
+ANTIALIASING = """// Low-tap FXAA-style spatial filter, with perceptual luma for HDR edge decisions.
+// Filter along the local diagonal edge tangent; reject a broad blend which crosses luma bounds.
+#ifdef FXAA
+float aaLuma(vec3 c) {
+    float l = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
+    return sqrt(l / (1.0 + l));
+}
+vec3 spatialAA(sampler2D image, vec2 coord, vec2 px) {
+    vec3 center = texture2D(image, coord).rgb;
+    float m = aaLuma(center);
+    float nw = aaLuma(texture2D(image, coord + vec2(-px.x, px.y)).rgb);
+    float ne = aaLuma(texture2D(image, coord + px).rgb);
+    float sw = aaLuma(texture2D(image, coord - px).rgb);
+    float se = aaLuma(texture2D(image, coord + vec2(px.x, -px.y)).rgb);
+    float lo = min(m, min(min(nw, ne), min(sw, se)));
+    float hi = max(m, max(max(nw, ne), max(sw, se)));
+    if (hi - lo < max(0.045, hi * 0.11)) return center;
+    vec2 gradient = vec2(ne + se - nw - sw, nw + ne - sw - se);
+    vec2 tangent = vec2(-gradient.y, gradient.x);
+    float stabilizer = max((nw + ne + sw + se) * 0.02, 0.006);
+    tangent /= min(abs(tangent.x), abs(tangent.y)) + stabilizer;
+    tangent = clamp(tangent, vec2(-4.0), vec2(4.0)) * px;
+    vec3 narrow = (texture2D(image, coord - tangent * 0.18).rgb + texture2D(image, coord + tangent * 0.18).rgb) * 0.5;
+    vec3 wide = narrow * 0.5 + (texture2D(image, coord - tangent * 0.48).rgb + texture2D(image, coord + tangent * 0.48).rgb) * 0.25;
+    float wl = aaLuma(wide);
+    return wl < lo || wl > hi ? narrow : wide;
 }
 #endif
 """

@@ -3,6 +3,7 @@
 import { el, icon, clear, errorToast, toast, confirmModal } from '../dom.js';
 import { api, state, refreshInstances } from '../state.js';
 import { lightbox } from './library.js';
+import { drawClientSettings } from './client-settings.js';
 
 const COMBOS = [
   {
@@ -191,11 +192,13 @@ export async function drawPimpin(root, inst) {
       btn);
   }));
 
+  const clientSettingsRoot = el('div');
   root.append(
     el('div', { class: 'pimpin-intro' },
       el('div', { class: 'grow' },
         el('h2', {}, 'Pimpin Specials'),
         el('p', { class: 'muted' }, `Resource packs, shaders and game settings made for this launcher, built for Minecraft ${inst.mcVersion}. Changes apply the next time you press Play.`))),
+    clientSettingsRoot,
     el('h2', { class: 'section', style: { marginTop: 0 } }, 'Setups', el('small', {}, 'Pack, shader and settings in one go')),
     combos,
     el('h2', { class: 'section' }, 'Resource packs', el('small', {}, 'Use one or both. The one turned on last wins where they overlap.')),
@@ -216,5 +219,6 @@ export async function drawPimpin(root, inst) {
     shaderStatus = st;
     drawShaders();
   }).catch((err) => clear(shadersRow, el('div', { class: 'card empty' }, err.message)));
+  drawClientSettings(clientSettingsRoot, inst).catch(errorToast);
   drawPresets().catch(errorToast);
 }

@@ -32,9 +32,8 @@ void main() {
 #endif
     float exposure = exposureValue();
 #ifdef AUTO_EXPOSURE
-    float avg = luma(texture2D(colortex0, vec2(0.5), 14.0).rgb);
-    float autoExp = clamp(0.2 / max(avg * exposure, 0.0001), 0.6, 1.3);
-    exposure *= mix(1.0, autoExp, 0.5);
+    // Metered and time-smoothed in composite1, before final colour grading.
+    exposure = texture2D(colortex0, uv).a;
 #endif
     gl_FragData[0] = vec4(finishColor(col, uv, exposure), 1.0);
 }

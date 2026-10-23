@@ -6,4 +6,6 @@ void main() {
     float depth = texture2D(depthtex0, uv).r;
     if (depth >= 1.0) col = paintSky(normalize(screenToView(uv, 1.0)), uv);
     gl_FragData[0] = vec4(col, 1.0);
+    // Snapshot opaque terrain + painted sky. Water reads this attachment without feedback.
+    gl_FragData[1] = vec4(col, 1.0);
 }
