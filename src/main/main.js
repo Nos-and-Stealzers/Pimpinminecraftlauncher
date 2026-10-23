@@ -34,9 +34,12 @@ function send(channel, payload) {
 }
 
 function createWindow() {
+  // Remembered window geometry: last size/position/maximized state.
+  const bounds = store.launcherBounds();
   win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    ...(bounds.x !== null && bounds.y !== null ? { x: bounds.x, y: bounds.y, center: false } : {}),
+    width: bounds.width,
+    height: bounds.height,
     minWidth: 1024,
     minHeight: 640,
     frame: false,
@@ -53,6 +56,7 @@ function createWindow() {
       v8CacheOptions: 'bypassHeatCheck', // cache compiled UI code for faster starts
     },
   });
+  if (bounds.maximized) win.maximize();
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.once('ready-to-show', () => {
     if (!process.argv.includes('--hidden')) win.show();
@@ -69,6 +73,25 @@ function createWindow() {
   win.on('maximize', sendWindowState);
   win.on('unmaximize', sendWindowState);
   win.on('always-on-top-change', sendWindowState);
+  // Keep the window geometry in settings; getNormalBounds gives restore
+  // bounds even while maximized, so restoring never pins a full-screen size.
+  let boundsTimer = null;
+  const rememberBounds = () => {
+    if (!win) return;
+    try {
+      const b = win.getNormalBounds();
+      store.updateSettings({ winX: b.x, winY: b.y, winW: b.width, winH: b.height, winMax: win.isMaximized() }).catch(() => {});
+    } catch {
+      /* window destroyed */
+    }
+  };
+  const scheduleBounds = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(rememberBounds, 600);
+  };
+  win.on('resize', scheduleBounds);
+  win.on('move', scheduleBounds);
+  boundsTimer = setTimeout(rememberBounds, 800); // record the very first placement too
   // Never navigate the launcher window away; open links in the real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
@@ -125,6 +148,7 @@ function applySystemSettings(s) {
 function emit(channel, payload) {
   send(channel, payload);
   if (channel === 'game:state' && payload.state === 'running') syncInGameNotices([payload.id]);
+  if (channel === 'game:state' && payload.state === 'stopped') refreshJumpList();
   if (channel === 'game:state' && store.getSettings().closeOnLaunch && win) {
     if (payload.state === 'running') win.hide();
     if (payload.state === 'stopped') win.show();
@@ -536,7 +560,43 @@ ipcMain.handle('rpc', async (_e, channel, args) => {
   }
 });
 
-app.on('second-instance', showWindow);
+app.on('second-instance', (e, argv) => {
+  if (launchFromArgs(argv)) return;
+  showWindow();
+});
+
+// --------------------------------------------- windows taskbar jump list --
+/** True when argv (ours or a second launch's) asks to play an instance. */
+const playArg = (argv) => {
+  const arg = (argv || []).find((a) => typeof a === 'string' && a.startsWith('--play='));
+  return arg ? arg.slice('--play='.length) : null;
+};
+
+/** Launch an instance straight from a --play=<id> argument. Returns true if handled. */
+function launchFromArgs(argv) {
+  const id = playArg(argv);
+  if (!id) return false;
+  showWindow();
+  instances.launch(id).catch((err) => console.warn(`[jump-list] launch ${id}: ${err.message}`));
+  return true;
+}
+
+/** Rebuild the Windows taskbar tasks: Play <instance> for the recent ones. */
+async function refreshJumpList() {
+  if (process.platform !== 'win32') return;
+  try {
+    const recent = (await instances.list()).filter((i) => !i.running).slice(0, 5);
+    app.setUserTasks(recent.map((i) => ({
+      type: 'task',
+      title: `Play ${i.name}`,
+      description: `Launch Minecraft into ${i.name}`,
+      program: process.execPath,
+      args: `--play=${i.id}`,
+    })));
+  } catch (err) {
+    console.warn(`[jump-list] ${err.message}`);
+  }
+}
 
 // ---------------------------------------------------------- notifications --
 // One list for launcher updates, mod updates and announcements. Announcements
@@ -755,6 +815,8 @@ function setupUpdater() {
 
 app.whenReady().then(() => {
   createWindow();
+  launchFromArgs(process.argv);
+  refreshJumpList();
   setupNotices();
   setupUpdater();
   applySystemSettings(store.getSettings());

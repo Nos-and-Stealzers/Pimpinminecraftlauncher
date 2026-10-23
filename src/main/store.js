@@ -104,6 +104,12 @@ const DEFAULT_SETTINGS = {
   showFeatures: true,
   showNews: true,
   startPage: 'home',
+  // launcher window geometry, remembered between runs (null = let the OS place it)
+  winX: null,
+  winY: null,
+  winW: null,
+  winH: null,
+  winMax: false,
   autoUpdate: true,
   updateChannel: 'stable',
   lastSeenVersion: null,
@@ -164,6 +170,19 @@ function safeJoin(base, ...parts) {
   return target;
 }
 
+/**
+ * Sanitized launcher window geometry: sensible defaults for garbage values,
+ * clamped to the window's minimum size, position silently dropped when it
+ * isn't a finite number (e.g. after a settings-file hand edit).
+ */
+function launcherBounds(s = settings) {
+  const width = Math.min(Math.max(Number(s.winW) || 1280, 1024), 8192);
+  const height = Math.min(Math.max(Number(s.winH) || 800, 640), 8192);
+  const x = Number.isFinite(Number(s.winX)) ? Number(s.winX) : null;
+  const y = Number.isFinite(Number(s.winY)) ? Number(s.winY) : null;
+  return { x, y, width, height, maximized: Boolean(s.winMax) };
+}
+
 module.exports = {
   dirs,
   readJson,
@@ -171,6 +190,7 @@ module.exports = {
   writeJson,
   getSettings,
   updateSettings,
+  launcherBounds,
   slugify,
   uniqueDir,
   safeJoin,
