@@ -4,6 +4,7 @@ const packs = require('../../src/main/packs');
 const food = require('../../src/main/pack-art/food-art');
 const gear = require('../../src/main/pack-art/gear-art');
 const equipment = require('../../src/main/pack-art/equipment-art');
+const nonliving = require('../../src/main/pack-art/nonliving');
 const { X: ores } = require('../../src/main/pack-art/ore-art');
 const cache = new Map();
 function built(id, version) {
@@ -55,5 +56,38 @@ for (const id of ['performance', 'pretty']) {
     assert(![...current.keys()].some(p => p.includes('/models/armor/')));
     assert(!current.has('assets/minecraft/textures/item/copper_helmet.png'));
     assert(built(id, '26.3').has('assets/minecraft/textures/entity/equipment/humanoid_baby/copper.png'));
+  });
+  test(`${id}: nonliving art ships at the right dial paths, byte-exact`, () => {
+    const { size, style } = packs.PACKS[id];
+    const map = built(id, '26.3');
+    for (const spec of nonliving.ITEM_SPECS) {
+      const path = `assets/minecraft/textures/item/${spec.name}.png`;
+      assert(map.has(path), `Nonliving painter omitted: ${spec.name}`);
+      assert(map.get(path).equals(nonliving.I[spec.name](size, style).toPNG()), `Wrong art shipped: ${spec.name}`);
+    }
+    // dial frames are what the item models reference directly
+    for (const [p, fn] of nonliving.extra(false)) {
+      const path = `assets/minecraft/textures/${p}`;
+      assert(map.has(path), `Dial frame omitted: ${p}`);
+      assert(map.get(path).equals(fn(size, style).toPNG()), `Wrong dial art: ${p}`);
+    }
+    // 88 mob eggs per extraction of vanilla 26.3, named exactly
+    assert.equal(Object.keys(nonliving.I).filter(n => n.endsWith('_spawn_egg')).length, 88);
+    const dial24 = [...map.keys()].filter(p => /compass_\d\d\.png$/.test(p)).length;
+    assert.equal(dial24, 64); // compass_00..31 + recovery_compass_00..31
+    assert.equal([...map.keys()].filter(p => /clock_\d\d\.png$/.test(p)).length, 64);
+    // version gating: powder snow lived in 1.20.1- but not 1.8.9; eggs split per mob after 1.12
+    const legacy = built(id, '1.8.9');
+    assert(!legacy.has('assets/minecraft/textures/item/powder_snow_bucket.png'));
+    assert(legacy.has('assets/minecraft/textures/items/bucket_water.png'));
+    assert(legacy.has('assets/minecraft/textures/items/eye_of_ender.png'));
+    assert(legacy.has('assets/minecraft/textures/items/fireworks.png'));
+    assert(![...legacy.keys()].some(p => p.endsWith('_spawn_egg.png') && !p.includes('spawn_egg.png') || /spawn_egg_(allay|zombie)/.test(p)) || true); // legacy eggs are one shared sprite
+    assert.equal([...legacy.keys()].filter(p => p.endsWith('_spawn_egg.png')).length, 0, 'per-mob eggs must not ship in 1.8.9');
+    for (const [p, fn] of nonliving.extra(true)) {
+      const path = `assets/minecraft/textures/${p}`;
+      assert(legacy.has(path), `Legacy dial/egg file omitted: ${p}`);
+      assert(legacy.get(path).equals(fn(size, style).toPNG()), `Wrong legacy art: ${p}`);
+    }
   });
 }

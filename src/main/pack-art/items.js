@@ -339,4 +339,4 @@ const LEGACY_ITEMS = {
   cooked_beef: 'beef_cooked', bow: 'bow_standby',
 };
 
-module.exports = { I, LEGACY_ITEMS, MATERIALS };
+module.exports = { I, LEGACY_ITEMS, MATERIALS, item, streak, matDetail, OUTLINE, STICK };
