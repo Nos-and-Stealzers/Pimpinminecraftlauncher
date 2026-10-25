@@ -8,7 +8,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY, ITEM_SPECS, equipmentArt } = require('./pack-art');
+const { T, ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY, ITEM_SPECS, equipmentArt, nonliving } = require('./pack-art');
 const { Image } = require('./png');
 
 const PACKS = {
@@ -396,6 +396,10 @@ function files(id, mcVersion = '1.21.4') {
     const file = itemFile(name, v);
     if (file) add(`${tex}/${legacy ? 'items' : 'item'}/${file}.png`, I[name](S, st).toPNG());
   }
+  // compass/clock dial frames and the legacy shared spawn-egg sprites: the
+  // game references these paths directly, so a pack without them renders
+  // vanilla-compat magenta on every dial.
+  for (const [p, fn] of nonliving.extra(legacy)) add(`${tex}/${p}`, fn(S, st).toPNG());
 
   // Worn equipment follows the exact legacy/modern UV revisions for this release.
   for (const [p, img] of equipmentArt.files(parseVersion(v).join('.'), pretty ? 'looks' : 'fast')) add(`${tex}/${p}`, img.toPNG());
