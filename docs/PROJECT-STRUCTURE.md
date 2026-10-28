@@ -57,7 +57,8 @@ For appearance work, the small path is: shared defaults/validation in
 The optional Minecraft style is self-contained in `renderer/themes/minecraft/`:
 `index.js` (apply/disable and its Settings rows), `textures.js` (original
 procedural 16×16 textures and isometric block icons), `panorama.js` (2D canvas
-voxel island), `blocks.js` (sidebar/instance block icons, card tilt), `skin.js`
+floating-island/one-block scene), `mobs.js` (world-specific walking visitors), `scene.js` (scene layout and
+background details), `blocks.js` (sidebar/instance block icons, card tilt), `skin.js`
 (poses, turning and stand via the `onSkinMount` hook in `js/skin3d.js`) and
 `theme.css` (every rule scoped to `body[data-mc]`). Only `js/appearance.js`
 refers to the folder, through a dynamic `import()` with a `.catch`, so deleting

@@ -71,13 +71,13 @@ test('Minecraft style is off by default and legacy pre-v3 keys never switch it o
   for (const key of ['background', 'blockIcons', 'effects3d', 'skinPose']) assert.equal(Object.hasOwn(legacy, key), false);
 });
 
-test('Minecraft style keys are enum/boolean only and reset through null', async () => {
+test('Minecraft style keys are validated and reset through null', async () => {
   const { normalizeAppearance, APPEARANCE_DEFAULTS, MINECRAFT_KEYS } = require('../src/main/appearance-settings');
-  const valid = { mcStyle: true, mcPreset: 'end', mcBackground: 'tiles', mcButtons: 'wood', mcCorners: 'rounded', mcFont: 'all', mcBlockIcons: false, mcTilt: true, mcSkinPose: 'zombie', mcSkinTurn: 'spin', mcSkinPedestal: 'none' };
+  const valid = { mcStyle: true, mcPreset: 'end', mcBackground: 'tiles', mcButtons: 'wood', mcCorners: 'rounded', mcFont: 'all', mcBlockIcons: false, mcTilt: true, mcSkinPose: 'zombie', mcSkinTurn: 'spin', mcSkinPedestal: 'none', mcScene: 'oneblock', mcMobs: false, mcMobCount: 3, mcSceneSpeed: 0.5 };
   assert.deepEqual(Object.keys(valid).sort(), [...MINECRAFT_KEYS].sort());
   const ok = normalizeAppearance(valid);
   for (const [k, v] of Object.entries(valid)) assert.equal(ok[k], v, k);
-  const bad = normalizeAppearance({ mcStyle: 1, mcPreset: 'url(x)', mcBackground: 'glow', mcButtons: {}, mcCorners: 'sharp', mcFont: 'comic', mcBlockIcons: 'yes', mcTilt: null, mcSkinPose: 'fly', mcSkinTurn: 2, mcSkinPedestal: 'block' });
+  const bad = normalizeAppearance({ mcStyle: 1, mcPreset: 'url(x)', mcBackground: 'glow', mcButtons: {}, mcCorners: 'sharp', mcFont: 'comic', mcBlockIcons: 'yes', mcTilt: null, mcSkinPose: 'fly', mcSkinTurn: 2, mcSkinPedestal: 'block', mcScene: 'url(x)', mcMobs: 'true', mcMobCount: NaN, mcSceneSpeed: Infinity });
   for (const key of MINECRAFT_KEYS) assert.equal(bad[key], APPEARANCE_DEFAULTS[key], key);
   await store.updateSettings({ ...valid, memoryMax: 3072 });
   assert.equal(store.getSettings().mcPreset, 'end');
@@ -111,5 +111,23 @@ test('Minecraft theme folder is removable: only a guarded dynamic import refers 
     assert.match(sel.trim(), /data-mc|\.mc-|^\.pf/, `unscoped selector: ${sel.trim()}`);
   }
   assert.doesNotMatch(fs.readFileSync(path.join(themeDir, 'index.js'), 'utf8') + fs.readFileSync(path.join(themeDir, 'blocks.js'), 'utf8'), /AudioContext|new Audio\(/, 'no sound effects');
+});
+test('sky scene settings clamp, persist, and round-trip appearance-only presets', async () => {
+  const { normalizeAppearance } = require('../src/main/appearance-settings');
+  const { parsePreset, serializePreset } = require('../src/main/appearance-presets');
+  assert.equal(normalizeAppearance({ mcMobCount: 999 }).mcMobCount, 3);
+  assert.equal(normalizeAppearance({ mcMobCount: -1 }).mcMobCount, 1);
+  assert.equal(normalizeAppearance({ mcSceneSpeed: 99 }).mcSceneSpeed, 1.5);
+  assert.equal(normalizeAppearance({ mcSceneSpeed: -1 }).mcSceneSpeed, 0.5);
+  const settings = { mcScene: 'oneblock', mcMobs: false, mcMobCount: 3, mcSceneSpeed: 1.5 };
+  await store.updateSettings(settings);
+  delete require.cache[require.resolve('../src/main/store')];
+  const saved = require('../src/main/store').getSettings();
+  const imported = parsePreset(serializePreset(saved));
+  for (const [key, value] of Object.entries(settings)) {
+    assert.equal(saved[key], value);
+    assert.equal(imported[key], value);
+  }
+  assert.throws(() => parsePreset(JSON.stringify({ schema: 'pimpin-appearance', version: 1, appearance: { mcMobCount: 4 } })), /Invalid appearance value/);
 });
 process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));

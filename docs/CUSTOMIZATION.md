@@ -21,6 +21,12 @@ Turn on **Minecraft style** to get:
   tiles and the Home sidebar block.
 - **Background**: a slowly turning floating island on Home (other pages use
   darkened block tiles), block tiles everywhere, or none.
+- **Sky scene**: Floating island or One block. Both use the selected world's
+  sky and blocks. These controls apply only to the Home panorama.
+- **Wandering mobs**: sheep in the Overworld, pigmen in the Nether, Endermen in
+  the End. Switch them off separately, choose one to three visitors, and choose
+  Slow, Normal or Lively scene speed. They stay behind the UI in the panorama
+  band and freeze along with the scenery when reduced motion is on.
 - **Buttons**: stone or dark oak pixel buttons with bevels. Play and other
   accent buttons keep your accent colour and gradient under a faint pixel grain.
 - **Corners** (blocky or rounded), **Pixel font** (headings and buttons, all
@@ -100,6 +106,10 @@ these keys. Colours accept uppercase or lowercase hex; exports use lowercase.
 | `mcStyle` | `true` or `false`; master switch for the Minecraft style | `false` |
 | `mcPreset` | `overworld`, `nether`, `end` | `overworld` |
 | `mcBackground` | `panorama`, `tiles`, `plain` | `panorama` |
+| `mcScene` | `island`, `oneblock` | `island` |
+| `mcMobs` | `true` or `false`; only in the Home panorama | `true` |
+| `mcMobCount` | Whole number, 1–3 | `2` |
+| `mcSceneSpeed` | Number, 0.5–1.5; UI offers 0.5, 1, 1.5 | `1` |
 | `mcButtons` | `stone`, `wood` | `stone` |
 | `mcCorners` | `blocky`, `rounded` | `blocky` |
 | `mcFont` | `headings`, `all`, `system` | `headings` |

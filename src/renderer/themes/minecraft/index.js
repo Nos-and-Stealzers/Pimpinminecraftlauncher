@@ -51,6 +51,7 @@ function syncScene() {
   if (wantPano && !pano) pano = createPanorama(backdrop, { preset: cfg.mcPreset });
   if (pano) {
     pano.setPreset(cfg.mcPreset);
+    pano.setOptions({ scene: cfg.mcScene, mobs: cfg.mcMobs, mobCount: cfg.mcMobCount, speed: cfg.mcSceneSpeed });
     // Animate only on Home, in a visible window, without reduced motion.
     pano.setRunning(wantPano && !document.hidden && !reducedMotion());
     if (wantPano && !pano.running) pano.redraw();
@@ -120,7 +121,7 @@ export function disable() {
 
 /** Test/diagnostic view of the live state. */
 export function status() {
-  return { enabled, panorama: Boolean(pano), running: Boolean(pano?.running), home: onHome(), drawMs: pano ? Math.round(pano.drawMs * 10) / 10 : null };
+  return { enabled, panorama: Boolean(pano), running: Boolean(pano?.running), home: onHome(), drawMs: pano ? Math.round(pano.drawMs * 10) / 10 : null, scene: pano?.diagnostics || null };
 }
 
 // --------------------------------------------------------------- settings --
@@ -131,6 +132,9 @@ const PRESETS = [
 ];
 const CHOICES = {
   mcBackground: ['Background', 'Panorama turns slowly on Home. Other pages use block tiles.', [['panorama', 'Panorama'], ['tiles', 'Block tiles'], ['plain', 'None']]],
+  mcScene: ['Sky scene', 'Choose a floating sky island or a single block suspended in the sky.', [['island', 'Floating island'], ['oneblock', 'One block']]],
+  mcMobCount: ['Mob count', 'Keep the scene quiet or let a few visitors wander through.', [[1, 'One'], [2, 'Two'], [3, 'Three']]],
+  mcSceneSpeed: ['Scene speed', 'Controls island rotation, clouds and mob walking speed. Reduced motion keeps the entire scene still.', [[0.5, 'Slow'], [1, 'Normal'], [1.5, 'Lively']]],
   mcButtons: ['Buttons', 'Texture for regular buttons. Play keeps your accent colour.', [['stone', 'Stone'], ['wood', 'Dark oak']]],
   mcCorners: ['Corners', null, [['blocky', 'Blocky'], ['rounded', 'Rounded']]],
   mcFont: ['Pixel font', 'Applies to headings and buttons, or to all text.', [['headings', 'Headings and buttons'], ['all', 'All text'], ['system', 'Off']]],
@@ -163,10 +167,12 @@ export function settingsRows({ settings: s, save, row, toggle, redraw, resetKeys
     const [label, desc, options] = CHOICES[key];
     const input = el('select', { class: 'input appearance-select', 'aria-label': label }, options.map(([value, text]) => el('option', { value }, text)));
     input.value = s[key];
-    input.addEventListener('change', () => save({ [key]: input.value }));
+    input.addEventListener('change', () => save({ [key]: ['mcMobCount', 'mcSceneSpeed'].includes(key) ? Number(input.value) : input.value }));
     return row(label, desc, input);
   };
-  rows.push(select('mcBackground'), select('mcButtons'), select('mcCorners'), select('mcFont'));
+  rows.push(select('mcBackground'), select('mcScene'));
+  rows.push(row('Wandering mobs', 'Sheep in the Overworld, pigmen in the Nether and Endermen in the End. Only on the Home panorama, never over your controls.', toggle(s.mcMobs !== false, 'Wandering mobs', (on) => save({ mcMobs: on }))));
+  rows.push(select('mcMobCount'), select('mcSceneSpeed'), select('mcButtons'), select('mcCorners'), select('mcFont'));
   rows.push(row('Block icons', 'Blocks for sidebar and instance icons. Custom instance images are kept.', toggle(s.mcBlockIcons === true, 'Block icons', (on) => save({ mcBlockIcons: on }))));
   rows.push(row('Card tilt', 'Cards lean slightly towards the pointer. Off with reduced motion.', toggle(s.mcTilt === true, 'Card tilt', (on) => save({ mcTilt: on }))));
   rows.push(select('mcSkinPose'), select('mcSkinTurn'), select('mcSkinPedestal'));

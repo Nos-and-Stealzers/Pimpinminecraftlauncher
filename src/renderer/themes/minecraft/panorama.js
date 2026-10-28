@@ -3,6 +3,10 @@
 // so every block face is a parallelogram and an affine drawImage maps the
 // 16x16 texture onto it exactly, nearest-neighbour, in back-to-front order.
 import { shaded, faceName } from './textures.js';
+import { normalizeOptions, mobPositions, drawMob } from './mobs.js';
+import { sceneLayout, drawParadeGround, drawSatellite, drawBlockDetail } from './scene.js';
+export { selectMob, mobPositions, isSceneValid, normalizeOptions } from './mobs.js';
+export { sceneLayout } from './scene.js';
 
 const W = 22; // island footprint in blocks
 const MIN_Y = -11;
@@ -157,21 +161,36 @@ const SKY = {
 
 /**
  * Mounts the panorama into `host`. Returns a controller with
- * setRunning(bool), setPreset(name), redraw() and destroy().
+ * setRunning(bool), setPreset(name), setOptions(partial), redraw(), destroy().
+ * scene: 'island' | 'oneblock'; mobs: boolean; mobCount: 0..3; speed: 0..3.
+ * No animation starts until the caller explicitly enables setRunning(true).
+ * diagnostics is a detached snapshot; elapsed is simulation time in seconds.
  */
-export function createPanorama(host, { preset = 'overworld' } = {}) {
+export function createPanorama(host, { preset = 'overworld', ...initialOptions } = {}) {
   const cv = document.createElement('canvas');
   cv.className = 'mc-pano-canvas';
   cv.setAttribute('aria-hidden', 'true');
+  cv.style.pointerEvents = 'none';
   host.append(cv);
   const ctx = cv.getContext('2d');
-  let world = buildWorld(preset);
+  preset = Object.hasOwn(BIOMES, preset) ? preset : 'overworld';
+  let options = normalizeOptions(initialOptions);
+  let world;
+  function rebuild() {
+    world = options.scene === 'oneblock'
+      ? { preset, get: (x, y, z) => x === 10 && y === 0 && z === 10 ? BIOMES[preset].top : null }
+      : buildWorld(preset);
+  }
+  rebuild();
   let angle = 0.65;
   let running = false;
   let raf = 0;
   let last = 0;
   let cloudShift = 0;
   let sizeKey = '';
+  let elapsed = 0;
+  let destroyed = false;
+  let diagnostic = {};
   const r = rand(99);
   const clouds = Array.from({ length: 9 }, () => ({ x: r(), y: 0.05 + r() * 0.32, w: 3 + Math.floor(r() * 5), h: 1 + Math.floor(r() * 2), s: 0.5 + r() * 0.8 }));
   const motes = Array.from({ length: 46 }, () => ({ x: r(), y: r(), s: 1 + Math.floor(r() * 2), v: 0.3 + r() * 0.7, p: r() * 6.28 }));
@@ -227,6 +246,7 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
 
   let drawMs = 0;
   function draw() {
+    if (destroyed) return;
     const started = performance.now();
     resize();
     const w = cv.width;
@@ -237,19 +257,24 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
     // object in the top band (the page's panorama band, see theme.css).
     // Must match the Home band in theme.css: clamp(180px, 36vh, 300px).
     const dpr = w / Math.max(1, cv.clientWidth || w);
-    const band = Math.max(180, Math.min(300, window.innerHeight * 0.36)) * dpr;
+    const layout = sceneLayout(w, h, window.innerHeight, dpr, options.scene);
+    const { band } = layout;
     const pitch = 0.45;
     const cp = Math.cos(pitch);
     const sp = Math.sin(pitch);
     // Fit the whole island (tallest tree ~12 blocks above the grass, the rocky
     // underside ~7 below, half-depth 11) inside the band, so no card covers it.
-    const S = Math.max(8 * dpr, Math.min(20 * dpr, (band - 22 * dpr) / (17.5 * cp + 21 * sp), w / 44));
-    sky(w, h, S);
-    const ca = Math.cos(angle);
-    const sa = Math.sin(angle);
+    const S = layout.scale;
+    sky(w, h, Math.min(S, 10 * dpr));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, w, band); ctx.clip();
+    drawSatellite(ctx, w * .17, band * .47, Math.min(1.2 * dpr, w / 700), preset);
+    drawSatellite(ctx, w * .83, band * .32, Math.min(.85 * dpr, w / 900), preset);
+    const ca = Math.cos(options.scene === 'oneblock' ? .65 : angle);
+    const sa = Math.sin(options.scene === 'oneblock' ? .65 : angle);
     const cx = w * 0.5;
-    const cy = 14 * dpr + (10.5 * cp + 10.5 * sp) * S;
-    const half = (W - 1) / 2;
+    const cy = options.scene === 'oneblock' ? band * .78 : 9 * dpr + (10.5 * cp + 10.5 * sp) * S;
+    const half = options.scene === 'oneblock' ? 10 : (W - 1) / 2;
     // world -> screen; positive rz is towards the camera
     const proj = (x, y, z) => {
       const X = x - half - 0.5;
@@ -301,6 +326,23 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (options.scene === 'oneblock') drawBlockDetail(ctx, proj(10.25, 1, 10.2), Math.min(1.3 * dpr, S / 75), preset);
+    let positions = [];
+    if (options.scene === 'island') {
+      drawParadeGround(ctx, layout, preset);
+      positions = mobPositions({ preset, count: options.mobs ? options.mobCount : 0, time: elapsed,
+        left: 38 * layout.mobScale, right: w - 38 * layout.mobScale, ground: layout.ground, scale: layout.mobScale });
+    } else {
+      // Pace along a real line on the cube's top face, rather than walking in air.
+      const a = proj(10.08, 1, 10.55);
+      const b = proj(10.92, 1, 10.55);
+      const scale = Math.min(layout.mobScale * (options.mobCount === 3 ? .44 : .66), S / 100);
+      positions = mobPositions({ preset, count: options.mobs ? options.mobCount : 0, time: elapsed,
+        left: a[0], right: b[0], ground: a[1], scale });
+      positions.forEach(m => { m.y = a[1] + (m.x - a[0]) / Math.max(1, b[0] - a[0]) * (b[1] - a[1]);
+        m.bounds.top = m.y - 68 * scale; m.bounds.bottom = m.y + 3 * scale; });
+    }
+    positions.sort((a,b) => a.y - b.y || a.x - b.x).forEach(m => drawMob(ctx, m));
     if (world.preset === 'nether') {
       // drifting ash
       for (const m of motes) {
@@ -309,6 +351,10 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
         ctx.fillRect(Math.round(m.x * w + Math.sin(m.p + y / 40) * 6), Math.round(y), m.s * 2, m.s * 2);
       }
     }
+    ctx.restore();
+    diagnostic = { preset, ...options, mobEnabled: options.mobs, elapsed, angle, width: w, height: h, band,
+      route: options.scene === 'island' ? 'foreground-cutaway' : 'block-top',
+      mobs: positions.map(m => ({ ...m, bounds: { ...m.bounds } })) };
     drawMs = performance.now() - started;
   }
 
@@ -318,8 +364,9 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
     const dt = last ? Math.min(100, t - last) : 16;
     // ~30 fps is plenty for a slow turn and halves the cost
     if (t - last >= 32 || !last) {
-      angle += dt * 0.00005;
-      cloudShift += dt * 0.004;
+      angle += dt * 0.000012 * options.speed;
+      cloudShift += dt * 0.004 * options.speed;
+      elapsed += dt / 1000 * options.speed;
       last = t;
       draw();
     }
@@ -332,18 +379,29 @@ export function createPanorama(host, { preset = 'overworld' } = {}) {
   return {
     canvas: cv,
     setRunning(on) {
+      if (destroyed) return;
       running = Boolean(on);
       if (running && !raf) { last = 0; raf = requestAnimationFrame(tick); }
       if (!running && raf) { cancelAnimationFrame(raf); raf = 0; }
     },
     setPreset(name) {
-      if (name === world.preset) return;
-      world = buildWorld(name);
+      name = Object.hasOwn(BIOMES, name) ? name : 'overworld';
+      if (name === preset || destroyed) return;
+      preset = name;
+      rebuild();
       draw();
     },
+    setOptions(next = {}) {
+      if (destroyed) return;
+      const previous = options.scene;
+      options = normalizeOptions({ ...options, ...next });
+      if (previous !== options.scene) rebuild();
+      draw();
+    },
+    get diagnostics() { return { ...diagnostic, running, destroyed, mobs: (diagnostic.mobs || []).map(m => ({ ...m, bounds: { ...m.bounds } })) }; },
     get running() { return running; },
     get drawMs() { return drawMs; },
     redraw: draw,
-    destroy() { running = false; cancelAnimationFrame(raf); ro.disconnect(); cv.remove(); },
+    destroy() { destroyed = true; running = false; cancelAnimationFrame(raf); raf = 0; ro.disconnect(); cv.remove(); },
   };
 }
