@@ -540,13 +540,47 @@ input[type='checkbox'] { accent-color: var(--accent); }
 .notes-view { white-space: pre-wrap; color: var(--muted); line-height: 1.5; user-select: text; margin: 0; }
 
 /* -------------------------------------------------------------- settings -- */
-.settings { max-width: 820px; }
-.set-section { margin-bottom: 28px; }
-.set-section > h2 { font-size: calc(14px * var(--text-scale)); font-weight: 600; margin: 0 0 8px; }
+/* Two columns: sticky section list + one scrolling column of sections. */
+.settings { display: grid; grid-template-columns: 184px minmax(0, 780px); gap: 32px; align-items: start; }
+.set-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 2px; }
+.set-nav .search .input { height: 30px; font-size: calc(12.5px * var(--text-scale)); }
+.set-nav-links { display: flex; flex-direction: column; gap: 1px; }
+.set-nav-links a { display: block; padding: 6px 10px; border-radius: var(--r-sm); color: var(--muted); text-decoration: none; font-weight: 500; font-size: calc(13px * var(--text-scale)); white-space: nowrap; }
+.set-nav-links a:hover { color: var(--text); background: var(--bg-2); }
+.set-nav-links a.on { color: var(--text); background: var(--bg-3); box-shadow: inset 2px 0 0 var(--accent); }
+.set-nav-links a[hidden] { display: none; }
+.set-content { min-width: 0; }
+.set-content > .page-head { margin-bottom: 22px; }
+.set-empty { padding: 24px 0; }
+.set-section { margin-bottom: 36px; scroll-margin-top: 8px; }
+.set-section[hidden], .set-group[hidden], .set-list > [hidden] { display: none; }
+.set-section > h2 { font-size: calc(16px * var(--text-scale)); font-weight: 600; margin: 0 0 12px; }
+.set-group + .set-group { margin-top: 18px; }
+.set-group > h3 { font-size: calc(12px * var(--text-scale)); font-weight: 600; color: var(--muted); margin: 0 0 6px 2px; }
 .set-list { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); }
 .set-list > .set-row, .set-list > .set-block { padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .set-list > :last-child { border-bottom: 0; }
+.set-list > .set-row:has(+ [hidden]:last-child) { border-bottom: 0; }
 .set-block { display: flex; flex-direction: column; gap: 10px; }
+.set-list > .set-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto; column-gap: 24px; row-gap: 10px; align-items: center; }
+.set-row .grow b { line-height: 1.35; }
+.set-row .grow span { display: block; margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
+.set-control { display: flex; justify-content: flex-end; align-items: center; min-width: 0; max-width: 460px; }
+.set-control > .row { justify-content: flex-end; }
+.set-list > .set-row.wide { grid-template-columns: 1fr; }
+.set-row.wide .set-control { max-width: none; justify-content: stretch; }
+.set-row.wide .set-control > * { flex: 1; }
+.set-control .switch { margin: 0 2px; }
+.mem-control input[type='range'] { width: 220px; }
+.grad-angle input[type='range'] { width: 150px !important; }
+.grad-angle .g-grad-preview { min-width: 96px; width: 96px; flex: none; }
+@media (max-width: 900px) {
+  .settings { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .set-nav { order: -1; z-index: 5; flex-direction: row; align-items: center; gap: 10px; padding: 8px 0; margin-top: -8px; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+  .set-nav .search { width: 180px; flex: none; }
+  .set-nav-links { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .set-nav-links a.on { box-shadow: inset 0 -2px 0 var(--accent); }
+}
 .theme-pick { display: flex; gap: 8px; }
 .theme-pick button { width: 92px; padding: 0; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: none; cursor: pointer; overflow: hidden; text-align: left; }
 .theme-pick button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -817,7 +851,10 @@ body.app-hidden *, body.app-hidden *::before, body.app-hidden *::after { animati
 /* Appearance: bounded data-driven tokens, never user-supplied stylesheets. */
 body[data-appearance-pending] > .titlebar,
 body[data-appearance-pending] > .sidebar,
-body[data-appearance-pending] > .view { visibility: hidden; }
+body[data-appearance-pending] > .view,
+body[data-mc-pending] > .titlebar,
+body[data-mc-pending] > .sidebar,
+body[data-mc-pending] > .view { visibility: hidden; }
 .view { min-width: 0; }
 :focus-visible { outline-color: var(--text); }
 .theme-pick, .accent-pick { flex-wrap: wrap; }
@@ -833,6 +870,8 @@ body[data-appearance-pending] > .view { visibility: hidden; }
 .appearance-error:empty { display: none; }
 .appearance-select.input { min-width: 142px; width: auto; }
 .appearance-section .set-row > :last-child { flex-shrink: 0; }
+.settings .appearance-select.input { min-width: 0; width: 200px; }
+.settings .custom-accent { align-items: flex-end; }
 .input[aria-invalid='true'] { border-color: var(--bad); }
 .set-row .grow b { font-size: calc(13px * var(--text-scale)); }
 .set-row .grow span, .theme-pick span { font-size: calc(12px * var(--text-scale)); }
@@ -875,6 +914,9 @@ body[data-sidebar='compact'] .brand-name { display: none; }
   .page, body[data-density='compact'] .page { padding: 20px 18px 36px; }
   .set-row { flex-wrap: wrap; gap: 10px; }
   .set-row > .grow { flex-basis: 100%; }
+  .set-list > .set-row { grid-template-columns: 1fr; }
+  .set-control { justify-content: flex-start; max-width: none; }
+  .set-control > .row, .settings .custom-accent { justify-content: flex-start; align-items: flex-start; }
   .page-head { align-items: flex-start; flex-wrap: wrap; }
   .palette-btn { width: 170px; }
   .set-row .row { flex-wrap: wrap; }
@@ -920,3 +962,56 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .notif-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 12px; color: var(--dim); font-size: calc(12.5px * var(--text-scale)); }
 .notif-empty svg { width: 18px; height: 18px; }
 .notif-foot { padding: 8px 14px; border-top: 1px solid var(--line); }
+
+/* ===================================================== install review (content worker) == */
+/* Small live card for installs and their required dependencies. Lives in the toast stack. */
+.install-review { width: 360px; max-width: calc(100vw - 32px); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r); box-shadow: var(--shadow); font-size: calc(12.5px * var(--text-scale)); color: var(--text); overflow: hidden; animation: toastIn .18s ease-out; user-select: text; }
+.install-review .ir-head { display: flex; align-items: flex-start; gap: 10px; padding: 11px 8px 9px 12px; }
+.install-review .ir-ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; margin-top: 1px; color: var(--muted); }
+.install-review .ir-ico svg { width: 15px; height: 15px; }
+.install-review .ir-ico.done { color: var(--ok); }
+.install-review .ir-ico.partial { color: var(--warn); }
+.install-review .ir-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.35; }
+.install-review .ir-title b { font-weight: 600; font-size: calc(13px * var(--text-scale)); }
+.install-review .ir-title span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-review .ir-hide { height: 24px; padding: 0 8px; margin-top: -2px; }
+.install-review .ir-progress { height: 2px; background: var(--bg-4); }
+.install-review .ir-progress.idle { background: var(--line); height: 1px; }
+.install-review .ir-progress i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.install-review .ir-list { list-style: none; margin: 0; padding: 4px 0; max-height: 280px; overflow-y: auto; }
+.install-review .ir-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
+.install-review .ir-item img, .install-review .ir-ph { width: 24px; height: 24px; flex: none; border-radius: 5px; object-fit: cover; background: var(--bg-3); }
+.install-review .ir-ph { display: grid; place-items: center; color: var(--dim); }
+.install-review .ir-ph svg { width: 13px; height: 13px; }
+.install-review .ir-main { flex: 1; min-width: 0; }
+.install-review .ir-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.install-review .ir-name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-review .ir-tag { flex: none; font-size: calc(10.5px * var(--text-scale)); color: var(--dim); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; line-height: 16px; }
+.install-review .ir-meta { color: var(--dim); font-size: calc(11.5px * var(--text-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-review .ir-note { margin-top: 3px; color: var(--muted); font-size: calc(11.5px * var(--text-scale)); line-height: 1.35; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.install-review .ir-note.bad { color: var(--bad); }
+.install-review .ir-note .link { border: 0; background: none; padding: 0; color: var(--accent-text); font-size: inherit; cursor: pointer; }
+.install-review .ir-note .link:hover { text-decoration: underline; }
+.install-review .ir-status { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: calc(11.5px * var(--text-scale)); color: var(--muted); }
+.install-review .ir-status svg { width: 13px; height: 13px; }
+.install-review .ir-status.ok { color: var(--ok); }
+.install-review .ir-status.bad { color: var(--bad); }
+.install-review .ir-status.warn { color: var(--warn); }
+.install-review .ir-status.dim, .install-review .dim { color: var(--dim); }
+.install-review .ir-bar { width: 54px; height: 4px; border-radius: 2px; background: var(--bg-4); overflow: hidden; }
+.install-review .ir-bar i { display: block; height: 100%; background: var(--accent); }
+.install-review .ir-item.cancelled b { color: var(--dim); }
+.install-review .ir-item.cancelled img, .install-review .ir-item.cancelled .ir-ph { opacity: .45; }
+.install-review .ir-item.failed, .install-review .ir-item.blocked { align-items: flex-start; }
+.install-review .ir-item.failed img, .install-review .ir-item.blocked img, .install-review .ir-item.failed .ir-ph, .install-review .ir-item.blocked .ir-ph { margin-top: 2px; }
+.install-review .ir-item.failed .ir-status, .install-review .ir-item.blocked .ir-status { margin-top: 2px; }
+.install-review .ir-foot { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 12px; border-top: 1px solid var(--line); font-size: calc(11.5px * var(--text-scale)); }
+.install-review .ir-foot > :first-child { flex: 1; }
+.install-review .ir-foot .bad { color: var(--bad); }
+.install-review .ir-cancel { height: 24px; padding: 0 8px; }
+/* library source switcher + CurseForge states */
+.lib-source { display: inline-flex; gap: 2px; }
+.cf-key-state { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.cf-key-state .row { justify-content: center; }
+.proj .src-badge { font-size: calc(10.5px * var(--text-scale)); color: var(--dim); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; line-height: 16px; }
+/* =================================================== end install review (content worker) == */

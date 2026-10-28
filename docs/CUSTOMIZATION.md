@@ -6,6 +6,37 @@ interface and text size, spacing, sidebar layout and reduced motion. **Reset
 appearance** restores these choices without resetting accounts or game settings.
 No extra app, plugin, account or credentials are needed to customize the launcher.
 
+Settings has a section list on the left (with **Search settings**) and one
+scrolling column on the right. Appearance is split into Theme and colour,
+Gradient, Layout and text, Minecraft style, and Presets and reset.
+
+## Optional Minecraft style
+
+**Settings → Appearance → Minecraft style** is off for every install, new or
+old. Old settings files from before the v3 redesign (`background`, `blockIcons`,
+`effects3d`, `skinPose` and similar keys) are ignored and never switch it on.
+Turn on **Minecraft style** to get:
+
+- **Preset**: Overworld, Nether or End. Sets the Home panorama, the background
+  tiles and the Home sidebar block.
+- **Background**: a slowly turning floating island on Home (other pages use
+  darkened block tiles), block tiles everywhere, or none.
+- **Buttons**: stone or dark oak pixel buttons with bevels. Play and other
+  accent buttons keep your accent colour and gradient under a faint pixel grain.
+- **Corners** (blocky or rounded), **Pixel font** (headings and buttons, all
+  text, or off), **Block icons** for the sidebar and instance icons (custom
+  instance images are kept) and **Card tilt** (off by default).
+- **Skin pose**, **Skin turning** and **Skin stand** for the 3D skin on Home.
+
+All textures are original and drawn by code at runtime. There are no sound
+effects. The island is a plain 2D canvas (no WebGL); it only animates on Home
+while the window is visible and stays still with reduced motion. **Turn off and
+reset** switches the style off and restores only its own choices.
+
+To remove it completely, delete `src/renderer/themes/minecraft/`. The launcher
+loads that folder only through a guarded dynamic import, so it keeps working and
+the Minecraft style block disappears from Settings.
+
 ## Share a look, not your private settings
 
 In **Settings → Appearance**, use **Import** or **Export** in the Appearance
@@ -66,6 +97,19 @@ these keys. Colours accept uppercase or lowercase hex; exports use lowercase.
 | `gradient` | `true` or `false` | `true` |
 | `customA2` | Second gradient colour, six-digit hex | `#ff4fb8` |
 | `gradientAngle` | Whole number, 0–360 degrees | `135` |
+| `mcStyle` | `true` or `false`; master switch for the Minecraft style | `false` |
+| `mcPreset` | `overworld`, `nether`, `end` | `overworld` |
+| `mcBackground` | `panorama`, `tiles`, `plain` | `panorama` |
+| `mcButtons` | `stone`, `wood` | `stone` |
+| `mcCorners` | `blocky`, `rounded` | `blocky` |
+| `mcFont` | `headings`, `all`, `system` | `headings` |
+| `mcBlockIcons` | `true` or `false` | `true` |
+| `mcTilt` | `true` or `false` | `false` |
+| `mcSkinPose` | `idle`, `walk`, `run`, `zombie`, `sit`, `dance` | `idle` |
+| `mcSkinTurn` | `still`, `sway`, `spin` | `sway` |
+| `mcSkinPedestal` | `none`, `grass` | `grass` |
+
+The `mc*` keys other than `mcStyle` only take effect while `mcStyle` is `true`.
 
 System reduced-motion preferences also reduce animations. Auto sidebar layout
 can collapse the sidebar in a narrow window. Use `gradient: false` for flat accent
@@ -78,12 +122,13 @@ file and retry; do not paste your entire settings file into the preset.
 
 ## Optional Discord Rich Presence
 
-Open **Settings → Launcher**. Create an application at the Discord developer
-portal (`discord.com/developers/applications`) and copy its public **Application
-ID** (also called Client ID). Paste the 17–20 digit ID into **Discord application
-ID**, enable **Discord Rich Presence**, open desktop Discord and launch a game.
-The Discord application name determines the activity's app label; name your app
-Pimpin Launcher if that is the label you want. You do not need a bot.
+Presence works automatically: keep **Discord Rich Presence** on (Settings →
+Launcher), open the Discord desktop app and launch a game. The launcher uses its
+own public application ID from `src/main/discord-app.json`, so there is nothing
+to paste. To show a different app name, create an application at
+`discord.com/developers/applications` and paste its public 17–20 digit
+**Application ID** into **Own application ID**; it overrides the built-in one.
+Delete or empty `discord-app.json` to ship a build with no built-in ID.
 
 Never paste a bot token, account token, client secret or password. The launcher
 uses local Discord IPC, not a Discord account login. Without a valid ID and a
@@ -95,7 +140,7 @@ Three independent toggles control what is shared:
 | Settings key | Meaning | Default |
 | --- | --- | --- |
 | `discordRich` | Enable presence when configured and playing | `true` |
-| `discordAppId` | Public numeric application ID | `null` |
+| `discordAppId` | Optional own public application ID; empty uses the built-in one | `null` |
 | `discordShowInstance` | Include the instance name; off uses Playing Minecraft | `true` |
 | `discordShowVersion` | Include Minecraft version and loader | `true` |
 | `discordShowElapsed` | Include session elapsed time | `true` |

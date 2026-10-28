@@ -90,3 +90,18 @@ test('appearance preset APIs round-trip only known appearance settings', () => {
   });
   assert.deepEqual(parsePreset(text), normalizeAppearance(settings));
 });
+
+test('Minecraft style keys import and export like other appearance keys', () => {
+  const text = serializePreset({ mcStyle: true, mcPreset: 'nether', mcButtons: 'wood', accounts: ['private'] });
+  const parsed = JSON.parse(text).appearance;
+  assert.equal(parsed.mcStyle, true);
+  assert.equal(parsed.mcPreset, 'nether');
+  assert.doesNotMatch(text, /private/);
+  assert.deepEqual(parsePreset(preset({ mcStyle: true, mcSkinPose: 'sit' })), { mcStyle: true, mcSkinPose: 'sit' });
+  for (const appearance of [{ mcStyle: 'on' }, { mcPreset: 'og' }, { mcBackground: 'glow' }, { mcSkinPedestal: 'block' }, { mcTilt: 1 }]) {
+    assert.throws(() => parsePreset(preset(appearance)), /Invalid/);
+  }
+  for (const key of ['background', 'blockIcons', 'effects3d', 'skinPose', 'uiSounds']) {
+    assert.throws(() => parsePreset(preset({ [key]: true })), /Unknown/);
+  }
+});

@@ -26,7 +26,7 @@ async function request(url, opts = {}, attempts = 3) {
       return res;
     } catch (err) {
       lastErr = err;
-      if (err.retry === false) break;
+      if (err.retry === false || opts.signal?.aborted) break;
       await sleep(500 * 2 ** i);
     }
   }
@@ -60,13 +60,14 @@ async function fileValid(file, { sha1, size } = {}) {
  * matches the expected sha1/size. Writes to a temp file first so a crash never
  * leaves a half-written jar behind.
  */
-async function download(url, dest, { sha1, size, onProgress, force = false } = {}) {
+async function download(url, dest, { sha1, size, onProgress, force = false, signal } = {}) {
+  signal?.throwIfAborted();
   if (!force && (await fileValid(dest, { sha1, size }))) return false;
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   const tmp = `${dest}.${process.pid}.part`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await request(url);
+      const res = await request(url, signal ? { signal } : undefined);
       const total = Number(res.headers.get('content-length')) || size || 0;
       let received = 0;
       const body = Readable.fromWeb(res.body);
@@ -76,13 +77,14 @@ async function download(url, dest, { sha1, size, onProgress, force = false } = {
           onProgress(received, total);
         });
       }
-      await pipeline(body, fs.createWriteStream(tmp));
+      await pipeline(body, fs.createWriteStream(tmp), signal ? { signal } : {});
       if (sha1 && (await sha1File(tmp)) !== sha1) throw new Error(`Checksum mismatch for ${url}`);
       await fsp.rename(tmp, dest);
       return true;
     } catch (err) {
       await fsp.rm(tmp, { force: true });
-      if (attempt === 2) throw err;
+      // a cancelled download is not retried; the partial file is already gone
+      if (attempt === 2 || signal?.aborted) throw signal?.aborted ? Object.assign(new Error('Cancelled'), { cancelled: true }) : err;
       await sleep(700 * (attempt + 1));
     }
   }

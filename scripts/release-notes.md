@@ -1,12 +1,11 @@
-# What's new in 0.1.32
+# What's new in 0.1.33
 
-- Optional Discord Rich Presence shows your running Minecraft session. Configure a public Discord application ID in Settings > Launcher; choose separately whether to share the instance name, game version/loader and elapsed time. No Discord token or client secret is needed. Connections recover after Discord restarts and close when disabled or the last game stops.
-- Share your launcher look using small, editable JSON appearance presets. Import/export includes colours, theme, sizing, sidebar layout, density and motion only. Accounts, tokens, paths, game settings and Discord IDs are excluded. Imports validate the file and ask for confirmation; exports never overwrite an existing file.
-- More appearance control: two-colour gradients, editable hex colours, gradient angle, ready-made blends and a live preview. Flat accents remain available. Fixed gradient toggle/control synchronization and save the angle only when you release the slider.
-- Settings > Launcher can reveal settings.json for manual editing. New customization and project-structure guides explain which files to edit, where source and player data live, and what not to share.
-- More original pack textures for copper, trial chambers and pale-garden/resin content, gated to compatible Minecraft versions. Fixed opaque copper bulb faces so their dark recesses do not become see-through holes.
-- Finer continuous shader-slider choices, with unchanged defaults and discrete sample-count/enum options. Generation now preserves the choices instead of losing them on rebuild.
+- Minecraft style is back, rebuilt and optional. Turn it on in Settings > Appearance > Minecraft style: Overworld, Nether or End looks, a floating-island panorama on Home, block tiles, stone or wood pixel buttons, blocky corners, pixel font, block icons for the sidebar and instances, card tilt, and skin poses with a grass-block stand. It is off by default, has a one-click "Turn off and reset", animates only on Home while visible, respects reduced motion and has no sounds. Everything lives in one folder (src/renderer/themes/minecraft) and the launcher works normally if it is deleted.
+- CurseForge in the Library. Switch between Modrinth and CurseForge to search and install mods, resource packs, shaders and modpacks (Fabric/Quilt). Downloads are hash-checked. Mods whose authors block third-party downloads show an Open on CurseForge button instead. CurseForge needs an API key: builds can include one, or add your own in Settings > Launcher.
+- Required dependencies install automatically, and a small popup shows exactly what is being installed with per-item progress, done/failed status, Hide and Cancel. Cancelling leaves no half-downloaded files, and dependency failures are no longer silent.
+- Settings has a new layout: a section list with search on the left, consistent rows, and grouped Appearance options.
+- Discord Rich Presence can now start on its own with a built-in Pimpin application ID; your own ID is optional and overrides it.
 
-No new dependency was added by this finishing pass. No ads, telemetry, background launch service or UI sound effects were added. Existing worlds, accounts and game settings are not migrated or reset.
+No new npm dependency. No ads, telemetry or sound effects. Existing worlds, accounts and settings are kept; Minecraft style stays off unless you turn it on.
 
-Discord transport/recovery is covered by automated tests; appearance and privacy controls were exercised in an isolated real Electron launcher. Live visibility on a Discord profile still depends on your application ID, desktop Discord and its activity-sharing settings. Shader support differs between Lite and Ultra; OptiFine runtime compatibility has not been verified. Publishing a release is not proof of a completed older-version install/relaunch update cycle.
+Tested with automated suites and isolated Electron fixtures. Not yet tested against the live CurseForge API (needs a key). Live Discord display needs the built-in application ID to be set. The older-version self-update install cycle is not covered by these tests.

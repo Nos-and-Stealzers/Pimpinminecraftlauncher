@@ -17,6 +17,8 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
   - **Resource packs.**
   - **Modpacks.** Install `.mrpack` modpacks (Fabric/Quilt) as a new ready-to-play instance.
   - **Plugins.** Install them onto a local Paper server.
+- **CurseForge as a second source** (official API, needs a CurseForge API key in Settings or one bundled at build time): switch the library between Modrinth and CurseForge for mods, shaders, resource packs and Fabric/Quilt modpacks (CurseForge pack `.zip` files can also be dropped onto the window). Files are checked against CurseForge's SHA-1 hashes, and mods whose author only allows downloads on CurseForge get an **Open on CurseForge** button instead of a download.
+- **Install review popup.** Every install, client feature and shader (with Iris) first works out the full list of required dependencies, then installs it right away while a small card lists each item with its version, size, progress and result. Failures are shown there, and Cancel stops the remaining downloads without leaving partial files.
 - **Content manager.** Turn installed mods, shaders and packs on or off, remove them, or check for updates and update them all. Mods you drop into the folder by hand are identified automatically.
 - **Local servers.** Create a [Paper](https://papermc.io), [Purpur](https://purpurmc.org) or Vanilla server, install plugins from the library, start/stop/restart it, type console commands, and **Join** with one click (it launches a matching instance and connects to `localhost`).
   - **Starter plugins** when you create a server: EssentialsX, LuckPerms, WorldEdit, Chunky, ViaVersion and Geyser + Floodgate (Bedrock players).
@@ -104,6 +106,7 @@ src/main/        Electron main process (Node)
   java.js        Java runtimes (Mojang's official runtimes, Adoptium fallback)
   auth.js        Microsoft (msmc) + offline accounts
   modrinth.js    Modrinth API client
+  curseforge.js  CurseForge API client (key from settings or src/main/generated/curseforge-key.json)
   content.js     install/remove/update mods, shaders, packs & plugins, dependency resolution, client features
   instances.js   instances, game process, modpacks
   servers.js     Paper/Purpur/Vanilla servers, properties, players, backups, console

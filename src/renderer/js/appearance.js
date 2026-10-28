@@ -22,6 +22,37 @@ const OLD_ACCENTS = { crimson: 'red', redstone: 'red', emerald: 'green', grass: 
 export const themeName = (s = state.settings) => (THEMES.some(([k]) => k === s?.uiStyle) ? s.uiStyle : 'modern');
 export const accentName = (s = state.settings) => (s?.accent === 'custom' ? 'custom' : ACCENTS[s?.accent] ? s.accent : OLD_ACCENTS[s?.accent] || 'violet');
 
+// Optional Minecraft style lives in ../themes/minecraft/. It is imported only
+// when switched on (or when Settings asks whether it is installed). If the
+// folder was removed the import fails, nothing is applied and its settings
+// block is hidden: the launcher itself never depends on it.
+let minecraft = null;
+let minecraftLoad = null;
+export function minecraftTheme() {
+  minecraftLoad ||= import('../themes/minecraft/index.js')
+    .then((mod) => (typeof mod?.apply === 'function' ? (minecraft = mod) : null))
+    .catch(() => null);
+  return minecraftLoad;
+}
+function applyMinecraft(s) {
+  const b = document.body;
+  if (s.mcStyle !== true) {
+    delete b.dataset.mcPending;
+    minecraft?.disable();
+    return;
+  }
+  // First load only: hide the shell for the few ms the theme takes to load,
+  // so it does not flash the default look. Never longer than 1.5 s.
+  if (!minecraft) {
+    b.dataset.mcPending = '';
+    setTimeout(() => delete b.dataset.mcPending, 1500);
+  }
+  minecraftTheme()
+    .then((mod) => mod?.apply(state.settings || s))
+    .catch(() => {})
+    .finally(() => delete b.dataset.mcPending);
+}
+
 const bounded = (value, min, max, fallback) => typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 let lastScale = null;
 let media;
@@ -60,6 +91,7 @@ export function applyAppearance(s = state.settings) {
   b.style.setProperty('--accent-ink', accentInk(hex));
   b.style.setProperty('--sidebar-width', `${bounded(s.sidebarWidth, 190, 300, 232)}px`);
   b.style.setProperty('--text-scale', String(bounded(s.textSize, 90, 120, 100) / 100));
+  applyMinecraft(s);
   const scale = bounded(s.uiScale, 80, 130, 100);
   if (scale !== lastScale) {
     lastScale = scale;
