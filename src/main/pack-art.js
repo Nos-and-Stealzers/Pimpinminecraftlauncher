@@ -24,10 +24,11 @@ const gearArt = require('./pack-art/gear-art');
 const nonliving = require('./pack-art/nonliving');
 const oreArt = require('./pack-art/ore-art');
 const equipmentArt = require('./pack-art/equipment-art');
+const trialArt = require('./pack-art/trial');
 
 // terrain.js redraws the most common terrain (noise-quantised, low repetition)
-const T = { ...blocks.T, ...blocks2.T, ...fx.T, ...terrain.X, ...blocks3.T, ...polish.X, ...oreArt.X };
-const I = { ...baseItems, ...gearArt.I, ...foodArt.I, ...nonliving.I };
-const ITEM_SPECS = [...gearArt.ITEM_SPECS, ...foodArt.ITEM_SPECS, ...nonliving.ITEM_SPECS];
+const T = { ...blocks.T, ...blocks2.T, ...fx.T, ...terrain.X, ...blocks3.T, ...polish.X, ...oreArt.X, ...trialArt.T };
+const I = { ...baseItems, ...gearArt.I, ...foodArt.I, ...nonliving.I, ...trialArt.I };
+const ITEM_SPECS = [...gearArt.ITEM_SPECS, ...foodArt.ITEM_SPECS, ...nonliving.ITEM_SPECS, ...trialArt.ITEM_SPECS];
 
 module.exports = { T, ORES: blocks.ORES, MOBS, SKINS, HUD, ENT, I, LEGACY_ITEMS, BABY, ITEM_SPECS, equipmentArt, nonliving };

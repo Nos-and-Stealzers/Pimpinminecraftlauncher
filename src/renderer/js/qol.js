@@ -228,6 +228,7 @@ function commands(navigate) {
     { label: 'Open the data folder', icon: 'folder', run: () => api.call('shell:openRoot') },
     { label: 'Keyboard shortcuts', hint: 'F1', icon: 'info', run: () => shortcutsHelp() },
     ...THEMES.map(([k, n]) => ({ label: `Theme: ${n}`, icon: 'palette', run: () => updateSettings({ uiStyle: k }) })),
+    { label: state.settings.gradient ? 'Turn gradient off' : 'Turn gradient on', sub: 'Blend the accent into a second colour', icon: 'palette', run: () => toast(state.settings.gradient ? 'Gradient off' : 'Gradient on. Pick colours in Settings → Appearance.', 'info') || updateSettings({ gradient: !state.settings.gradient }) },
   ];
   for (const i of state.instances) {
     cmds.push({ label: `Play ${i.name}`, sub: `${i.mcVersion} · ${i.loader}`, icon: 'play', run: () => updateSettings({ lastInstance: i.id }).then(() => playInstance(i.id)) });

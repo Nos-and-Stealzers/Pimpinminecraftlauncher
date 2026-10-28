@@ -79,6 +79,38 @@ body[data-accent='orange'] { --accent: #e5762b; --accent-hi: #ec8641; }
 body[data-accent='red'] { --accent: #dc4545; --accent-hi: #e35959; }
 body[data-accent='pink'] { --accent: #d9469b; --accent-hi: #e05aa8; }
 
+/* ------------------------------------------- gradient theming (settings) -- */
+/* Two accent colours blend into gradient fills for buttons, the sidebar and
+   the window background. Off by default; angle from settings, validated. */
+body[data-gradient='on'] {
+  --g: linear-gradient(var(--g-angle, 135deg), var(--accent), var(--g2, var(--accent)));
+  --g-hover: linear-gradient(var(--g-angle, 135deg), color-mix(in srgb, var(--accent) 85%, #fff), color-mix(in srgb, var(--g2, var(--accent)) 85%, #fff));
+  background: linear-gradient(var(--g-angle, 135deg),
+    color-mix(in srgb, var(--accent) 12%, var(--bg-0)),
+    var(--bg-0) 55%,
+    color-mix(in srgb, var(--g2, var(--accent)) 14%, var(--bg-0)));
+}
+body[data-gradient='on'] .sidebar { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, var(--bg-1)), var(--bg-1) 70%, color-mix(in srgb, var(--g2, var(--accent)) 8%, var(--bg-1))); }
+body[data-gradient='on'] .view { background: transparent; }
+body[data-gradient='on'] .btn.primary,
+body[data-gradient='on'] .play-btn,
+body[data-gradient='on'] .mini-play,
+body[data-gradient='on'] .update-pill,
+body[data-gradient='on'] .switch input:checked + span,
+body[data-gradient='on'] .tabs button.on::after,
+body[data-gradient='on'] .progress i,
+body[data-gradient='on'] input[type='range']::-webkit-slider-thumb,
+body[data-gradient='on'] input[type='checkbox'] { background-image: var(--g); }
+body[data-gradient='on'] input[type='checkbox'] { background-image: none; }
+body[data-gradient='on'] .btn.primary:hover:not(:disabled),
+body[data-gradient='on'] .pimpin-promo:hover,
+body[data-gradient='on'] .mini-play:hover,
+body[data-gradient='on'] .update-pill:hover:not(.dl),
+body[data-gradient='on'] .play-btn:hover { background: var(--g-hover); }
+body[data-gradient='on'] .steps i.on { background-image: var(--g); }
+body[data-gradient='on'] .notif-count { background-image: var(--g); }
+.g-grad-preview { height: 34px; border-radius: var(--r-sm); border: 1px solid var(--line); flex: 1; min-width: 120px; background: linear-gradient(var(--g-angle, 135deg), var(--accent), var(--g2, var(--accent))); }
+
 body[data-font='pixel'] { --display: 'Pixelify Sans', var(--font); }
 
 * { box-sizing: border-box; }
@@ -531,6 +563,10 @@ input[type='checkbox'] { accent-color: var(--accent); }
 .accent-pick label.on { outline-color: var(--text); border-style: solid; }
 .accent-pick label input { position: absolute; inset: -6px; width: 36px; height: 36px; opacity: 0; cursor: pointer; }
 .accent-pick label svg { width: 12px; height: 12px; color: var(--muted); pointer-events: none; }
+.grad-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+.grad-pick button { height: 24px; padding: 0 9px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--bg-1); cursor: pointer; font-size: calc(11px * var(--text-scale)); font-weight: 700; color: var(--muted); }
+.grad-pick button svg { width: 12px; height: 12px; }
+.grad-pick button.on { border-color: var(--accent); color: var(--text); }
 
 /* --------------------------------------------------------------- library -- */
 .lib-toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }

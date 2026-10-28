@@ -23,7 +23,8 @@ const PACKS = {
       'Every animated texture made static (water, lava, fire, portals, magma, sea lanterns, prismarine)',
       'Low fire: flames cover far less of your screen',
       'Clear pumpkin, vignette and underwater overlays',
-      'About 370 calm 16× blocks (on 1.20+): terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'About 420 calm 16× blocks (on 1.20+): terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'Copper builds: grates, bulbs, chains, lanterns, bars and torches across all four oxidation stages; trial spawners, vaults and heavy core; pale moss, creaking hearts and resin',
       'Every ore (stone, deepslate and nether) drawn as clustered veins you can spot from across a cave',
       'Every food, matching tools and weapons, armour icons and ore materials drawn as one readable set',
       'Matching mobs (incl. villager, husk, drowned), chests, default player skins, hotbar, hearts and buttons; baby mobs on 26.1+',
@@ -39,7 +40,8 @@ const PACKS = {
     size: 32,
     tagline: 'Rich 32× textures with soft shading and living animations.',
     features: [
-      'About 370 hand-shaded 32× blocks (on 1.20+): low-noise terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass and stained glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'About 420 hand-shaded 32× blocks (on 1.20+): low-noise terrain that tiles without a visible grid, ten woods incl. stripped logs and nether stems, glass and stained glass, wool, terracotta and concrete in all 16 colours, nether and end basics, flowers, saplings and crops',
+      'Copper builds that glow when lit: grates and bulbs across all four oxidation stages, chains, lanterns, bars and torches; trial spawners, vaults and heavy core; pale moss, creaking hearts and resin',
       'Ores as clustered veins that twinkle now and then (glow in the dark with OptiFine or Continuity)',
       'Connected glass with OptiFine or Continuity',
       'Smooth water and lava, living fire, swirling portals, breathing magma and pulsing sea lanterns',
@@ -104,6 +106,62 @@ Object.assign(BLOCKS, {
   pale_oak_planks: W(null, [1, 21, 4]), pale_oak_leaves: W(null, [1, 21, 4]),
   bamboo_planks: W(null, [1, 20]),
   azalea_leaves: W(null, [1, 17]), flowering_azalea_leaves: W(null, [1, 17]),
+});
+
+// Copper builds and oxidation ladders follow the trial-chamber update. The
+// waxed variants reuse the same textures via vanilla models, so only the
+// four oxidation stages per family ship. Lanterns, chains, bars and the
+// torch arrived with the Copper Age (1.21.9).
+Object.assign(BLOCKS, {
+  copper_grate: W(null, [1, 21]), exposed_copper_grate: W(null, [1, 21]),
+  weathered_copper_grate: W(null, [1, 21]), oxidized_copper_grate: W(null, [1, 21]),
+  copper_bulb: W(null, [1, 21]), copper_bulb_powered: W(null, [1, 21]),
+  copper_bulb_lit: W(null, [1, 21]), copper_bulb_lit_powered: W(null, [1, 21]),
+  exposed_copper_bulb: W(null, [1, 21]), exposed_copper_bulb_powered: W(null, [1, 21]),
+  exposed_copper_bulb_lit: W(null, [1, 21]), exposed_copper_bulb_lit_powered: W(null, [1, 21]),
+  weathered_copper_bulb: W(null, [1, 21]), weathered_copper_bulb_powered: W(null, [1, 21]),
+  weathered_copper_bulb_lit: W(null, [1, 21]), weathered_copper_bulb_lit_powered: W(null, [1, 21]),
+  oxidized_copper_bulb: W(null, [1, 21]), oxidized_copper_bulb_powered: W(null, [1, 21]),
+  oxidized_copper_bulb_lit: W(null, [1, 21]), oxidized_copper_bulb_lit_powered: W(null, [1, 21]),
+  copper_chain: W(null, [1, 21, 9]), exposed_copper_chain: W(null, [1, 21, 9]),
+  weathered_copper_chain: W(null, [1, 21, 9]), oxidized_copper_chain: W(null, [1, 21, 9]),
+  copper_lantern: W(null, [1, 21, 9]), exposed_copper_lantern: W(null, [1, 21, 9]),
+  weathered_copper_lantern: W(null, [1, 21, 9]), oxidized_copper_lantern: W(null, [1, 21, 9]),
+  copper_bars: W(null, [1, 21, 9]), exposed_copper_bars: W(null, [1, 21, 9]),
+  weathered_copper_bars: W(null, [1, 21, 9]), oxidized_copper_bars: W(null, [1, 21, 9]),
+  copper_torch: W(null, [1, 21, 9]),
+});
+// Trial chambers: the spawner states (ominous versions share the painters)
+// and the vault's cage faces.
+Object.assign(BLOCKS, {
+  heavy_core: W(null, [1, 21, 2]),
+  trial_spawner_side_inactive: W(null, [1, 21]),
+  trial_spawner_side_active: W(null, [1, 21]), trial_spawner_side_ejecting: W(null, [1, 21]),
+  trial_spawner_side_inactive_ominous: W(null, [1, 21]), trial_spawner_side_active_ominous: W(null, [1, 21]),
+  trial_spawner_side_ejecting_ominous: W(null, [1, 21]),
+  trial_spawner_top_inactive: W(null, [1, 21]),
+  trial_spawner_top_active: W(null, [1, 21]), trial_spawner_top_ejecting: W(null, [1, 21]),
+  trial_spawner_top_inactive_ominous: W(null, [1, 21]), trial_spawner_top_active_ominous: W(null, [1, 21]),
+  trial_spawner_top_ejecting_ominous: W(null, [1, 21]),
+  trial_spawner_top_ejecting_reward: W(null, [1, 21]), trial_spawner_top_ejecting_reward_ominous: W(null, [1, 21]),
+  trial_spawner_bottom: W(null, [1, 21]),
+  vault_side_on: W(null, [1, 21]), vault_side_off: W(null, [1, 21]),
+  vault_front_on: W(null, [1, 21]), vault_front_off: W(null, [1, 21]),
+  vault_front_ejecting: W(null, [1, 21]), vault_top: W(null, [1, 21]), vault_bottom: W(null, [1, 21]),
+  vault_side_on_ominous: W(null, [1, 21]), vault_side_off_ominous: W(null, [1, 21]),
+  vault_front_on_ominous: W(null, [1, 21]), vault_front_off_ominous: W(null, [1, 21]),
+  vault_front_ejecting_ominous: W(null, [1, 21]), vault_top_ominous: W(null, [1, 21]), vault_bottom_ominous: W(null, [1, 21]),
+});
+// Winter drop: pale moss, the creaking heart states and resin.
+Object.assign(BLOCKS, {
+  pale_moss_block: W(null, [1, 21, 4]), pale_moss_carpet: W(null, [1, 21, 4]),
+  pale_moss_carpet_side_small: W(null, [1, 21, 4]), pale_moss_carpet_side_tall: W(null, [1, 21, 4]),
+  pale_hanging_moss: W(null, [1, 21, 4]), pale_hanging_moss_tip: W(null, [1, 21, 4]),
+  creaking_heart: W(null, [1, 21, 4]), creaking_heart_top: W(null, [1, 21, 4]),
+  creaking_heart_awake: W(null, [1, 21, 4]), creaking_heart_top_awake: W(null, [1, 21, 4]),
+  creaking_heart_dormant: W(null, [1, 21, 4]), creaking_heart_top_dormant: W(null, [1, 21, 4]),
+  resin_block: W(null, [1, 21, 4]), resin_bricks: W(null, [1, 21, 4]),
+  chiseled_resin_bricks: W(null, [1, 21, 4]), resin_clump: W(null, [1, 21, 4]),
 });
 for (const o of Object.keys(ORES)) {
   BLOCKS[o] = W(o === 'copper_ore' ? null : o, o === 'copper_ore' ? [1, 17] : undefined);

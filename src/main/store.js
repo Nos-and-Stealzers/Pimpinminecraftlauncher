@@ -115,6 +115,8 @@ const DEFAULT_SETTINGS = {
   lastSeenVersion: null,
   onboarded: false,
   notifications: true,
+  discordRich: true,
+  discordAppId: null,
   notifyLauncherUpdates: true,
   notifyModUpdates: true,
   notifyAnnouncements: true,

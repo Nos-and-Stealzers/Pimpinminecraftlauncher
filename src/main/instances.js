@@ -147,6 +147,16 @@ async function remove(id) {
   });
 }
 
+const presence = require('./presence');
+
+async function runningMetas() {
+  return Promise.all([...running.keys()].map(async (rid) => {
+    const m = await get(rid).catch(() => null);
+    if (!m) return null;
+    return { name: m.name, mcVersion: m.mcVersion, loader: m.loader, started: running.get(rid).started };
+  }));
+}
+
 function pushLog(id, line) {
   line = line.replace(/\x1b\[[0-9;]*m/g, '');
   const buf = logs.get(id) || [];
@@ -210,9 +220,10 @@ async function launch(id, { server, world } = {}) {
         /* instance deleted */
       }
       emit('game:state', { id, state: 'stopped', code, crashed: code !== 0 && code !== null });
+      runningMetas().then((gs) => presence.setGames(gs.filter(Boolean))).catch(() => {});
     });
     emit('game:state', { id, state: 'running' });
-
+    runningMetas().then((gs) => presence.setGames(gs.filter(Boolean))).catch(() => {});
     meta.lastPlayed = started;
     if (loaderVersion && !meta.loaderVersion) meta.loaderVersion = loaderVersion;
     await save(id, meta);

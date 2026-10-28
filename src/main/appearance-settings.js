@@ -3,6 +3,9 @@ const APPEARANCE_DEFAULTS = Object.freeze({
   uiStyle: 'modern', accent: 'violet', customA1: '#8f5cf7', font: 'default',
   uiScale: 100, animations: true, density: 'comfortable', textSize: 100,
   sidebarWidth: 232, sidebarMode: 'auto',
+  // UI gradient: blend the accent into a second colour across accent surfaces.
+  // On by default now that the launcher ships with it; toggle it off for a flat accent.
+  gradient: true, customA2: '#ff4fb8', gradientAngle: 135,
 });
 const enums = {
   uiStyle: ['modern', 'midnight', 'light', 'system'],
@@ -18,6 +21,9 @@ function normalizeAppearance(source) {
     if (values.includes(value)) result[key] = value;
   }
   if (typeof s.customA1 === 'string' && /^#[0-9a-f]{6}$/i.test(s.customA1)) result.customA1 = s.customA1.toLowerCase();
+  if (typeof s.customA2 === 'string' && /^#[0-9a-f]{6}$/i.test(s.customA2)) result.customA2 = s.customA2.toLowerCase();
+  if (typeof s.gradient === 'boolean') result.gradient = s.gradient;
+  if (typeof s.gradientAngle === 'number' && Number.isFinite(s.gradientAngle)) result.gradientAngle = Math.round(Math.min(360, Math.max(0, s.gradientAngle)));
   if (typeof s.animations === 'boolean') result.animations = s.animations;
   for (const [key, min, max] of [['uiScale', 80, 130], ['textSize', 90, 120], ['sidebarWidth', 190, 300]]) {
     if (typeof s[key] === 'number' && Number.isFinite(s[key])) result[key] = Math.round(Math.min(max, Math.max(min, s[key])));

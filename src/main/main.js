@@ -9,6 +9,7 @@ const auth = require('./auth');
 const minecraft = require('./minecraft');
 const instances = require('./instances');
 const servers = require('./servers');
+const presence = require('./presence');
 const content = require('./content');
 const modrinth = require('./modrinth');
 const files = require('./files');
@@ -824,5 +825,6 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   quitting = true;
   servers.stopAll();
+  presence.quit().catch(() => {});
 });
 app.on('window-all-closed', () => app.quit());

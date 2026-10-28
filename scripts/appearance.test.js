@@ -32,6 +32,12 @@ test('invalid appearance data cannot inject CSS; numbers clamp, invalid types fa
   assert.equal(limits.textSize, 120);
   assert.equal(limits.sidebarWidth, 300);
   assert.equal(limits.accent, 'blue');
+  const grads = normalizeAppearance({ gradient: 'yes', customA2: '#ABCDEF', gradientAngle: 999 });
+  assert.equal(grads.gradient, APPEARANCE_DEFAULTS.gradient);
+  assert.equal(grads.customA2, '#abcdef');
+  assert.equal(grads.gradientAngle, 360);
+  assert.equal(normalizeAppearance({ gradientAngle: -5 }).gradientAngle, 0);
+  assert.equal(normalizeAppearance({ customA2: 'url(evil)' }).customA2, APPEARANCE_DEFAULTS.customA2);
   await store.updateSettings({ customA1: 'red;display:none', density: 'oops', sidebarWidth: -100, unknownCss: 'body{}' });
   assert.equal(store.getSettings().customA1, APPEARANCE_DEFAULTS.customA1);
   assert.equal(store.getSettings().sidebarWidth, 190);

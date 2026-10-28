@@ -49,6 +49,13 @@ export function applyAppearance(s = state.settings) {
   b.classList.toggle('reduce-motion', s.animations === false || media.motion.matches);
   const hex = accentName(s) === 'custom' && /^#[0-9a-f]{6}$/i.test(s.customA1 || '') ? s.customA1 : ACCENTS[accentName(s)] || ACCENTS.violet;
   b.style.setProperty('--accent', hex);
+  // Gradient theming: a second colour the accent can blend into. Falls back to
+  // a darker shade of the accent when the saved colour is invalid.
+  const g2 = /^#[0-9a-f]{6}$/i.test(s.customA2 || '') ? s.customA2 : '';
+  const fill = /^\d+$/.test(String(s.gradientAngle)) ? `${String(s.gradientAngle).slice(0, 4)}deg` : '135deg';
+  b.dataset.gradient = s.gradient && g2 ? 'on' : 'off';
+  b.style.setProperty('--g2', g2);
+  b.style.setProperty('--g-angle', fill);
   b.style.setProperty('--accent-hi', hex);
   b.style.setProperty('--accent-ink', accentInk(hex));
   b.style.setProperty('--sidebar-width', `${bounded(s.sidebarWidth, 190, 300, 232)}px`);
