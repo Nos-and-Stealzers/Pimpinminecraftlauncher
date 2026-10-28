@@ -6,6 +6,7 @@ const float sunPathRotation = -25.0; // [-40.0 -30.0 -25.0 -15.0 0.0 15.0 25.0 4
 const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 const float wetnessHalflife = 100.0;
 const float drynessHalflife = 300.0;
+
 #define SHADOWS
 #define PCSS
 #define COLORED_SHADOWS
@@ -63,6 +64,7 @@ const float drynessHalflife = 300.0;
 #define SATURATION 1.05 // [0.8 0.85 0.9 0.95 1.0 1.02 1.05 1.08 1.1 1.15 1.2 1.25 1.3]
 #define NIGHT_DESAT 1.0 // [0.0 0.25 0.5 0.75 1.0]
 #define VIGNETTE 0.28 // [0.0 0.07 0.15 0.22 0.28 0.34 0.4]
+
 // referenced here so every toggle is detected as an option
 #ifdef SHADOWS
 #endif

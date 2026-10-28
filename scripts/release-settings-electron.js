@@ -1,0 +1,96 @@
+// Actual main process, preload, renderer and settings IPC, disposable data only.
+// Native file chooser/confirmation responses are simulated, not clicked manually.
+const { app, BrowserWindow, dialog } = require('electron');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+if (!process.env.TMPDIR) throw new Error('TMPDIR must point at disposable scratch');
+app.disableHardwareAcceleration();
+app.setUserTasks = () => true; // Do not replace the user's Windows jump list.
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+let win;
+(async () => {
+  const root = await fs.mkdtemp(path.join(process.env.TMPDIR, 'pimpin-release-settings-'));
+  process.env.PIMPIN_ROOT = root;
+  app.setPath('userData', path.join(root, 'electron-profile'));
+  const store = require('../src/main/store');
+  await store.updateSettings({ startPage: 'settings', onboarded: true, lastSeenVersion: app.getVersion(), showNews: false, notifyAnnouncements: false, notifyModUpdates: false, autoUpdate: false, memoryMax: 4096 });
+  const exportPath = path.join(root, 'exported-appearance.json');
+  let chosen = exportPath, confirmation = 0;
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: chosen });
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] });
+  dialog.showMessageBox = async () => ({ response: confirmation });
+  const errors = [];
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('console-message', details => { if (details.level === 'error' && !details.message.includes('ERR_INTERNET_DISCONNECTED')) errors.push(details.message); });
+  });
+  require('../src/main/main');
+  await app.whenReady();
+  for (let n = 0; n < 200; n++) { win = BrowserWindow.getAllWindows()[0]; if (win && !win.webContents.isLoadingMainFrame()) break; await pause(50); }
+  assert.ok(win, 'actual launcher window opened');
+  const run = code => win.webContents.executeJavaScript(code);
+  const wait = async code => { for (let n = 0; n < 160; n++) { if (await run(code)) return; await pause(50); } throw new Error('Timed out: ' + code + '; ' + errors.join('; ')); };
+  const call = (channel, ...args) => run(`window.pimpin.call(${JSON.stringify(channel)}, ...${JSON.stringify(args)})`);
+  const change = (label, value) => run(`{const n=document.querySelector(${JSON.stringify(`[aria-label="${label}"]`)});if(!n)throw new Error('Missing control');n.value=${JSON.stringify(value)};n.dispatchEvent(new Event('change',{bubbles:true}));}`);
+  const shot = async name => {
+    await run('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'); await pause(200);
+    await fs.writeFile(path.join(root, name + '.png'), (await win.webContents.capturePage()).toPNG());
+  };
+  await wait('!!document.querySelector(".settings")');
+  assert.equal((await call('presence:status')).state, 'unconfigured');
+  await change('Discord application ID', 'not-a-token');
+  await wait('document.querySelector("#discord-id-error").textContent.length > 0');
+  assert.equal(store.getSettings().discordAppId, null);
+  await assert.rejects(() => call('settings:update', { discordAppId: 'secret.token' }), /application ID/);
+  await change('Discord application ID', '123456789012345678');
+  await wait('document.querySelector("#discord-id-error").textContent === ""');
+  for (let n = 0; n < 100 && store.getSettings().discordAppId === null; n++) await pause(20);
+  assert.equal(store.getSettings().discordAppId, '123456789012345678');
+  await run('document.querySelector(\'[aria-label="Show instance name"]\').click()');
+  for (let n = 0; n < 100 && store.getSettings().discordShowInstance; n++) await pause(20);
+  assert.equal(store.getSettings().discordShowInstance, false);
+  await call('settings:update', { discordRich: false });
+  await wait('window.pimpin.call("presence:status").then(s=>s.state === "disabled")');
+  await change('Custom accent hex', '#336699');
+  await wait('document.body.style.getPropertyValue("--accent") === "#336699"');
+  await run('document.querySelector(\'[aria-label="Export appearance preset"]\').click()');
+  for (let n = 0; n < 100; n++) { try { await fs.access(exportPath); break; } catch { await pause(25); } }
+  const exported = await fs.readFile(exportPath, 'utf8');
+  const presets = require('../src/main/appearance-presets');
+  assert.equal(presets.parsePreset(exported).customA1, '#336699');
+  assert.ok(!exported.includes('discordAppId') && !exported.includes('activeAccount') && !exported.includes(root));
+  await assert.rejects(() => call('settings:exportAppearance'), /EEXIST/);
+  assert.equal(await fs.readFile(exportPath, 'utf8'), exported);
+  await call('settings:update', { customA1: '#ffcc00' });
+  confirmation = 1;
+  assert.equal(await call('settings:importAppearance'), null);
+  assert.equal(store.getSettings().customA1, '#ffcc00');
+  confirmation = 0;
+  await run('document.querySelector(\'[aria-label="Import appearance preset"]\').click()');
+  await wait('document.querySelector(\'[aria-label="Custom accent hex"]\').value === "#336699"');
+  assert.equal(store.getSettings().memoryMax, 4096);
+  assert.equal(store.getSettings().discordShowInstance, false);
+  chosen = path.join(root, 'bad.json'); await fs.writeFile(chosen, '{"bad":true}');
+  await assert.rejects(() => call('settings:importAppearance'));
+  chosen = path.join(root, 'large.json'); await fs.writeFile(chosen, ' '.repeat(presets.MAX_PRESET_BYTES + 1));
+  await assert.rejects(() => call('settings:importAppearance'), /small JSON/);
+  await change('Gradient second hex', '#f08050');
+  await wait('document.body.style.getPropertyValue("--g2") === "#f08050"');
+  await run('document.querySelector(\'[aria-label="Sunset gradient"]\').click()');
+  await wait('document.querySelector(\'[aria-label="Gradient accent"]\').checked && document.querySelector(\'[aria-label="Gradient second hex"]\').value === "#ff4d8d"');
+  await shot('appearance-wide');
+  await run('document.querySelector("#set-launcher").scrollIntoView({block:"start"})');
+  await shot('discord-controls');
+  win.setSize(1024, 740);
+  await run('document.querySelector("#set-appearance").scrollIntoView({block:"start"})');
+  await pause(300);
+  assert.equal(await run('document.documentElement.scrollWidth <= innerWidth'), true);
+  await shot('appearance-small');
+  const saved = JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8'));
+  assert.equal(saved.customA2, '#ff4d8d'); assert.equal(saved.memoryMax, 4096);
+  assert.deepEqual(errors, []);
+  const report = { passed: true, root, actualMain: true, simulatedNativeDialogs: true, tests: ['presence privacy persistence and invalid-ID rejection', 'preset UI export/import and cancel', 'exclusive export and malformed/oversized import rejection', 'game settings preserved', 'gradient controls and 1024px layout'], errors };
+  await fs.writeFile(path.join(root, 'verification.json'), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+  app.exit(0);
+})().catch(error => { console.error(error); app.exit(1); });

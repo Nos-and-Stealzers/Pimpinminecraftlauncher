@@ -5,6 +5,7 @@ const float shadowDistanceRenderMul = 1.0;
 const float sunPathRotation = -25.0; // [-40.0 -30.0 -25.0 -15.0 0.0 15.0 25.0 40.0]
 const bool shadowHardwareFiltering = true;
 const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
+
 #define SHADOWS
 #define SOFT_SHADOWS
 #define COLORED_SHADOWS
@@ -51,6 +52,7 @@ const float ambientOcclusionLevel = 1.0; // [0.0 0.25 0.5 0.75 1.0]
 #define SATURATION 1.0 // [0.8 0.85 0.9 0.95 1.0 1.05 1.1 1.15 1.2]
 #define NIGHT_DESAT 1.0 // [0.0 0.25 0.5 0.75 1.0]
 #define VIGNETTE 0.22 // [0.0 0.06 0.12 0.17 0.22 0.28 0.35]
+
 // referenced here so every toggle is detected as an option
 #ifdef SHADOWS
 #endif

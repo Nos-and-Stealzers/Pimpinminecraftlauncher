@@ -51,12 +51,13 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
 - **Updater.** The Windows installer and the AppImage update themselves from GitHub Releases (turn automatic installs off if you like, or join the Beta channel). Portable, `.deb` and macOS copies get an "Update to x.y.z" button that downloads the right file. Release notes are shown before you update, and a "What's new" window after.
 - **Made easy.** A first-run setup (sign in, pick a look, get a ready-to-play Max FPS or Max Pretty game), a **command palette** (Ctrl+K) to find any instance, server, page or action, keyboard shortcuts (F1), desktop notifications, a tray icon with quick Play, start with your PC, export/import instances as `.zip`, and "Update all" for the mods in every instance.
 - **3D skin preview.** Drag your player on Home to turn it or click to wave. The wardrobe adds six original characters plus your imported skins, with explicit preview-only selection.
-- **Make it yours.** Dark, Midnight or Light, six accent choices or a custom colour, optional pixel headings, interface scaling and reduced motion. No UI sound effects.
+- **Make it yours.** Dark, Midnight, Light or System theme; custom accents and optional two-colour gradients; heading font, density, sidebar, interface/text size and reduced motion. Import/export small appearance-only JSON presets. No UI sound effects.
+- **Optional Discord Rich Presence.** Configure your own public application ID and choose whether to share the instance name, game version/loader and elapsed time. No Discord tokens required. The launcher reconnects if desktop Discord restarts; no presence connection without a running game and configured ID.
 - **Custom UI.** Frameless window, five accent themes, live game console with readable logs, Minecraft news, play-time tracking, and you can duplicate instances.
 
 ## Download
 
-Every push to `main` publishes a new release with installers to the public [pimpin-launcher-releases](https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases) repo (this source repo is private, so launchers couldn't check it). Installed copies check there and update themselves; the workflow needs the `RELEASES_TOKEN` secret (a token that can write releases to that repo).
+Release PRs bump the one-line `VERSION` file. After tests and Windows/Linux builds pass, merging publishes that version to [pimpin-launcher-releases](https://github.com/Nos-and-Stealzers/pimpin-launcher-releases/releases). Installed copies check that public feed. Reusing an already-published version is deliberately rejected; ordinary non-release changes must not overwrite a release. CI uses a restricted `RELEASES_TOKEN` with write access only to the downloads repository.
 
 | Platform | File |
 | --- | --- |
@@ -88,6 +89,13 @@ npm run dist:linux # build AppImage + deb
 
 Inside that folder, `instances/` and `servers/` hold your game folders, `shared/` holds versions, libraries and assets shared by all instances, and `runtimes/` holds the downloaded Java runtimes. Set the `PIMPIN_ROOT` environment variable to use a different folder.
 
+## Customizing and editing files
+
+- [Customization guide](docs/CUSTOMIZATION.md): appearance presets, Discord setup, settings keys and safe manual edits.
+- [Project structure](docs/PROJECT-STRUCTURE.md): source modules, generated packs, tests and the separate player-data folder.
+
+Settings → Launcher → **Show file** reveals `settings.json`. Quit the launcher before editing it. Share appearance presets, never your account files.
+
 ## How it works
 
 ```
@@ -107,7 +115,7 @@ src/renderer/    the UI (plain HTML/CSS/JS modules, no framework)
   js/fx3d.js     CSS-3D player model, blocks and card tilt (no WebGL needed)
   js/panorama.js 3D floating-island background
   js/textures.js procedural 16×16 block textures
-  js/appearance.js themes, backgrounds, scale and click sounds
+  js/appearance.js validated themes, accents, sizing and reduced motion (no sounds)
   fonts/         Pixelify Sans (SIL Open Font License)
   js/files.js    file browser UI
 ```

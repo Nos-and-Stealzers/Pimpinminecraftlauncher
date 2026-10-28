@@ -9,7 +9,7 @@ const packs = require('../../src/main/packs');
 const { decode } = require('./png-decode');
 
 const VERSIONS = ['1.8.9', '1.12.2', '1.16.5', '1.19.3', '1.20.1', '1.20.4', '1.21.1', '1.21.4', '1.21.5', '1.21.11', '26.1', '26.3'];
-const SEE_THROUGH = /glass|leaves|torch|lantern|ladder|door|trapdoor|(^|_)grass$|short_grass|tall_grass|tallgrass|fern|poppy|dandelion|flower|tulip|orchid|allium|bluet|daisy|cornflower|lily|sapling|mushroom|dead_?bush|wheat|carrots|potatoes|beetroots|sugar_cane|reeds|vine|fire|cactus|overlay|double_plant|waterlily|^ice$|pane|_e$|water|portal/;
+const SEE_THROUGH = /glass|leaves|torch|lantern|ladder|door|trapdoor|(^|_)grass$|short_grass|tall_grass|tallgrass|fern|poppy|dandelion|flower|tulip|orchid|allium|bluet|daisy|cornflower|lily|sapling|mushroom|dead_?bush|wheat|carrots|potatoes|beetroots|sugar_cane|reeds|vine|fire|cactus|overlay|double_plant|waterlily|^ice$|pane|_bars|chain|grate|pale_hanging_moss|resin_clump|_e$|water|portal/;
 let bad = 0;
 for (const v of VERSIONS) {
   for (const id of Object.keys(packs.PACKS)) {

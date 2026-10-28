@@ -4,6 +4,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { APPEARANCE_DEFAULTS, normalizeAppearance } = require('./appearance-settings');
+const { DEFAULTS: PRESENCE_DEFAULTS, normalizePresence, validatePresencePatch } = require('./presence-preferences');
 
 function defaultRoot() {
   if (process.platform === 'win32') {
@@ -115,8 +116,7 @@ const DEFAULT_SETTINGS = {
   lastSeenVersion: null,
   onboarded: false,
   notifications: true,
-  discordRich: true,
-  discordAppId: null,
+  ...PRESENCE_DEFAULTS,
   notifyLauncherUpdates: true,
   notifyModUpdates: true,
   notifyAnnouncements: true,
@@ -129,18 +129,19 @@ const DEFAULT_SETTINGS = {
 };
 
 const savedSettings = readJsonSync(SETTINGS_FILE, {});
-const settings = { ...DEFAULT_SETTINGS, ...savedSettings, ...normalizeAppearance(savedSettings) };
+const settings = { ...DEFAULT_SETTINGS, ...savedSettings, ...normalizeAppearance(savedSettings), ...normalizePresence(savedSettings) };
 
 function getSettings() {
   return { ...settings, root: ROOT, totalMemory: totalMb() };
 }
 
 async function updateSettings(patch) {
+  validatePresencePatch(patch);
   // only known keys, anything else from the renderer is dropped
   for (const [k, v] of Object.entries(patch || {})) {
     if (Object.hasOwn(DEFAULT_SETTINGS, k)) settings[k] = v;
   }
-  Object.assign(settings, normalizeAppearance(settings));
+  Object.assign(settings, normalizeAppearance(settings), normalizePresence(settings));
   if (patch?.appearanceReset === true) Object.assign(settings, APPEARANCE_DEFAULTS);
   await writeJson(SETTINGS_FILE, settings);
   return getSettings();

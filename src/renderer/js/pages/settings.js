@@ -2,7 +2,7 @@
 import { el, icon, errorToast, toast, switchEl, seg } from '../dom.js';
 import { THEMES, ACCENTS, themeName, accentName } from '../appearance.js';
 import { updateModal, onboarding } from '../qol.js';
-import { api, state, updateSettings } from '../state.js';
+import { api, state, updateSettings, refreshSettings } from '../state.js';
 
 // sidebar, content and text colour for the little theme previews
 const THEME_SWATCH = { modern: ['#111214', '#1e2024', '#e9e9eb'], midnight: ['#000', '#111114', '#e9e9eb'], light: ['#e9ebee', '#fff', '#17191d'], system: ['#17181b', '#f5f6f8', '#71747c'] };
@@ -21,7 +21,7 @@ const GRADIENT_PRESETS = [
 
 export function render(page, params, navigate) {
   const s = state.settings;
-  const save = (patch, msg) => updateSettings(patch).then(() => msg && toast(msg)).catch(errorToast);
+  const save = (patch, msg) => updateSettings(patch).then(() => { if (msg) toast(msg); if (Object.keys(patch).some(k => k.startsWith('discord'))) void refreshPresence(); }).catch(errorToast);
   const pick = (key, options, fallback = options[0][0]) => seg(options.map(([value, label]) => ({ value, label })), state.settings[key] ?? fallback, (v) => save({ [key]: v }));
 
   const themes = el('div', { class: 'theme-pick' });
@@ -56,7 +56,7 @@ export function render(page, params, navigate) {
 
   // Gradient theming: blend the accent into a second colour.
   const gradToggle = switchEl(Boolean(s.gradient), (v) => save({ gradient: v }));
-  gradToggle.setAttribute('aria-label', 'Gradient accent');
+  gradToggle.querySelector('input').setAttribute('aria-label', 'Gradient accent');
   const gradHexError = el('span', { id: 'gradient-error', class: 'appearance-error', role: 'status', 'aria-live': 'polite' });
   const validHex = (v) => /^#[0-9a-f]{6}$/i.test(v);
   const G2_DEFAULT = '#3b82f6';
@@ -80,8 +80,7 @@ export function render(page, params, navigate) {
   gradHex.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveGradCustom(gradHex.value); } });
   gradAngle.addEventListener('input', () => {
     gradAngleVal.textContent = `${gradAngle.value}°`;
-    const on = Boolean(state.settings.gradient);
-    if (on) save({ gradientAngle: Number(gradAngle.value) });
+    // Preview while dragging; persist only when the slider is released.
     preview.style.setProperty('--g-angle', `${gradAngle.value}deg`);
   });
   gradAngle.addEventListener('change', () => save({ gradientAngle: Number(gradAngle.value) }));
@@ -100,7 +99,9 @@ export function render(page, params, navigate) {
   }
   function drawGradientPreview() {
     preview.style.setProperty('--g2', state.settings.customA2 || G2_DEFAULT);
-    gradToggle.checked = Boolean(state.settings.gradient);
+    gradToggle.querySelector('input').checked = Boolean(state.settings.gradient);
+    gradColor.value = state.settings.customA2 || G2_DEFAULT;
+    gradHex.value = gradColor.value;
   }
   const select = (key, label, options, fallback) => {
     const input = el('select', { class: 'input appearance-select', 'aria-label': label }, options.map(([value, text]) => el('option', { value }, text)));
@@ -122,6 +123,47 @@ export function render(page, params, navigate) {
   const scaleVal = el('span', { class: 'mem-val' }, `${s.uiScale || 100}%`);
   scale.addEventListener('input', () => (scaleVal.textContent = `${scale.value}%`));
   scale.addEventListener('change', () => save({ uiScale: Number(scale.value) }));
+
+  const presenceStatus = el('span', { role: 'status', 'aria-live': 'polite' }, 'Checking status...');
+  async function refreshPresence(reconnect = false) {
+    try {
+      const status = await api.call(reconnect ? 'presence:refresh' : 'presence:status');
+      presenceStatus.textContent = status.message;
+    } catch { presenceStatus.textContent = 'Status unavailable. Reopen settings to retry.'; }
+  }
+  void refreshPresence();
+  const discordSwitch = (key, label) => {
+    const control = switchEl(s[key] !== false, v => save({ [key]: v }));
+    control.querySelector('input').setAttribute('aria-label', label);
+    return control;
+  };
+  const discordIdError = el('span', { class: 'appearance-error', role: 'status', id: 'discord-id-error' });
+  const discordId = el('input', {
+    class: 'input', value: s.discordAppId || '', placeholder: '17 to 20 digit application ID',
+    'aria-label': 'Discord application ID', 'aria-describedby': 'discord-id-error',
+    maxLength: 20, inputmode: 'numeric', style: { maxWidth: '240px' },
+    onchange: () => {
+      const id = discordId.value.trim();
+      if (id && !/^[0-9]{17,20}$/.test(id)) {
+        discordId.setAttribute('aria-invalid', 'true');
+        discordIdError.textContent = 'Use the numeric application ID, not a token or client secret.';
+        return;
+      }
+      discordId.removeAttribute('aria-invalid'); discordIdError.textContent = '';
+      save({ discordAppId: id || null }, id ? 'Discord application ID saved' : 'Discord application ID cleared');
+    },
+  });
+  const exportAppearance = el('button', { class: 'btn sm', 'aria-label': 'Export appearance preset', onclick: async () => {
+    try { const result = await api.call('settings:exportAppearance'); if (!result.canceled) toast('Appearance preset exported'); } catch (e) { errorToast(e); }
+  } }, icon('download'), 'Export');
+  const importAppearance = el('button', { class: 'btn sm', 'aria-label': 'Import appearance preset', onclick: async () => {
+    try {
+      const next = await api.call('settings:importAppearance');
+      if (!next) return;
+      await refreshSettings();
+      page.replaceChildren(); render(page, params, navigate); toast('Appearance preset imported');
+    } catch (e) { errorToast(e); }
+  } }, icon('upload'), 'Import');
 
   const total = s.totalMemory;
   const mem = el('input', { type: 'range', min: 1024, max: Math.max(2048, total - 1024), step: 256, value: s.memoryMax });
@@ -145,11 +187,10 @@ export function render(page, params, navigate) {
       el('div', { class: 'set-block' }, el('b', {}, 'Theme'), themes),
       row('Accent colour', 'Used for Play and selection. Button text adapts for contrast.', accents),
       row('Custom colour', 'Choose a colour or enter its six-digit hex code.', el('div', { class: 'custom-accent' }, el('div', { class: 'row' }, custom, hex), hexError)),
-      el('div', { class: 'set-block' },
-        el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Gradient'), 'Blend the accent into a second colour across the launcher.', ' ', gradToggle)),
-        el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Gradient second colour', ' ', el('span', { class: 'hint' }, 'used when Gradient is on')), el('div', { class: 'custom-accent' }, el('div', { class: 'row' }, gradColor, gradHex), gradHexError))),
-        previewRow(),
-        el('div', { class: 'set-row' }, el('div', { class: 'grow' }, el('b', {}, 'Gradient presets'), el('span', {}, 'One tap for a ready-made blend. The controls above colour any gradient.'), gradPresets))),
+      row('Gradient', 'Blend the accent into a second colour. Switch off for a flat accent.', gradToggle),
+      row('Gradient second colour', 'Used when Gradient is on.', el('div', { class: 'custom-accent' }, el('div', { class: 'row' }, gradColor, gradHex), gradHexError)),
+      row('Gradient angle', 'Preview while dragging, saved when released.', previewRow()),
+      row('Gradient presets', 'A starting point. Every colour is editable.', gradPresets),
       row('Heading font', 'Pixel uses Pixelify Sans for page and instance titles.', font),
       row('Interface size', 'Scales the whole interface, including controls.', el('div', { class: 'row' }, scale, scaleVal)),
       row('Text size', 'Adjusts text without zooming the whole window.', select('textSize', 'Text size', [90, 95, 100, 105, 110, 115, 120].map(n => [n, `${n}%`]), 100)),
@@ -157,6 +198,7 @@ export function render(page, params, navigate) {
       row('Sidebar layout', 'Automatic uses icons in narrower windows. Labels remain available on hover.', select('sidebarMode', 'Sidebar layout', [['auto', 'Automatic'], ['expanded', 'Expanded'], ['compact', 'Icons only']], 'auto')),
       row('Sidebar width', 'Used when the sidebar is expanded.', select('sidebarWidth', 'Sidebar width', [190, 210, 232, 250, 270, 300].map(n => [n, `${n} px`]), 232)),
       row('Reduce motion', 'Turns off transitions and skin animation. System reduced motion is always respected.', motion),
+      row('Appearance presets', 'Share a small JSON file with colours, sizing and layout only. No accounts or game settings.', el('div', { class: 'row' }, importAppearance, exportAppearance)),
       row('Reset appearance', 'Restores these appearance choices only. Game settings and accounts are kept.', reset)),
 
     section('Home',
@@ -177,13 +219,18 @@ export function render(page, params, navigate) {
       row('Start in fullscreen', null, switchEl(s.fullscreen, (v) => save({ fullscreen: v })))),
 
     section('Launcher',
-      row('Discord', 'Show the running instance in your Discord status.', switchEl(s.discordRich !== false, (v) => save({ discordRich: v }))),
-      row('Discord application ID', 'Optional. Create an app at discord.com/developers/applications, copy its Client ID and paste it here to enable the status. Without an ID nothing is shown.', el('input', { class: 'input', value: s.discordAppId || '', placeholder: 'Client ID from the Discord developer portal', style: { maxWidth: '220px' }, onchange: (e) => save({ discordAppId: e.target.value.trim() || null }, e.target.value.trim() ? 'Discord status enabled' : 'Discord status cleared') })),
+      row('Discord Rich Presence', 'Optional. Uses your desktop Discord app only while a game is running.', discordSwitch('discordRich', 'Discord Rich Presence')),
+      row('Discord application ID', 'Create a Discord application and copy its application ID. This is public, not a token or secret. Nothing connects until configured.', el('div', { class: 'custom-accent' }, discordId, discordIdError)),
+      row('Discord status', null, el('div', { class: 'row' }, presenceStatus, el('button', { class: 'btn sm', onclick: () => refreshPresence(true) }, 'Refresh'))),
+      row('Show instance name', 'Turn off to show only Playing Minecraft. Server addresses and account names are never sent.', discordSwitch('discordShowInstance', 'Show instance name')),
+      row('Show game version', 'Include the Minecraft version and loader in your status.', discordSwitch('discordShowVersion', 'Show game version')),
+      row('Show elapsed time', 'Include the time since you launched the game.', discordSwitch('discordShowElapsed', 'Show elapsed time')),
       row('Hide while playing', 'The launcher comes back when the game closes.', switchEl(s.closeOnLaunch, (v) => save({ closeOnLaunch: v }))),
       row('Keep running in the tray', 'Closing the window leaves Pimpin in the system tray.', switchEl(Boolean(s.minimizeToTray), (v) => save({ minimizeToTray: v }))),
       state.info?.platform !== 'linux' ? row(state.info.platform === 'darwin' ? 'Open at login' : 'Start with Windows', 'Opens in the tray when you sign in.', switchEl(Boolean(s.launchOnStartup), (v) => save({ launchOnStartup: v }))) : null,
       row('First-run setup', null, el('button', { class: 'btn sm', onclick: async () => { await save({ onboarded: false }); onboarding(navigate); } }, 'Run again')),
-      row('Data folder', s.root, el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open'))),
+      row('Data folder', s.root, el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open')),
+      row('Editable settings file', 'Reveal settings.json. Quit the launcher before editing it by hand; never share accounts.json.', el('button', { class: 'btn sm', onclick: () => api.call('settings:showFile') }, icon('folder'), 'Show file'))),
 
     section('Notifications',
       row('Launcher updates', 'A notice when a new Pimpin version is available or ready to install.', switchEl(s.notifyLauncherUpdates !== false, (v) => save({ notifyLauncherUpdates: v }))),
