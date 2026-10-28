@@ -166,6 +166,11 @@ export function settingsRows({ settings: s, save, row, toggle, redraw, resetKeys
   const select = (key) => {
     const [label, desc, options] = CHOICES[key];
     const input = el('select', { class: 'input appearance-select', 'aria-label': label }, options.map(([value, text]) => el('option', { value }, text)));
+    // Appearance presets accept the whole speed range, not only these shortcuts.
+    // Represent an imported value explicitly instead of silently blanking it.
+    if (key === 'mcSceneSpeed' && Number.isFinite(s[key]) && s[key] >= 0.5 && s[key] <= 1.5 && !options.some(([value]) => value === s[key])) {
+      input.append(el('option', { value: s[key] }, `Custom (${s[key]}×)`));
+    }
     input.value = s[key];
     input.addEventListener('change', () => save({ [key]: ['mcMobCount', 'mcSceneSpeed'].includes(key) ? Number(input.value) : input.value }));
     return row(label, desc, input);

@@ -38,7 +38,7 @@ Pimpinminecraftlauncher/
 ├── resources/                Bundled runtime content, including built mod jars
 ├── scripts/                  Node/Python checks, test fixtures and generators
 ├── docs/                     Guides and screenshots
-├── build/                    Installer/build artwork, not game data
+├── build/                    Installer hooks, payload manifest generator and artwork
 └── .github/workflows/        CI builds and release automation
 ```
 
@@ -65,6 +65,11 @@ refers to the folder, through a dynamic `import()` with a `.catch`, so deleting
 the folder leaves the launcher working. Its `mc*` keys are validated in
 `appearance-settings.js` like every other appearance key. Test it with
 `npm run test:electron-minecraft`.
+Window placement is validated by `store.launcherBounds(settings, workAreas)` and
+applied after Electron readiness using the current display work areas. The
+actual-main regression fixture `scripts/window-recovery-electron.js` uses a
+throwaway data root to test disconnected-monitor recovery and hidden startup
+without a tray icon.
 Preset parsing belongs in `appearance-presets.js`; native dialogs and persistence
 do not. The **Import appearance preset**, **Export appearance preset** and
 **Show file** actions are described in the customization guide.
@@ -73,6 +78,15 @@ Generated/local folders such as `node_modules/`, `dist/`, Gradle `build/` folder
 and test screenshots are not the place to make permanent source changes. Change
 the generator/source and rebuild instead. `resources/mods/` contains packaged mod
 outputs; edit Java under `mod/src/`, not a jar.
+
+## Installer and uninstaller
+
+See [INSTALLATION.md](INSTALLATION.md) for installed versus portable behavior,
+retained data paths, and verification limits. Windows packaging uses
+`build/installer.nsh` with `build/installer-manifest.js` to enumerate exact
+packaged files rather than recursively removing unknown application-folder
+contents. Only `build/icon.png` ships at runtime; installer helpers stay outside
+the ASAR. Source checks are in `scripts/installer.test.js`.
 
 ## User-data tree
 

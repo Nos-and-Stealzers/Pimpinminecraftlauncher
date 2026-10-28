@@ -29,6 +29,18 @@ test('launcher geometry is sanitized, clamped and persisted', async (t) => {
     { x: 0, y: -1640, width: 1024, height: 640, maximized: false },
   );
 
+  // Empty coordinates are absent, not the top-left corner of the desktop.
+  assert.equal(store.launcherBounds({ winX: null, winY: null }).x, null);
+  assert.equal(store.launcherBounds({ winX: '', winY: false }).y, null);
+
+  const areas = [{ x: 0, y: 0, width: 1920, height: 1040 }];
+  const stranded = store.launcherBounds({ winX: 3400, winY: 200, winW: 1280, winH: 800 }, areas);
+  assert.equal(stranded.x, null, 'disconnected display must fall back to OS placement');
+  assert.equal(stranded.y, null);
+  assert.equal(store.launcherBounds({ winX: 30, winY: -790 }, areas).x, null, 'invisible titlebar cannot be dragged back');
+  const twoDisplays = [...areas, { x: -1920, y: 0, width: 1920, height: 1080 }];
+  assert.equal(store.launcherBounds({ winX: -1500, winY: 100 }, twoDisplays).x, -1500, 'valid negative monitor coordinates survive');
+
   // persisted through updateSettings, which drops unknown fields
   const s = await store.updateSettings({
     winW: 1512, winH: 900, winX: -1640, winY: 88, winMax: true,

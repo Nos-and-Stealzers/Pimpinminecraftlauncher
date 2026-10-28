@@ -553,7 +553,7 @@ input[type='checkbox'] { accent-color: var(--accent); }
 .set-content > .page-head { margin-bottom: 22px; }
 .set-empty { padding: 24px 0; }
 .set-section { margin-bottom: 36px; scroll-margin-top: 8px; }
-.set-section[hidden], .set-group[hidden], .set-list > [hidden] { display: none; }
+.set-section[hidden], .set-group[hidden], .set-list > [hidden], .set-list > .set-row[hidden] { display: none; }
 .set-section > h2 { font-size: calc(16px * var(--text-scale)); font-weight: 600; margin: 0 0 12px; }
 .set-group + .set-group { margin-top: 18px; }
 .set-group > h3 { font-size: calc(12px * var(--text-scale)); font-weight: 600; color: var(--muted); margin: 0 0 6px 2px; }

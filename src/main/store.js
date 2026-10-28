@@ -189,11 +189,20 @@ function safeJoin(base, ...parts) {
  * clamped to the window's minimum size, position silently dropped when it
  * isn't a finite number (e.g. after a settings-file hand edit).
  */
-function launcherBounds(s = settings) {
+function launcherBounds(s = settings, workAreas) {
   const width = Math.min(Math.max(Number(s.winW) || 1280, 1024), 8192);
   const height = Math.min(Math.max(Number(s.winH) || 800, 640), 8192);
-  const x = Number.isFinite(Number(s.winX)) ? Number(s.winX) : null;
-  const y = Number.isFinite(Number(s.winY)) ? Number(s.winY) : null;
+  const coordinate = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null;
+  let x = coordinate(s.winX);
+  let y = coordinate(s.winY);
+  // Restore only if enough of the draggable titlebar remains on a current
+  // display. Saved secondary-monitor coordinates can otherwise strand the app.
+  if (Array.isArray(workAreas) && workAreas.length && x !== null && y !== null) {
+    const reachable = workAreas.some(a => a && [a.x, a.y, a.width, a.height].every(Number.isFinite)
+      && Math.min(x + width, a.x + a.width) - Math.max(x, a.x) >= 96
+      && Math.min(y + 32, a.y + a.height) - Math.max(y, a.y) >= 24);
+    if (!reachable) { x = null; y = null; }
+  }
   return { x, y, width, height, maximized: Boolean(s.winMax) };
 }
 

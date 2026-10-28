@@ -216,6 +216,9 @@ export function render(page, params, navigate) {
       resetKeys: Object.keys(state.settings).filter(k => /^mc[A-Z]/.test(k)),
     }));
     minecraftGroup.hidden = false;
+    // The optional module may arrive (or redraw) after a search was entered.
+    // Recompute the entire result, including section links and the empty state.
+    filter(search.value);
     if (typeof focus === 'string') mcList.querySelector(focus)?.focus();
   }).catch(() => minecraftGroup.remove());
   void drawMinecraft();
@@ -314,12 +317,22 @@ export function render(page, params, navigate) {
 
   // Section list with search. Links scroll inside the page; the active one
   // follows scrolling.
-  const navLinks = sections.map((sec) => el('a', { href: `#${sec.id}`, 'data-target': sec.id, onclick: (e) => { e.preventDefault(); sec.scrollIntoView({ block: 'start' }); setActive(sec.id); } }, sec.querySelector('h2').textContent));
+  const navLinks = sections.map((sec) => el('a', { href: `#${sec.id}`, 'data-target': sec.id, onclick: (e) => { e.preventDefault(); revealSection(sec); } }, sec.querySelector('h2').textContent));
   const empty = el('div', { class: 'set-empty muted', hidden: true, role: 'status' }, 'No settings match your search.');
   const search = el('input', { class: 'input', type: 'search', placeholder: 'Search settings', 'aria-label': 'Search settings', spellcheck: 'false' });
   search.addEventListener('input', () => filter(search.value));
   search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.preventDefault(); search.value = ''; filter(''); } });
   const nav = el('nav', { class: 'set-nav', 'aria-label': 'Settings sections' }, el('div', { class: 'search' }, icon('search'), search), el('div', { class: 'set-nav-links' }, navLinks));
+  function revealSection(sec) {
+    sec.scrollIntoView({ block: 'start' });
+    // In narrow windows navigation sits above the content, not beside it.
+    // Use its actual themed/scaled height rather than a fixed pixel offset.
+    if (getComputedStyle(nav).flexDirection === 'row') {
+      const overlap = nav.getBoundingClientRect().bottom + 8 - sec.getBoundingClientRect().top;
+      if (overlap > 0) page.scrollTop -= overlap;
+    }
+    setActive(sec.id);
+  }
   function setActive(id) { for (const a of navLinks) a.classList.toggle('on', a.dataset.target === id); }
   function filter(text) {
     const q = text.trim().toLowerCase();
@@ -342,6 +355,7 @@ export function render(page, params, navigate) {
       any ||= secHit;
     }
     empty.hidden = any;
+    syncActive();
   }
 
   const content = el('div', { class: 'set-content' },
@@ -349,13 +363,31 @@ export function render(page, params, navigate) {
     empty, sections);
   page.append(el('div', { class: 'settings' }, nav, content));
 
-  const observer = new IntersectionObserver((entries) => {
-    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (visible) setActive(visible.target.id);
-  }, { root: page, rootMargin: '0px 0px -70% 0px', threshold: 0 });
-  sections.forEach(sec => observer.observe(sec));
-  page.__settingsCleanup = () => { observer.disconnect(); page.__settingsCleanup = null; };
+  // Observe all headings together: IntersectionObserver entries are only the
+  // changed subset and could select the previous section hidden behind the nav.
+  function syncActive() {
+    const top = getComputedStyle(nav).flexDirection === 'row'
+      ? nav.getBoundingClientRect().bottom + 16
+      : page.getBoundingClientRect().top + 16;
+    const shown = sections.filter(sec => !sec.hidden);
+    const current = shown.filter(sec => sec.getBoundingClientRect().top <= top).at(-1) || shown[0];
+    setActive(current?.id);
+  }
+  let scrollFrame = null;
+  const onScroll = () => {
+    if (scrollFrame !== null) return;
+    scrollFrame = requestAnimationFrame(() => { scrollFrame = null; syncActive(); });
+  };
+  page.addEventListener('scroll', onScroll, { passive: true });
+  page.__settingsCleanup = () => {
+    page.removeEventListener('scroll', onScroll);
+    if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+    page.__settingsCleanup = null;
+  };
   setActive(params?.section && page.querySelector(`#set-${params.section}`) ? `set-${params.section}` : sections[0].id);
-  if (params?.section) requestAnimationFrame(() => page.querySelector(`#set-${params.section}`)?.scrollIntoView({ block: 'start' }));
+  if (params?.section) requestAnimationFrame(() => {
+    const target = page.querySelector(`#set-${params.section}`);
+    if (target) revealSection(target);
+  });
   return () => page.__settingsCleanup?.();
 }

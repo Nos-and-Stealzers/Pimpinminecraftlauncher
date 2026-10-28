@@ -8,7 +8,11 @@ No extra app, plugin, account or credentials are needed to customize the launche
 
 Settings has a section list on the left (with **Search settings**) and one
 scrolling column on the right. Appearance is split into Theme and colour,
-Gradient, Layout and text, Minecraft style, and Presets and reset.
+Gradient, Layout and text, Minecraft style, and Presets and reset. Search stays
+applied when optional controls load or redraw; Escape clears it. Section links
+and keyboard navigation keep headings visible below the sticky navigation in
+narrow windows. Imported scene speeds such as `0.85` appear as an explicit
+custom dropdown value rather than a blank choice.
 
 ## Optional Minecraft style
 
@@ -162,6 +166,18 @@ retry automatically while playing, including after Discord restarts. **Refresh**
 rechecks the current status; changing a privacy toggle applies without relaunching
 the game. Turning presence off or closing the last game clears the connection.
 The status row is a snapshot; click Refresh to recheck it.
+
+## Window recovery
+
+The launcher restores its saved window size and position, but discards a saved
+position when its titlebar would be unreachable on the current displays. This
+recovers windows saved on a monitor that has since been disconnected. Valid
+negative coordinates on a second monitor are kept. Empty coordinates use normal
+OS placement instead of forcing the desktop's top-left corner.
+
+A stale `--hidden` startup argument only hides the launcher if a tray icon
+actually exists to reopen it. With tray behavior disabled, the window appears
+normally so the launcher cannot become an invisible background process.
 
 ## Editing your own files
 

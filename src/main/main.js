@@ -4,7 +4,7 @@ const path = require('path');
 const fsp = require('fs/promises');
 const appearancePresets = require('./appearance-presets');
 const { createHash } = require('crypto');
-const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard, screen } = require('electron');
 const store = require('./store');
 const screenshots = require('./screenshots').createScreenshots({ instancesRoot: store.dirs.instances, nativeImage, clipboard });
 const auth = require('./auth');
@@ -39,7 +39,7 @@ function send(channel, payload) {
 
 function createWindow() {
   // Remembered window geometry: last size/position/maximized state.
-  const bounds = store.launcherBounds();
+  const bounds = store.launcherBounds(store.getSettings(), screen.getAllDisplays().map(d => d.workArea));
   win = new BrowserWindow({
     ...(bounds.x !== null && bounds.y !== null ? { x: bounds.x, y: bounds.y, center: false } : {}),
     width: bounds.width,
@@ -63,7 +63,9 @@ function createWindow() {
   if (bounds.maximized) win.maximize();
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.once('ready-to-show', () => {
-    if (!process.argv.includes('--hidden')) win.show();
+    // --hidden can survive an old startup registration. Never hide the only
+    // window unless a tray icon actually exists to bring it back.
+    if (!process.argv.includes('--hidden') || !tray) win.show();
     sendWindowState();
   });
   win.on('close', (e) => {
