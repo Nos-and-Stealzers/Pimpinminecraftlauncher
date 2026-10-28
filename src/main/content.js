@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const modrinth = require('./modrinth');
+const curseforge = require('./curseforge');
 const { download, sha1File } = require('./net');
 const { safeJoin } = require('./store');
 
@@ -99,7 +100,8 @@ async function setPimpinClient(holder, enabled, onProgress) {
   const failed = [];
   // Pimpin Client needs Fabric API.
   try {
-    await install(holder, { projectId: 'fabric-api', type: 'mod' }, onProgress);
+    const res = await install(holder, { projectId: 'fabric-api', type: 'mod' }, onProgress, { label: 'Pimpin Client', source: 'feature' });
+    failed.push(...res.failed);
   } catch (err) {
     failed.push(`Fabric API: ${err.message}`);
   }
@@ -191,77 +193,343 @@ function toRecord(type, version, file, project) {
   };
 }
 
+// ------------------------------------------------------- install plans --
+// An install is planned first (the item plus its required dependencies,
+// recursively, minus what is already installed), announced to the UI as
+// 'content:plan', then downloaded item by item with 'content:progress'.
+
+let emitter = null;
+/** main.js hands in its window sender so plans and progress reach the install popup. */
+function setEmitter(fn) {
+  emitter = typeof fn === 'function' ? fn : null;
+}
+function emitEvent(channel, payload) {
+  try {
+    emitter?.(channel, payload);
+  } catch {
+    /* a closed window must not break an install */
+  }
+}
+
+const tasks = new Map(); // taskId -> AbortController
+let taskSeq = 0;
+
+/** Stop the remaining downloads of a running install. Finished items stay installed. */
+function cancel(taskId) {
+  const ctl = tasks.get(String(taskId));
+  if (!ctl) return false;
+  ctl.abort();
+  return true;
+}
+
+const providerOf = (req) =>
+  req.provider === 'curseforge' || curseforge.isCfId(req.projectId) || curseforge.isCfId(req.versionId) ? 'curseforge' : 'modrinth';
+
+/** CurseForge tags files with loader names; shaders and resource packs carry none. */
+function cfLoaders(type, holder) {
+  if (type !== 'mod') return [];
+  loadersFor(type, holder); // throws the friendly vanilla message
+  return holder.loader === 'quilt' ? ['quilt', 'fabric'] : [holder.loader];
+}
+
+function recordOnDisk(holder, rec) {
+  if (!rec?.file || !FOLDERS[rec.type]) return false;
+  const folder = path.join(holder.dir, FOLDERS[rec.type]);
+  return fs.existsSync(path.join(folder, rec.file)) || fs.existsSync(path.join(folder, `${rec.file}.disabled`));
+}
+
+/** Best-effort name for an item that could not be resolved, so the popup can say what failed. */
+async function projectTitle(provider, projectId) {
+  if (!projectId) return null;
+  try {
+    if (provider === 'curseforge') return (await curseforge.getMods([projectId]))[0]?.name || null;
+    return (await modrinth.getProject(projectId))?.title || null;
+  } catch {
+    return null;
+  }
+}
+
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** One resolved, downloadable item in a provider-neutral shape. */
+async function resolveCandidate(holder, req) {
+  const type = req.type;
+  if (providerOf(req) === 'curseforge') {
+    const loaders = cfLoaders(type, holder);
+    const v = req.versionId
+      ? await curseforge.getVersion(req.versionId, req.projectId ? curseforge.rawId(req.projectId) : undefined)
+      : await curseforge.pickVersion(req.projectId, { loaders, gameVersions: [holder.mcVersion], anyVersionFallback: type === 'shader' || type === 'resourcepack' });
+    if (!v) throw new Error(`No CurseForge file for Minecraft ${holder.mcVersion}${type === 'mod' ? ` with ${holder.loader === 'quilt' ? 'Quilt' : 'Fabric'}` : ''}`);
+    const file = v.files[0];
+    const allowed = v.project?.allowModDistribution !== false;
+    const url = allowed ? await curseforge.downloadUrl(v.modId, v.fileId, { url: file.url }) : null;
+    return {
+      provider: 'curseforge',
+      projectId: v.project_id,
+      versionId: v.id,
+      modId: v.modId,
+      fileId: v.fileId,
+      type,
+      title: v.project?.title || file.filename,
+      icon: v.project?.icon_url || null,
+      versionNumber: v.version_number,
+      filename: file.filename,
+      url,
+      size: file.size || 0,
+      sha1: file.hashes?.sha1 || null,
+      pageUrl: v.pageUrl,
+      blocked: !url,
+      // relationType 3 = RequiredDependency; optional, embedded and tool relations are not installed
+      deps: type === 'mod' ? v.dependencies.filter((d) => d.relationType === 3).map((d) => ({ provider: 'curseforge', projectId: d.project_id, type: 'mod' })) : [],
+    };
+  }
+  const version = req.versionId ? await modrinth.getVersion(req.versionId) : await pickVersion(req.projectId, type, holder);
+  const file = version.files.find((f) => f.primary) || version.files[0];
+  const project = await modrinth.getProject(version.project_id).catch(() => null);
+  const kind = type === 'plugin' ? 'plugin' : 'mod';
+  return {
+    provider: 'modrinth',
+    projectId: version.project_id,
+    versionId: version.id,
+    type,
+    title: project?.title || file.filename,
+    icon: project?.icon_url || null,
+    versionNumber: version.version_number,
+    filename: file.filename,
+    url: file.url,
+    size: file.size || 0,
+    sha1: file.hashes?.sha1 || null,
+    pageUrl: project?.slug ? `https://modrinth.com/${project.project_type || type}/${project.slug}` : null,
+    blocked: false,
+    deps:
+      type === 'mod' || type === 'plugin'
+        ? (version.dependencies || [])
+            .filter((d) => d.dependency_type === 'required' && (d.project_id || d.version_id))
+            .map((d) => ({ provider: 'modrinth', projectId: d.project_id || null, versionId: d.project_id ? null : d.version_id, type: kind }))
+        : [],
+  };
+}
+
 /**
- * Install a project (and its required dependencies) into a holder.
- * holder: { kind, dir, mcVersion, loader, load(): meta, save(meta) }
+ * Resolve everything an install needs, before downloading anything.
+ * requests: [{provider?, projectId, versionId?, type, title?}]
+ * Required dependencies are followed recursively (cycles are cut by project id);
+ * dependencies that are already installed (also when they came from the other
+ * provider: same hash, file name or title) are skipped; optional ones never install.
+ * With rootsFatal a request that cannot be resolved throws; otherwise it becomes a failed item.
  */
-async function install(holder, { projectId, type, versionId }, onProgress) {
-  checkTarget(type, holder);
-  return withLock(holder.dir, async () => {
-    const installed = [];
-    const seen = new Set();
-    const meta = await holder.load();
-    meta.content = meta.content || [];
+async function resolvePlan(holder, requests, meta, { rootsFatal = true } = {}) {
+  const plan = [];
+  const seen = new Set();
+  const content = meta.content || [];
+  const installed = () => content.filter((c) => recordOnDisk(holder, c));
+  const seenKey = (provider, id) => `${provider}:${id}`;
 
-    const installOne = async (pid, vid, kind) => {
-      if (pid && seen.has(pid)) return;
-      const version = vid ? await modrinth.getVersion(vid) : await pickVersion(pid, kind, holder);
-      pid = version.project_id;
-      if (seen.has(pid)) return;
-      seen.add(pid);
+  const visit = async (req, parent) => {
+    const provider = providerOf(req);
+    if (req.projectId) {
+      if (seen.has(seenKey(provider, req.projectId))) return;
+      seen.add(seenKey(provider, req.projectId));
+      if (parent) {
+        const rec = content.find((c) => c.projectId === req.projectId);
+        if (rec && recordOnDisk(holder, rec)) return;
+      }
+    }
+    let c;
+    try {
+      c = await resolveCandidate(holder, req);
+    } catch (err) {
+      if (!parent && rootsFatal) throw err;
+      const title = req.title || (await projectTitle(provider, req.projectId)) || (parent ? `A dependency of ${parent.title}` : req.projectId);
+      plan.push({ key: seenKey(provider, req.projectId || req.versionId), provider, projectId: req.projectId || null, type: req.type, title, dependency: Boolean(parent), parent: parent?.title || null, status: 'failed', error: err.message, size: 0 });
+      return;
+    }
+    const key = seenKey(c.provider, c.projectId);
+    if (key !== seenKey(provider, req.projectId) && seen.has(key)) return;
+    seen.add(key);
+    const existing = content.find((r) => r.projectId === c.projectId);
+    if (!parent && existing && recordOnDisk(holder, existing) && existing.versionId === c.versionId && !req.versionId) return;
+    if (parent) {
+      // the same mod from the other library (Fabric API on both, say) counts as installed
+      const dup = installed().find((r) => r.type === c.type && ((c.sha1 && r.sha1 === c.sha1) || r.file === c.filename || (norm(r.title) && norm(r.title) === norm(c.title))));
+      if (dup) return;
+    }
+    const item = {
+      key,
+      provider: c.provider,
+      projectId: c.projectId,
+      versionId: c.versionId,
+      modId: c.modId,
+      fileId: c.fileId,
+      type: c.type,
+      title: c.title,
+      icon: c.icon,
+      versionNumber: c.versionNumber,
+      filename: c.filename,
+      url: c.url,
+      size: c.size,
+      sha1: c.sha1,
+      pageUrl: c.pageUrl,
+      dependency: Boolean(parent),
+      parent: parent?.title || null,
+      status: c.blocked ? 'blocked' : 'pending',
+      error: c.blocked ? 'Author requires download on CurseForge' : null,
+    };
+    plan.push(item);
+    for (const dep of c.deps) await visit(dep, item);
+  };
 
-      const existing = meta.content.find((c) => c.projectId === pid);
-      const folder = path.join(holder.dir, FOLDERS[kind]);
-      const onDisk = existing && (fs.existsSync(path.join(folder, existing.file)) || fs.existsSync(path.join(folder, `${existing.file}.disabled`)));
-      if (onDisk && existing.versionId === version.id && !vid) return;
+  for (const req of requests) {
+    checkTarget(req.type, holder);
+    await visit(req, null);
+  }
 
-      const file = version.files.find((f) => f.primary) || version.files[0];
-      const dest = safeJoin(folder, file.filename);
-      const project = await modrinth.getProject(pid).catch(() => null);
-      onProgress?.({ stage: `Downloading ${project?.title || file.filename}`, done: 0, total: file.size });
-      await download(file.url, dest, {
-        sha1: file.hashes?.sha1,
-        size: file.size,
-        onProgress: (d, t) => onProgress?.({ stage: `Downloading ${project?.title || file.filename}`, done: d, total: t, bytes: true }),
+  // Shader packs need Iris (which pulls in Sodium as a dependency).
+  if (requests.some((r) => r.type === 'shader') && plan.some((p) => p.type === 'shader' && p.status === 'pending')) {
+    try {
+      const [iris] = await resolveSlugs(['iris']);
+      if (!iris) throw new Error('Iris was not found on Modrinth');
+      await visit({ provider: 'modrinth', projectId: iris.id, type: 'mod', title: 'Iris' }, { title: 'Shader support' });
+    } catch (err) {
+      plan.push({ key: 'modrinth:iris', provider: 'modrinth', projectId: null, type: 'mod', title: 'Iris', dependency: true, parent: 'Shader support', status: 'failed', error: err.message, size: 0 });
+    }
+  }
+  return plan;
+}
+
+const PUBLIC_FIELDS = ['key', 'provider', 'type', 'title', 'icon', 'versionNumber', 'size', 'dependency', 'parent', 'status', 'error', 'pageUrl'];
+const publicItem = (item) => Object.fromEntries(PUBLIC_FIELDS.map((k) => [k, item[k] ?? null]));
+
+function recordFor(item) {
+  const rec = {
+    type: item.type,
+    file: item.filename,
+    projectId: item.projectId,
+    versionId: item.versionId,
+    versionNumber: item.versionNumber,
+    title: item.title || item.filename,
+    icon: item.icon || null,
+    sha1: item.sha1 || undefined,
+  };
+  if (item.provider === 'curseforge') Object.assign(rec, { provider: 'curseforge', modId: item.modId, fileId: item.fileId });
+  return rec;
+}
+
+/** Download the plan item by item. Records are saved after each item, so a cancel leaves a consistent instance. */
+async function executePlan(holder, plan, meta, { taskId, signal, onProgress }) {
+  const send = (item, extra = {}) => emitEvent('content:progress', { taskId, key: item.key, status: item.status, error: item.error || null, ...extra });
+  for (const item of plan) {
+    if (item.status !== 'pending') continue;
+    if (signal.aborted) {
+      item.status = 'cancelled';
+      send(item);
+      continue;
+    }
+    item.status = 'downloading';
+    send(item, { done: 0, total: item.size });
+    const folder = path.join(holder.dir, FOLDERS[item.type]);
+    // throttled to ~8 updates a second, with a trailing update so a stalled download shows its real position
+    let last = 0;
+    let trailing = null;
+    const report = (d, t) => {
+      clearTimeout(trailing);
+      const wait = 120 - (Date.now() - last);
+      if (wait <= 0) {
+        last = Date.now();
+        send(item, { done: d, total: t });
+      } else {
+        trailing = setTimeout(() => {
+          last = Date.now();
+          if (item.status === 'downloading') send(item, { done: d, total: t });
+        }, wait);
+      }
+    };
+    try {
+      const dest = safeJoin(folder, item.filename);
+      onProgress?.({ stage: `Downloading ${item.title}`, done: 0, total: item.size });
+      await download(item.url, dest, {
+        sha1: item.sha1 || undefined,
+        size: item.size || undefined,
+        signal,
+        onProgress: (d, t) => {
+          onProgress?.({ stage: `Downloading ${item.title}`, done: d, total: t, bytes: true });
+          report(d, t);
+        },
       });
-      if (existing && existing.file !== file.filename) {
+      if (signal.aborted) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+      const existing = meta.content.find((c) => c.projectId === item.projectId);
+      if (existing && existing.file !== item.filename) {
         await fsp.rm(path.join(folder, existing.file), { force: true });
         await fsp.rm(path.join(folder, `${existing.file}.disabled`), { force: true });
       }
-      const wasPinned = existing?.pinned;
-      meta.content = meta.content.filter((c) => c.projectId !== pid);
-      const record = toRecord(kind, version, file, project);
+      meta.content = meta.content.filter((c) => c.projectId !== item.projectId);
+      const record = recordFor(item);
       // A pin is the user's choice for this project, not for one version: keep it.
-      record.pinned = Boolean(wasPinned);
+      record.pinned = Boolean(existing?.pinned);
       meta.content.push(record);
-      installed.push(project?.title || file.filename);
-
-      if (kind === 'mod' || kind === 'plugin') {
-        for (const dep of version.dependencies || []) {
-          if (dep.dependency_type !== 'required') continue;
-          if (dep.project_id && meta.content.some((c) => c.projectId === dep.project_id)) continue;
-          try {
-            await installOne(dep.project_id, dep.project_id ? null : dep.version_id, kind);
-          } catch (err) {
-            console.warn(`Dependency ${dep.project_id || dep.version_id} failed: ${err.message}`);
-          }
-        }
+      await holder.save(meta);
+      item.status = 'done';
+      send(item, { done: item.size, total: item.size });
+    } catch (err) {
+      if (signal.aborted || err.cancelled || err.name === 'AbortError') {
+        item.status = 'cancelled';
+        item.error = null;
+      } else {
+        item.status = 'failed';
+        item.error = err.message;
       }
-    };
-
-    await installOne(projectId, versionId, type);
-
-    // Shader packs need Iris (which pulls in Sodium as a dependency).
-    if (type === 'shader') {
-      const [iris] = await resolveSlugs(['iris']);
-      if (iris && !meta.content.some((c) => c.projectId === iris.id)) {
-        await installOne(iris.id, null, 'mod');
-      }
+      send(item);
+    } finally {
+      clearTimeout(trailing);
     }
+  }
+}
 
-    await holder.save(meta);
-    return { installed };
+/**
+ * Plan and install several projects as one task (one popup).
+ * opts: { onProgress, label, rootsFatal, source }
+ */
+async function installMany(holder, requests, { onProgress, label, rootsFatal = true, source = 'library' } = {}) {
+  return withLock(holder.dir, async () => {
+    const meta = await holder.load();
+    meta.content = meta.content || [];
+    const plan = await resolvePlan(holder, requests, meta, { rootsFatal });
+    if (!plan.length) return { installed: [], failed: [], blocked: [], cancelled: false, taskId: null };
+
+    const taskId = `install-${Date.now().toString(36)}-${++taskSeq}`;
+    const ctl = new AbortController();
+    tasks.set(taskId, ctl);
+    const target = { kind: holder.kind, id: path.basename(holder.dir) };
+    const roots = plan.filter((p) => !p.dependency);
+    emitEvent('content:plan', { taskId, target, source, label: label || (roots.length === 1 ? roots[0].title : `${roots.length} items`), items: plan.map(publicItem) });
+    try {
+      await executePlan(holder, plan, meta, { taskId, signal: ctl.signal, onProgress });
+    } finally {
+      tasks.delete(taskId);
+    }
+    const res = {
+      taskId,
+      installed: plan.filter((p) => p.status === 'done').sort((a, b) => a.dependency - b.dependency).map((p) => p.title),
+      failed: plan.filter((p) => p.status === 'failed').map((p) => `${p.title}: ${p.error}`),
+      blocked: plan.filter((p) => p.status === 'blocked').map((p) => ({ title: p.title, pageUrl: p.pageUrl, dependency: p.dependency })),
+      cancelled: ctl.signal.aborted,
+    };
+    const state = res.cancelled ? 'cancelled' : res.failed.length || res.blocked.length ? 'partial' : 'done';
+    emitEvent('content:progress', { taskId, state, installed: res.installed.length, failed: res.failed, blocked: res.blocked.length });
+    const rootFailed = roots.find((p) => p.status === 'failed');
+    if (rootsFatal && rootFailed) throw new Error(rootFailed.error);
+    return res;
   });
+}
+
+/**
+ * Install a project (and its required dependencies) into a holder.
+ * holder: { kind, dir, mcVersion, loader, load(): meta, save(meta) }
+ * item: { projectId, type, versionId?, provider? ('modrinth' | 'curseforge') }
+ */
+async function install(holder, { projectId, type, versionId, provider }, onProgress, opts = {}) {
+  checkTarget(type, holder);
+  return installMany(holder, [{ projectId, type, versionId, provider }], { onProgress, ...opts });
 }
 
 /** List content on disk merged with what the launcher knows about it. */
@@ -284,7 +552,7 @@ async function list(holder) {
       const file = enabled ? name : name.slice(0, -'.disabled'.length);
       if (type !== 'shader' && type !== 'resourcepack' && !file.endsWith('.jar')) continue;
       const rec = records.find((r) => r.file === file && r.type === type);
-      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: rec?.projectId || null, versionNumber: rec?.versionNumber || null, pinned: Boolean(rec?.pinned) });
+      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: rec?.projectId || null, provider: rec?.projectId ? rec.provider || 'modrinth' : null, versionNumber: rec?.versionNumber || null, pinned: Boolean(rec?.pinned) });
     }
   }
   return out.sort((a, b) => a.title.localeCompare(b.title));
@@ -324,10 +592,12 @@ async function setPinned(holder, { type, file, pinned }) {
 /** Find newer compatible versions of tracked mods/plugins. Pinned ones stay untouched on purpose. */
 async function checkUpdates(holder) {
   const meta = await holder.load();
-  const items = (meta.content || []).filter((c) => c.sha1 && !c.pinned && (c.type === 'mod' || c.type === 'plugin'));
+  const tracked = (meta.content || []).filter((c) => !c.pinned && (c.type === 'mod' || c.type === 'plugin'));
+  const updates = [];
+  // Modrinth records (no provider field, from before CurseForge existed) keep the hash lookup.
+  const items = tracked.filter((c) => c.sha1 && c.provider !== 'curseforge');
   const byType = {};
   for (const c of items) (byType[c.type] = byType[c.type] || []).push(c);
-  const updates = [];
   for (const [type, group] of Object.entries(byType)) {
     const latest = await modrinth.latestForHashes(
       group.map((c) => c.sha1),
@@ -338,14 +608,28 @@ async function checkUpdates(holder) {
       if (v && v.id !== c.versionId) updates.push({ ...c, newVersionId: v.id, newVersionNumber: v.version_number });
     }
   }
+  const cf = tracked.filter((c) => c.provider === 'curseforge' && c.type === 'mod' && c.modId && c.fileId);
+  if (cf.length && curseforge.status().configured) {
+    const latest = await curseforge.latestFor(cf, { mcVersion: holder.mcVersion, loaders: cfLoaders('mod', holder) });
+    for (const c of cf) {
+      const v = latest[c.modId];
+      if (v && v.fileId !== c.fileId && v.fileId > c.fileId) {
+        updates.push({ ...c, newVersionId: curseforge.cfId(v.fileId), newVersionNumber: String(v.filename || v.fileId).replace(/\.jar$/i, '') });
+      }
+    }
+  }
   return updates;
 }
 
 async function applyUpdates(holder, updates, onProgress) {
-  for (const u of updates) {
-    await install(holder, { projectId: u.projectId, type: u.type, versionId: u.newVersionId }, onProgress);
-  }
-  return { updated: updates.length };
+  if (!updates.length) return { updated: 0, failed: [] };
+  const label = updates.length === 1 ? `Updating ${updates[0].title}` : `Updating ${updates.length} mods`;
+  const res = await installMany(
+    holder,
+    updates.map((u) => ({ provider: u.provider, projectId: u.projectId, type: u.type, versionId: u.newVersionId, title: u.title })),
+    { onProgress, label, source: 'update' },
+  );
+  return { updated: updates.length, failed: res.failed };
 }
 
 // ---------------------------------------------------------------- features --
@@ -392,6 +676,7 @@ async function setFeature(holder, featureId, enabled, onProgress) {
   const projects = await resolveSlugs(feature.projects);
   const failed = [];
   if (enabled) {
+    const requests = [];
     for (const p of projects) {
       const meta = await holder.load();
       const rec = (meta.content || []).find((c) => c.projectId === p.id);
@@ -401,10 +686,15 @@ async function setFeature(holder, featureId, enabled, onProgress) {
         await setEnabled(holder, { type: 'mod', file: rec.file, enabled: true });
         continue;
       }
+      requests.push({ provider: 'modrinth', projectId: p.id, type: 'mod', title: p.title });
+    }
+    if (requests.length) {
+      // one task for the whole feature, so the popup lists everything it brings
       try {
-        await install(holder, { projectId: p.id, type: 'mod' }, onProgress);
+        const res = await installMany(holder, requests, { onProgress, label: feature.name, rootsFatal: false, source: 'feature' });
+        failed.push(...res.failed);
       } catch (err) {
-        failed.push(`${p.title}: ${err.message}`);
+        failed.push(`${feature.name}: ${err.message}`);
       }
     }
   } else {
@@ -452,6 +742,10 @@ module.exports = {
   FEATURES,
   FOLDERS,
   install,
+  installMany,
+  resolvePlan,
+  setEmitter,
+  cancel,
   list,
   remove,
   setEnabled,

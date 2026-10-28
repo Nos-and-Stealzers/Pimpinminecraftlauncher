@@ -91,6 +91,14 @@ function buildModel(src, S, { legacy, slim }) {
   return model;
 }
 
+// Optional decorators (the removable Minecraft style adds poses, idle turning
+// and a stand). Each hook gets a controller for every interactive model.
+const mountHooks = new Set();
+export function onSkinMount(fn) {
+  mountHooks.add(fn);
+  return () => mountHooks.delete(fn);
+}
+
 /** Mounts the model into `root`. Resolves to a cleanup function, or null when the skin can't be loaded. */
 export async function mountSkin(root, player, scale = 6) {
   try {
@@ -126,12 +134,15 @@ export async function mountSkinTexture(root, src, { scale = 6, model: armModel, 
   let look = { x: 0, y: 0 };
   let lastBody = '';
   let lastFace = '';
+  let idleTurn = null;
 
-  const tick = () => {
+  const tick = (t) => {
     if (!stage.isConnected) return;
     if (!dragging && Math.abs(vel) > 0.02) {
       yaw += vel;
       vel *= 0.92;
+    } else if (!dragging && idleTurn) {
+      yaw = idleTurn(t, yaw);
     }
     const body = `rotateX(-6deg) rotateY(${yaw.toFixed(1)}deg)`;
     const face = `rotateY(${look.x.toFixed(1)}deg) rotateX(${look.y.toFixed(1)}deg)`;
@@ -185,5 +196,10 @@ export async function mountSkinTexture(root, src, { scale = 6, model: armModel, 
   };
   cleanup.rotateBy = (degrees) => { yaw += degrees; vel = 0; };
   cleanup.rotateTo = (degrees) => { yaw = degrees; vel = 0; };
+  const ctl = { stage, spin, model, scale, setIdleTurn: (fn) => { idleTurn = typeof fn === 'function' ? fn : null; } };
+  stage.pimpinSkin = ctl;
+  for (const hook of mountHooks) {
+    try { hook(ctl); } catch (err) { console.warn('Skin decorator failed', err); }
+  }
   return cleanup;
 }

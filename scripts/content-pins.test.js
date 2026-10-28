@@ -98,7 +98,8 @@ test('pinned mods are skipped by update checks until unpinned', async (t) => {
   // A deliberate version switch keeps the pin: the user controls this mod.
   assert.equal(await content.setPinned(holder, { type: 'mod', file: 'B.jar', pinned: true }), true);
   const installed = await content.install(holder, { projectId: 'mod-b', type: 'mod', versionId: 'bbb-new' });
-  assert.deepEqual(installed, { installed: ['Project mod-b'] });
+  assert.deepEqual(installed.installed, ['Project mod-b']);
+  assert.deepEqual(installed.failed, []);
   rows = await content.list(holder);
   assert.equal(rows.find((r) => r.file === 'B2.jar').pinned, true);
   updates = await content.checkUpdates(holder);

@@ -10,6 +10,7 @@ import { fileBrowser } from '../files.js';
 import { drawPimpin } from './pimpin.js';
 import { importInstance, updateAllMods } from '../qol.js';
 import { openWorldBackups } from '../world-backups.js';
+import '../install-review.js'; // live popup for installs started from this page
 
 const tabMem = {};
 const PREFS_KEY = 'pimpin.instanceList';
@@ -290,9 +291,9 @@ async function drawContent(root, inst, navigate) {
     btn.disabled = true;
     btn.replaceChildren(el('span', { class: 'spin xs' }), 'Updating');
     try {
-      await api.call('content:applyUpdates', target, picked);
+      const res = await api.call('content:applyUpdates', target, picked);
       for (const u of picked) updates.delete(u.projectId);
-      toast(picked.length === 1 ? `Updated ${picked[0].title} to ${picked[0].newVersionNumber}` : `Updated ${picked.length} mods`);
+      if (!res?.failed?.length) toast(picked.length === 1 ? `Updated ${picked[0].title} to ${picked[0].newVersionNumber}` : `Updated ${picked.length} mods`);
       await load(false);
     } catch (err) {
       errorToast(err);
@@ -324,7 +325,7 @@ async function drawContent(root, inst, navigate) {
         updBtn = el('button', { class: 'chip accent click', title: `${upd.versionNumber || 'installed'} → ${upd.newVersionNumber}` }, icon('download'), upd.newVersionNumber);
         updBtn.addEventListener('click', () => applyUpdates([upd], updBtn));
       }
-      // Mods/plugins tracked in Modrinth can be pinned and offered other versions.
+      // Mods/plugins tracked in Modrinth or CurseForge can be pinned and offered other versions.
       const tracked = i.projectId && (i.type === 'mod' || i.type === 'plugin');
       const pinBtn = tracked ? el('button', {
         class: `btn ghost icon sm${i.pinned ? ' active' : ''}`,
@@ -366,7 +367,7 @@ async function drawContent(root, inst, navigate) {
     }));
   };
 
-  /** Show the Modrinth version list for an installed item; picking one installs it (downgrades included). */
+  /** Show the library version list for an installed item; picking one installs it (downgrades included). */
   const pickVersion = async (item) => {
     const body = el('div', { class: 'row muted', style: { padding: '30px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading versions');
     const m = modal({ title: item.title, body });
@@ -376,7 +377,7 @@ async function drawContent(root, inst, navigate) {
         opts.gameVersions = [inst.mcVersion];
         opts.loaders = inst.loader === 'quilt' ? ['quilt', 'fabric'] : [inst.loader];
       }
-      const versions = await api.call('library:versions', item.projectId, opts);
+      const versions = await api.call(item.provider === 'curseforge' ? 'curseforge:versions' : 'library:versions', item.projectId, opts);
       const rows = versions.slice(0, 50).map((v) => {
         const current = v.version_number === item.versionNumber;
         const b = el(
@@ -390,7 +391,7 @@ async function drawContent(root, inst, navigate) {
           b.disabled = true;
           b.lastChild.replaceChildren(el('span', { class: 'spin xs' }), 'Switching');
           try {
-            await api.call('content:install', target, { projectId: item.projectId, type: item.type, versionId: v.id });
+            await api.call('content:install', target, { projectId: item.projectId, type: item.type, versionId: v.id, provider: item.provider || 'modrinth' });
             toast(`Switched ${item.title} to ${v.version_number}`);
             m.close();
             await load(false);
@@ -422,7 +423,7 @@ async function drawContent(root, inst, navigate) {
   };
 
   const check = async (loud) => {    if (!items.some((i) => i.projectId && i.type === 'mod')) {
-      if (loud) toast('No mods from Modrinth to check');
+      if (loud) toast('No library mods to check');
       return;
     }
     checking = true;

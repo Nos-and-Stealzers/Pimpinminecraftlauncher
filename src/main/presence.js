@@ -2,6 +2,8 @@
 
 // IPC only: never call RPC.register(), which installs a native URL scheme.
 // The factory has no store/Electron side effects; the public singleton is lazy.
+const { effectiveAppId: defaultEffectiveAppId } = require('./presence-preferences');
+
 function createPresence({
   getSettings = () => require('./store').getSettings(),
   createClient = () => new (require('discord-rpc').Client)({ transport: 'ipc' }),
@@ -12,6 +14,7 @@ function createPresence({
   requestTimeoutMs = 5000,
   retryBaseMs = 1000,
   retryMaxMs = 30000,
+  effectiveAppId = defaultEffectiveAppId,
 } = {}) {
   let games = [];
   let fallbackStarted = null;
@@ -26,7 +29,7 @@ function createPresence({
   const cleanups = new Set();
   const messages = {
     disabled: 'Discord presence is disabled.',
-    unconfigured: 'Enter a valid Discord application ID.',
+    unconfigured: 'No Discord application ID is available in this build.',
     idle: 'No game is running.',
     connecting: 'Connecting to Discord.',
     connected: 'Discord presence is connected.',
@@ -57,7 +60,9 @@ function createPresence({
     try { s = getSettings() || {}; } catch { return { state: 'unconfigured' }; }
     if (stopped || s.discordRich === false) return { state: 'disabled' };
     // Do not trim/repair malformed IDs, or attempt any network authorization.
-    if (typeof s.discordAppId !== 'string' || !/^\d{17,20}$/.test(s.discordAppId)) return { state: 'unconfigured' };
+    // A user-entered ID wins; otherwise the launcher's built-in public ID is used.
+    const appId = effectiveAppId(s);
+    if (!appId) return { state: 'unconfigured' };
     if (!games.length) return { state: 'idle' };
     const main = [...games].sort((a, b) => (b.started || 0) - (a.started || 0))[0];
     const parts = [];
@@ -70,7 +75,7 @@ function createPresence({
     };
     if (parts.length) activity.state = text(parts.join(' · '), 'Minecraft');
     if (s.discordShowElapsed !== false) activity.startTimestamp = Math.floor((main.started || fallbackStarted) / 1000);
-    return { id: s.discordAppId, activity, key: JSON.stringify(activity) };
+    return { id: appId, activity, key: JSON.stringify(activity) };
   }
   function forceSocket(c) {
     // discord-rpc destroy() awaits a close event forever if the peer vanished.

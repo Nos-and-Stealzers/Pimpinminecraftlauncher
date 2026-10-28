@@ -29,6 +29,7 @@ Pimpinminecraftlauncher/
 │       ├── js/appearance.js  Applies validated theme, scale and motion settings
 │       ├── js/state.js       UI settings/state and RPC access
 │       ├── js/pages/         Screens, including settings.js
+│       ├── themes/minecraft/ Optional, removable Minecraft style (see below)
 │       ├── fonts/            Bundled heading fonts and licence
 │       └── img/              Launcher images
 ├── mod/                      Pimpin Client Java source and Gradle builds
@@ -49,7 +50,20 @@ settings system.
 
 For appearance work, the small path is: shared defaults/validation in
 `appearance-settings.js` → store settings → `renderer/js/appearance.js` →
-`renderer/css/app.css`. Settings controls live in `renderer/js/pages/settings.js`.
+`renderer/css/app.css`. Settings controls live in `renderer/js/pages/settings.js`
+(left section list, `section()` → `group()` → `row()`; section ids such as
+`#set-appearance` are deep-link targets for `navigate('settings', { section })`).
+
+The optional Minecraft style is self-contained in `renderer/themes/minecraft/`:
+`index.js` (apply/disable and its Settings rows), `textures.js` (original
+procedural 16×16 textures and isometric block icons), `panorama.js` (2D canvas
+voxel island), `blocks.js` (sidebar/instance block icons, card tilt), `skin.js`
+(poses, turning and stand via the `onSkinMount` hook in `js/skin3d.js`) and
+`theme.css` (every rule scoped to `body[data-mc]`). Only `js/appearance.js`
+refers to the folder, through a dynamic `import()` with a `.catch`, so deleting
+the folder leaves the launcher working. Its `mc*` keys are validated in
+`appearance-settings.js` like every other appearance key. Test it with
+`npm run test:electron-minecraft`.
 Preset parsing belongs in `appearance-presets.js`; native dialogs and persistence
 do not. The **Import appearance preset**, **Export appearance preset** and
 **Show file** actions are described in the customization guide.

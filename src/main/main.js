@@ -14,6 +14,7 @@ const servers = require('./servers');
 const presence = require('./presence');
 const content = require('./content');
 const modrinth = require('./modrinth');
+const curseforge = require('./curseforge');
 const files = require('./files');
 const packs = require('./packs');
 const shaders = require('./shaders');
@@ -159,6 +160,7 @@ function emit(channel, payload) {
 }
 instances.setEmitter(emit);
 servers.setEmitter(emit);
+content.setEmitter?.(send); // 'content:plan' / 'content:progress' for the install popup
 
 async function holderFor(target) {
   if (!target || !target.id) throw new Error('Select an instance first');
@@ -418,6 +420,12 @@ const handlers = {
   'library:project': (id) => modrinth.getProject(id),
   'library:versions': (id, opts) => modrinth.getVersions(id, opts),
   'library:categories': () => modrinth.getCategories(),
+  'content:cancel': (taskId) => content.cancel(String(taskId)),
+  'curseforge:status': () => curseforge.status(),
+  'curseforge:search': (opts) => curseforge.search(opts || {}),
+  'curseforge:project': (id) => curseforge.getProject(id),
+  'curseforge:versions': (id, opts) => curseforge.getVersions(id, opts || {}),
+  'curseforge:installModpack': (opts) => importer.installCurseforgeModpack(opts || {}, progressFor({ id: 'modpack' })),
   'modpack:install': (opts) => instances.installModpack(opts),
 
   'skin:get': (name) => getSkin(name),

@@ -8,6 +8,8 @@ const EVENTS = [
   'game:log',
   'game:progress',
   'task:progress',
+  'content:plan',
+  'content:progress',
   'server:state',
   'server:log',
   'server:progress',

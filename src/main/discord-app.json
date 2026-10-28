@@ -1,0 +1,4 @@
+{
+  "_comment": "Public Discord application ID used for Rich Presence when the user has not set their own. Not a secret.",
+  "applicationId": null
+}
