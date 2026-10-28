@@ -1,12 +1,12 @@
-# Pimpin Launcher update
+# What's new in 0.1.32
 
-- Customize the launcher with Dark, Midnight, Light or System themes, preset/custom accent colours, text/interface size, density, sidebar layout and reduced motion.
-- Move and resize Information, Keystrokes, Armour, Effects and Minimap independently with the new in-game HUD editor. Open Pimpin settings > HUD > HUD layout. Drag panels or their corner handles; Save applies your layout, Cancel discards the draft.
-- In-game settings now adapt to small windows and large GUI scales using pagination instead of running off-screen.
-- Minimap improvements include clearer compass labels, a distance ruler, independent sizing/placement, hostile/passive entity filters, height filtering, refresh limits and waypoint display controls.
-- Waypoints now have coordinate/name editing, search, distance/name sorting, tracking directions, visibility, display preferences and confirmed deletion. Unreadable waypoint files are preserved instead of overwritten. Old single-player markers can be recovered explicitly with a backup.
-- Reworked resource packs: calmer terrain, more block coverage, improved leaves/planks/items/mobs, baby-mob variants and seamless animated water/lava.
-- Improved Lite/Ultra shaders: lighting and exposure, sunsets/night sky, clouds, foliage light transmission, water reflections, End atmosphere and optional auroras.
-- Includes the wardrobe preview/export, screenshot manager, safe world backups and optional toggle-sprint/effects-HUD improvements from the pending release.
+- Optional Discord Rich Presence shows your running Minecraft session. Configure a public Discord application ID in Settings > Launcher; choose separately whether to share the instance name, game version/loader and elapsed time. No Discord token or client secret is needed. Connections recover after Discord restarts and close when disabled or the last game stops.
+- Share your launcher look using small, editable JSON appearance presets. Import/export includes colours, theme, sizing, sidebar layout, density and motion only. Accounts, tokens, paths, game settings and Discord IDs are excluded. Imports validate the file and ask for confirmation; exports never overwrite an existing file.
+- More appearance control: two-colour gradients, editable hex colours, gradient angle, ready-made blends and a live preview. Flat accents remain available. Fixed gradient toggle/control synchronization and save the angle only when you release the slider.
+- Settings > Launcher can reveal settings.json for manual editing. New customization and project-structure guides explain which files to edit, where source and player data live, and what not to share.
+- More original pack textures for copper, trial chambers and pale-garden/resin content, gated to compatible Minecraft versions. Fixed opaque copper bulb faces so their dark recesses do not become see-through holes.
+- Finer continuous shader-slider choices, with unchanged defaults and discrete sample-count/enum options. Generation now preserves the choices instead of losing them on rebuild.
 
-Worlds, accounts and existing settings are retained. Wardrobe remains preview/export only; it does not change your online skin. Shader feature support differs between Lite and Ultra. OptiFine runtime compatibility has not been verified.
+No new dependency was added by this finishing pass. No ads, telemetry, background launch service or UI sound effects were added. Existing worlds, accounts and game settings are not migrated or reset.
+
+Discord transport/recovery is covered by automated tests; appearance and privacy controls were exercised in an isolated real Electron launcher. Live visibility on a Discord profile still depends on your application ID, desktop Discord and its activity-sharing settings. Shader support differs between Lite and Ultra; OptiFine runtime compatibility has not been verified. Publishing a release is not proof of a completed older-version install/relaunch update cycle.

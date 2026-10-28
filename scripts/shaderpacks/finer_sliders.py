@@ -1,9 +1,11 @@
-"""Insert midpoints between existing values on continuous shader sliders.
-Only touches named, strength/height-style continuous defines. Enum-style
-options (like AURORA) and integer step counts are left alone, on purpose.
-Run: py scripts/shaderpacks/finer_sliders.py
+"""Expand canonical coarse slider choices once, during shader generation.
+
+Pure helper: never reads or rewrites generated packs. Regenerate with
+python scripts/shaderpacks/gen.py (SHADERPACK_OUT redirects output).
+Do not feed already-expanded settings back into this helper.
 """
-import os, re, sys
+import re
+from decimal import Decimal
 
 # continuous, art-directable values: midpoints just give the in-game slider
 # more stop points between the current presets
@@ -17,9 +19,11 @@ CONTINUOUS = {
     'EMISSIVE_STRENGTH', 'EXPOSURE', 'SATURATION', 'NIGHT_DESAT', 'VIGNETTE',
     'SUN_SIZE',
 }
-LINE = re.compile(r'^(#define (\w+) [-\d.]+) // \[([^]]+)\]$')
+LINE = re.compile(r'^(#define (\w+) [-\d.]+) // \[([^]]+)\]$', re.M)
 
 def mid(a, b):
+    # Keep the release's two-decimal float rounding so existing stops survive
+    # unchanged (for example, 0.7/0.85 rounds to 0.77 rather than 0.78).
     x, y = float(a), float(b)
     m = (x + y) / 2
     s = round(m, 2)
@@ -30,22 +34,25 @@ def expand(match):
     if name not in CONTINUOUS:
         return match.group(0)
     nums = values.split()
-    if len(nums) < 2 or any(v for v in nums if not re.fullmatch(r'-?\d+(\.\d+)?', v)):
-        return match.group(0)
+    if any(not re.fullmatch(r'-?\d+(\.\d+)?', v) for v in nums):
+        raise ValueError(f'{name}: slider choices must be numeric')
+    numbers = [Decimal(v) for v in nums]
+    if any(a >= b for a, b in zip(numbers, numbers[1:])):
+        raise ValueError(f'{name}: slider choices must be strictly increasing')
     out = []
     for i, v in enumerate(nums):
         out.append(v)
         if i + 1 < len(nums):
             m = mid(v, nums[i + 1])
-            if m not in out and m != v:
+            # Numeric strict bounds avoid duplicates with either rounded endpoint.
+            if numbers[i] < Decimal(m) < numbers[i + 1]:
                 out.append(m)
     return f'{head} // [{chr(32).join(out)}]'
 
-for pack in sorted(os.listdir(os.environ.get('SHADERPACK_OUT') or
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'resources', 'shaderpacks'))):
-    path = os.path.join('resources', 'shaderpacks', pack, 'shaders', 'lib', 'settings.glsl')
-    if not os.path.exists(path):
-        continue
-    lines = [LINE.sub(expand, line) for line in open(path, encoding='utf-8').read().splitlines() if line.strip()]
-    open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines) + '\n')
-    print('updated', path)
+def expand_settings(coarse_settings):
+    """Expand only allowlisted choices, preserving defaults and all other text."""
+    return LINE.sub(expand, coarse_settings)
+
+
+if __name__ == '__main__':
+    raise SystemExit('Standalone rewriting was removed. Run python scripts/shaderpacks/gen.py instead; SHADERPACK_OUT is supported.')

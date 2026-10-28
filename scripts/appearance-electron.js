@@ -37,6 +37,9 @@ app.whenReady().then(async () => {
         case 'accounts:list': data = { accounts: [], active: null }; break;
         case 'instances:list': case 'servers:list': data = []; break;
         case 'update:get': data = { status: 'idle' }; break;
+        case 'presence:status': data = require('../src/main/presence').getStatus(); break;
+        // Explicit fixture state: the appearance test has no notice service.
+        case 'notifications:list': data = { items: [], unread: 0 }; break;
         default: throw new Error('Unexpected fixture IPC ' + channel);
       }
       return { ok: true, data };

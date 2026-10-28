@@ -6,9 +6,11 @@ import os, re, shutil, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from common import *
 from programs import *
+from finer_sliders import expand_settings
 
 REPO = os.environ.get("SHADERPACK_OUT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "resources", "shaderpacks")
 
+# Canonical coarse choices: build() expands continuous sliders exactly once.
 SETTINGS_LITE = """// Pimpin Shaders Lite - options (edit in-game: Video Settings > Shader Packs > Shader Settings)
 const int shadowMapResolution = 1536; // [1024 1536 2048]
 const float shadowDistance = 80.0; // [48.0 64.0 80.0 96.0 128.0]
@@ -358,7 +360,7 @@ def build(ultra):
     sh = os.path.join(root, "shaders")
     flag = ["ULTRA"] if ultra else []
     libs = {
-        "settings": SETTINGS_ULTRA if ultra else SETTINGS_LITE,
+        "settings": expand_settings(SETTINGS_ULTRA if ultra else SETTINGS_LITE),
         "uniforms": UNIFORMS, "common": COMMON, "atmosphere": ATMOSPHERE,
         "shadow": SHADOW_ULTRA if ultra else SHADOW_LITE,
         "waving": WAVING, "water": WATER, "lighting": LIGHTING, "tonemap": TONEMAP, "fog": FOG,

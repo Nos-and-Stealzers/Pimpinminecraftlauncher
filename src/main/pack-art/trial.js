@@ -78,6 +78,9 @@ function bulb(S, st, color, lit) {
     px.set(i, c0 - 1, n - 1);
     px.set(c0 - 1, i, n - 1);
   }
+  // bulbs are full opaque cubes: darken the lattice holes instead of leaving
+  // transparent pixels (a hole would show as a see-through spot in game)
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (px.get(x, y) < 0) px.set(x, y, 0);
   const img = px.toImage(lit ? [...pal, ...glow] : pal);
   if (lit) {
     img.emissive = () => new Image(S).fill((x, y) =>

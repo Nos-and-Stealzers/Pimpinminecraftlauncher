@@ -1,6 +1,8 @@
 // Electron entry point: creates the custom frameless window and exposes the
 // launcher backend to the UI through a single whitelisted RPC channel.
 const path = require('path');
+const fsp = require('fs/promises');
+const appearancePresets = require('./appearance-presets');
 const { createHash } = require('crypto');
 const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, nativeImage, clipboard } = require('electron');
 const store = require('./store');
@@ -229,7 +231,44 @@ const handlers = {
     const next = await store.updateSettings(patch);
     if ('minimizeToTray' in patch || 'launchOnStartup' in patch) applySystemSettings(next);
     if (NOTICE_SETTINGS.some((k) => k in patch)) applyNoticeSettings(patch);
+    if (Object.keys(patch || {}).some(k => k.startsWith('discord'))) void presence.refresh();
     return next;
+  },
+  'presence:status': () => presence.getStatus(),
+  'presence:refresh': async () => { await presence.refresh(); return presence.getStatus(); },
+  'settings:showFile': () => shell.showItemInFolder(path.join(store.dirs.root, 'settings.json')),
+  'settings:exportAppearance': async () => {
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Export appearance preset', defaultPath: 'pimpin-appearance.json',
+      filters: [{ name: 'Appearance preset', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    // Exclusive create: a preset must never overwrite accounts, worlds or settings.
+    await fsp.writeFile(result.filePath, appearancePresets.serializePreset(store.getSettings()), { encoding: 'utf8', flag: 'wx' });
+    return { canceled: false };
+  },
+  'settings:importAppearance': async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Import appearance preset', properties: ['openFile'],
+      filters: [{ name: 'Appearance preset', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const handle = await fsp.open(result.filePaths[0], 'r');
+    let patch;
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size > appearancePresets.MAX_PRESET_BYTES) throw new Error('Preset is not a small JSON file.');
+      const buffer = Buffer.alloc(appearancePresets.MAX_PRESET_BYTES + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      patch = appearancePresets.parsePreset(buffer.subarray(0, bytesRead).toString('utf8'));
+    } finally { await handle.close(); }
+    const choice = await dialog.showMessageBox(win, {
+      type: 'question', title: 'Import appearance preset?',
+      message: 'Replace your launcher appearance?',
+      detail: 'Only theme, colours, sizing, layout and motion preferences change. Game settings and accounts stay untouched.',
+      buttons: ['Import', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+    });
+    return choice.response === 0 ? store.updateSettings(patch) : null;
   },
   'dialog:pickJava': async () => {
     const res = await dialog.showOpenDialog(win, {

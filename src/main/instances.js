@@ -148,12 +148,20 @@ async function remove(id) {
 }
 
 const presence = require('./presence');
+let presenceRevision = 0;
+function updatePresence() {
+  const revision = ++presenceRevision;
+  runningMetas().then(gs => {
+    if (revision === presenceRevision) return presence.setGames(gs.filter(Boolean));
+  }).catch(() => {});
+}
 
 async function runningMetas() {
   return Promise.all([...running.keys()].map(async (rid) => {
+    const game = running.get(rid);
     const m = await get(rid).catch(() => null);
-    if (!m) return null;
-    return { name: m.name, mcVersion: m.mcVersion, loader: m.loader, started: running.get(rid).started };
+    if (!m || !game || running.get(rid) !== game) return null;
+    return { name: m.name, mcVersion: m.mcVersion, loader: m.loader, started: game.started };
   }));
 }
 
@@ -220,10 +228,10 @@ async function launch(id, { server, world } = {}) {
         /* instance deleted */
       }
       emit('game:state', { id, state: 'stopped', code, crashed: code !== 0 && code !== null });
-      runningMetas().then((gs) => presence.setGames(gs.filter(Boolean))).catch(() => {});
+      updatePresence();
     });
     emit('game:state', { id, state: 'running' });
-    runningMetas().then((gs) => presence.setGames(gs.filter(Boolean))).catch(() => {});
+    updatePresence();
     meta.lastPlayed = started;
     if (loaderVersion && !meta.loaderVersion) meta.loaderVersion = loaderVersion;
     await save(id, meta);
