@@ -1,6 +1,6 @@
 // Isolated Electron UI test for the install review popup. Runs the REAL
 // main-process install code (content.js + net.js) with Modrinth stubbed and a
-// fake CurseForge API / CDN behind global fetch, the real preload, the real
+// fake CDN behind global fetch, the real preload, the real
 // install-review.js module and the real stylesheet. Nothing touches the
 // network, %APPDATA% or real instances: everything lives in a TMPDIR scratch root.
 //   TMPDIR=<scratch> npx electron scripts/install-review-electron.js
@@ -41,6 +41,9 @@ project('sodiumextra', 'Sodium Extra', ['reeses', 'fabricapi'], 1_250_000, 'sodi
 project('reeses', "Reese's Sodium Options", ['fabricapi'], 236_000, 'reeses');
 project('fabricapi', 'Fabric API', [], 2_410_000, 'fabricapi');
 project('iris', 'Iris', [], 900_000, 'reeses');
+project('addonpack', 'Addon Pack', ['fabricapi', 'broken'], 300_000, 'flywheel');
+// a required dependency with no file for this Minecraft version
+projects.broken = { id: 'broken', slug: 'broken', title: 'Old Library', icon_url: `${ICONS}/broken.svg`, project_type: 'mod' };
 
 const modrinthPath = require.resolve('../src/main/modrinth');
 require.cache[modrinthPath] = {
@@ -78,38 +81,20 @@ function streamBytes(id, bytes) {
   return new Response(body, { status: 200, headers: { 'Content-Length': String(bytes.length) } });
 }
 
-const { mod, file, installFakeFetch } = require('./fixtures/curseforge-fake');
-const cfWorld = {
-  mods: [mod(100, 'Create Fabric'), mod(200, 'Flywheel'), mod(250, 'Fabric API'), mod(300, 'Blocked Library', { allow: false, slug: 'blocked-library' }), mod(400, 'Old Addon')],
-  files: [
-    file(1001, 100, 'create-fabric-0.5.1.jar', { deps: [[200, 3], [250, 3], [300, 3], [400, 3]], bytes: Buffer.alloc(14_800_000, 1) }),
-    file(2001, 200, 'flywheel-fabric-1.0.jar', { bytes: Buffer.alloc(820_000, 2) }),
-    file(2501, 250, 'fabric-api-0.119.2.jar', { bytes: Buffer.alloc(2_410_000, 3) }),
-    file(3001, 300, 'blocked-library-2.1.jar', { bytes: Buffer.alloc(120_000, 4) }),
-    file(4001, 400, 'old-addon-1.0.jar', { versions: ['1.20.1', 'Fabric'], bytes: Buffer.alloc(50_000, 5) }),
-  ],
-};
-for (const m of cfWorld.mods) m.logo = { thumbnailUrl: `${ICONS}/${{ 100: 'create', 200: 'flywheel', 250: 'fabricapi', 300: 'blocked', 400: 'broken' }[m.id]}.svg` };
-const cf = installFakeFetch(cfWorld);
-const cfFetch = global.fetch;
+const realFetch = global.fetch;
 global.fetch = async (input, opts = {}) => {
   const url = String(input);
   if (url.startsWith(MR_CDN)) {
     const id = url.slice(MR_CDN.length + 1).replace(/\.jar$/, '');
     return streamBytes(id, versions[`${id}-v1`]._bytes);
   }
-  if (url.startsWith('https://edge.forgecdn.test')) {
-    const id = Number(new URL(url).pathname.split('/')[2]);
-    const f = cfWorld.files.find((x) => x.id === id);
-    return streamBytes(`cf${id}`, f._bytes);
-  }
-  return cfFetch(input, opts);
+  if (url.startsWith('https://')) throw new Error('Fixture blocks network: ' + url);
+  return realFetch(input, opts);
 };
 
 app.whenReady().then(async () => {
   const store = require('../src/main/store');
   assert.ok(path.resolve(store.dirs.root).startsWith(path.resolve(process.env.TMPDIR)), 'fixture must use the scratch root');
-  await store.updateSettings({ curseforgeApiKey: 'fixture-key-not-real' });
   const content = require('../src/main/content');
   content.setEmitter((ch, payload) => win?.webContents.send(ch, payload));
 
@@ -140,8 +125,7 @@ app.whenReady().then(async () => {
     const methods = {
       'content:cancel': (id) => content.cancel(String(id)),
       'shell:openExternal': (url) => { opened.push(url); return true; },
-      // library page fixtures (no network): no CurseForge key, one Modrinth hit
-      'curseforge:status': () => ({ configured: false, source: null, applyUrl: 'https://forms.monday.com/forms/dce5ccb7afda9a1c21dab1a1aa1d84eb?r=use1' }),
+      // library page fixture (no network): one Modrinth hit
       'library:search': () => ({ hits: [{ project_id: 'sodiumextra', title: 'Sodium Extra', author: 'FlashyReese', description: 'Features that should be in Sodium.', downloads: 41000000, follows: 9000, icon_url: `${ICONS}/sodiumextra.svg` }], total_hits: 1 }),
       'content:list': () => [],
     };
@@ -193,20 +177,15 @@ app.whenReady().then(async () => {
   await run('document.querySelector(".install-review .ir-hide").click()');
   await wait('!document.querySelector(".install-review")');
 
-  // 2) CurseForge install: a blocked dependency and one with no compatible file.
-  const h2 = holder('create');
-  const r2 = await content.install(h2, { projectId: 'cf:100', type: 'mod', provider: 'curseforge' });
-  assert.deepEqual(r2.installed, ['Create Fabric', 'Flywheel', 'Fabric API']);
-  assert.equal(r2.blocked.length, 1);
+  // 2) A required dependency with no compatible file: the rest still installs.
+  const h2 = holder('addons');
+  const r2 = await content.install(h2, { projectId: 'addonpack', type: 'mod' });
+  assert.deepEqual(r2.installed, ['Addon Pack', 'Fabric API']);
   assert.equal(r2.failed.length, 1);
   await wait('document.querySelector(".install-review .ir-foot")?.textContent.includes("1 failed")');
-  assert.match(await run('document.querySelector(".install-review .ir-item.failed .ir-note").textContent'), /No CurseForge file for Minecraft 1\.21\.4/);
-  assert.match(await run('document.querySelector(".install-review .ir-item.blocked .ir-note").textContent'), /Author requires download on CurseForge/);
+  assert.match(await run('document.querySelector(".install-review .ir-item.failed").textContent'), /Old Library/);
+  assert.equal(await run('document.querySelector(".install-review").textContent.includes("CurseForge")'), false);
   await shot('install-review-partial');
-  await run('document.querySelector(".install-review .ir-item.blocked .link").click()');
-  await wait(`${JSON.stringify(opened)}.length>=0`);
-  for (let i = 0; i < 40 && !opened.length; i++) await new Promise((r) => setTimeout(r, 25));
-  assert.deepEqual(opened, ['https://www.curseforge.com/minecraft/mc-mods/blocked-library/files/3001']);
   await run('document.querySelector(".install-review .ir-hide").click()');
 
   // 3) Cancel from the popup mid-download: no partial files, remaining items cancelled.
@@ -232,21 +211,17 @@ app.whenReady().then(async () => {
   // copy text rules: sentence case, no em dashes anywhere in the popup
   assert.equal(await run('document.querySelector(".install-review").textContent.includes("\\u2014")'), false);
 
-  // 5) Library page with the CurseForge source and no API key (Lucas's current state).
+  // 5) Library page: Modrinth only, an old CurseForge link falls back to it.
   await win.setSize(1100, 760);
   await run('document.querySelector(".install-review .ir-hide")?.click()');
   await run(`(async()=>{const {state}=await import('/js/state.js');state.instances=[{id:'survival',name:'Survival',mcVersion:'1.21.4',loader:'fabric'}];state.servers=[];state.settings={};
     const {render}=await import('/js/pages/library.js');const page=document.querySelector('#page');page.replaceChildren();window.fixtureNav=null;render(page,{source:'curseforge',type:'mod'},(p,a)=>window.fixtureNav={p,a});})()`);
-  await wait('document.querySelector(".cf-key-state")?.textContent.includes("CurseForge needs an API key")');
-  await shot('library-curseforge-no-key');
-  await run('Array.from(document.querySelectorAll(".cf-key-state button")).find(b=>b.textContent.includes("Get an API key")).click()');
-  for (let i = 0; i < 40 && opened.length < 2; i++) await new Promise((r) => setTimeout(r, 25));
-  assert.match(opened[1], /^https:\/\/forms\.monday\.com\//);
-  await run('Array.from(document.querySelectorAll(".lib-source button")).find(b=>b.textContent==="Modrinth").click()');
   await wait('document.querySelectorAll(".lib-grid .card.proj").length===1');
+  assert.equal(await run('document.querySelector("#page").textContent.includes("CurseForge")'), false);
+  assert.equal(await run('!!document.querySelector(".lib-source")'), false);
   await shot('library-modrinth');
   assert.deepEqual(errors, []);
-  console.log('PASS: real content.js plans + net.js downloads through the real preload into install-review.js; deps listed, live progress, done, CurseForge blocked/failed rows with Open on CurseForge, Cancel from the popup with no partial files, narrow layout.');
-  console.log(JSON.stringify({ root, screenshots: shots, cfCalls: cf.calls.length }));
+  console.log('PASS: real content.js plans + net.js downloads through the real preload into install-review.js; deps listed, live progress, done, failed dependency row, Cancel from the popup with no partial files, narrow layout.');
+  console.log(JSON.stringify({ root, screenshots: shots }));
   clearTimeout(timer); server.close(); app.exit(0);
 }).catch((err) => { console.error(err); console.error('Renderer errors:', errors); clearTimeout(timer); server?.close(); app.exit(1); });

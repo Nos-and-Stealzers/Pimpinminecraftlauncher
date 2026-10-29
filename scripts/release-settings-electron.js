@@ -38,14 +38,11 @@ let win;
   };
   await wait('!!document.querySelector(".settings")');
   assert.equal((await call('presence:status')).state, 'unconfigured');
-  await change('Discord application ID', 'not-a-token');
-  await wait('document.querySelector("#discord-id-error").textContent.length > 0');
+  assert.equal(await run(`!!document.querySelector('[aria-label="Discord application ID"]')`), false);
+  assert.doesNotMatch(await run('document.querySelector(".settings").textContent'), /Own application ID|API key|Studios/);
+
   assert.equal(store.getSettings().discordAppId, null);
   await assert.rejects(() => call('settings:update', { discordAppId: 'secret.token' }), /application ID/);
-  await change('Discord application ID', '123456789012345678');
-  await wait('document.querySelector("#discord-id-error").textContent === ""');
-  for (let n = 0; n < 100 && store.getSettings().discordAppId === null; n++) await pause(20);
-  assert.equal(store.getSettings().discordAppId, '123456789012345678');
   await run('document.querySelector(\'[aria-label="Show instance name"]\').click()');
   for (let n = 0; n < 100 && store.getSettings().discordShowInstance; n++) await pause(20);
   assert.equal(store.getSettings().discordShowInstance, false);

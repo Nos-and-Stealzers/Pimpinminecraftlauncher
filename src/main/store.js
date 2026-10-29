@@ -125,29 +125,20 @@ const DEFAULT_SETTINGS = {
   launchOnStartup: false,
   lastInstance: null,
   activeAccount: null,
-  // personal CurseForge API key (null = use the build's key, if any)
-  curseforgeApiKey: null,
   ...APPEARANCE_DEFAULTS,
 };
 
 const savedSettings = readJsonSync(SETTINGS_FILE, {});
 const settings = { ...DEFAULT_SETTINGS, ...savedSettings, ...normalizeAppearance(savedSettings), ...normalizePresence(savedSettings) };
+// CurseForge support was removed; a key saved by an older version is dropped on the next save.
+delete settings.curseforgeApiKey;
 
 function getSettings() {
   return { ...settings, root: ROOT, totalMemory: totalMb() };
 }
 
-/** null/'' clears it; otherwise a single printable token, no spaces. */
-function normalizeCurseforgeKey(v) {
-  if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) return null;
-  const k = typeof v === 'string' ? v.trim() : '';
-  if (!k || k.length > 200 || !/^[!-~]+$/.test(k)) throw new Error('That does not look like a CurseForge API key.');
-  return k;
-}
-
 async function updateSettings(patch) {
   validatePresencePatch(patch);
-  if (patch && Object.hasOwn(patch, 'curseforgeApiKey')) patch = { ...patch, curseforgeApiKey: normalizeCurseforgeKey(patch.curseforgeApiKey) };
   // only known keys, anything else from the renderer is dropped
   for (const [k, v] of Object.entries(patch || {})) {
     if (Object.hasOwn(DEFAULT_SETTINGS, k)) settings[k] = v;
@@ -189,11 +180,20 @@ function safeJoin(base, ...parts) {
  * clamped to the window's minimum size, position silently dropped when it
  * isn't a finite number (e.g. after a settings-file hand edit).
  */
-function launcherBounds(s = settings) {
+function launcherBounds(s = settings, workAreas) {
   const width = Math.min(Math.max(Number(s.winW) || 1280, 1024), 8192);
   const height = Math.min(Math.max(Number(s.winH) || 800, 640), 8192);
-  const x = Number.isFinite(Number(s.winX)) ? Number(s.winX) : null;
-  const y = Number.isFinite(Number(s.winY)) ? Number(s.winY) : null;
+  const coordinate = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null;
+  let x = coordinate(s.winX);
+  let y = coordinate(s.winY);
+  // Restore only if enough of the draggable titlebar remains on a current
+  // display. Saved secondary-monitor coordinates can otherwise strand the app.
+  if (Array.isArray(workAreas) && workAreas.length && x !== null && y !== null) {
+    const reachable = workAreas.some(a => a && [a.x, a.y, a.width, a.height].every(Number.isFinite)
+      && Math.min(x + width, a.x + a.width) - Math.max(x, a.x) >= 96
+      && Math.min(y + 32, a.y + a.height) - Math.max(y, a.y) >= 24);
+    if (!reachable) { x = null; y = null; }
+  }
   return { x, y, width, height, maximized: Boolean(s.winMax) };
 }
 
@@ -208,5 +208,4 @@ module.exports = {
   slugify,
   uniqueDir,
   safeJoin,
-  normalizeCurseforgeKey,
 };

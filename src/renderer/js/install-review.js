@@ -68,8 +68,8 @@ function itemRow(item) {
   const note = item.status === 'failed' && item.error
     ? el('div', { class: 'ir-note bad' }, item.error)
     : item.status === 'blocked'
-      ? el('div', { class: 'ir-note' }, 'Author requires download on CurseForge.',
-          item.pageUrl ? el('button', { class: 'link', onclick: () => api.call('shell:openExternal', item.pageUrl).catch(() => {}) }, 'Open on CurseForge') : null)
+      ? el('div', { class: 'ir-note' }, 'Skipped. Download it from the project page.',
+          item.pageUrl ? el('button', { class: 'link', onclick: () => api.call('shell:openExternal', item.pageUrl).catch(() => {}) }, 'Open project page') : null)
       : null;
   const meta = [item.dependency ? 'Dependency' : null, item.versionNumber, item.size ? fmtBytes(item.size) : null].filter(Boolean).join(' · ');
   return el('li', { class: `ir-item ${item.status}`, 'data-key': item.key },

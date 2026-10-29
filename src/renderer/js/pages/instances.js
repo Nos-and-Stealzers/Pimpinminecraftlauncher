@@ -325,7 +325,7 @@ async function drawContent(root, inst, navigate) {
         updBtn = el('button', { class: 'chip accent click', title: `${upd.versionNumber || 'installed'} → ${upd.newVersionNumber}` }, icon('download'), upd.newVersionNumber);
         updBtn.addEventListener('click', () => applyUpdates([upd], updBtn));
       }
-      // Mods/plugins tracked in Modrinth or CurseForge can be pinned and offered other versions.
+      // Mods/plugins tracked in Modrinth can be pinned and offered other versions.
       const tracked = i.projectId && (i.type === 'mod' || i.type === 'plugin');
       const pinBtn = tracked ? el('button', {
         class: `btn ghost icon sm${i.pinned ? ' active' : ''}`,
@@ -377,7 +377,7 @@ async function drawContent(root, inst, navigate) {
         opts.gameVersions = [inst.mcVersion];
         opts.loaders = inst.loader === 'quilt' ? ['quilt', 'fabric'] : [inst.loader];
       }
-      const versions = await api.call(item.provider === 'curseforge' ? 'curseforge:versions' : 'library:versions', item.projectId, opts);
+      const versions = await api.call('library:versions', item.projectId, opts);
       const rows = versions.slice(0, 50).map((v) => {
         const current = v.version_number === item.versionNumber;
         const b = el(
@@ -391,7 +391,7 @@ async function drawContent(root, inst, navigate) {
           b.disabled = true;
           b.lastChild.replaceChildren(el('span', { class: 'spin xs' }), 'Switching');
           try {
-            await api.call('content:install', target, { projectId: item.projectId, type: item.type, versionId: v.id, provider: item.provider || 'modrinth' });
+            await api.call('content:install', target, { projectId: item.projectId, type: item.type, versionId: v.id });
             toast(`Switched ${item.title} to ${v.version_number}`);
             m.close();
             await load(false);

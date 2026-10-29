@@ -40,7 +40,6 @@ app.whenReady().then(async () => {
         case 'presence:status': data = require('../src/main/presence').getStatus(); break;
         // Explicit fixture state: the appearance test has no notice service.
         case 'notifications:list': data = { items: [], unread: 0 }; break;
-        case 'curseforge:status': data = { configured: false, source: null }; break;
         default: throw new Error('Unexpected fixture IPC ' + channel);
       }
       return { ok: true, data };

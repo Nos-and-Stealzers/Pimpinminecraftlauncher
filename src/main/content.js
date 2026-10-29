@@ -4,7 +4,6 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const modrinth = require('./modrinth');
-const curseforge = require('./curseforge');
 const { download, sha1File } = require('./net');
 const { safeJoin } = require('./store');
 
@@ -222,16 +221,6 @@ function cancel(taskId) {
   return true;
 }
 
-const providerOf = (req) =>
-  req.provider === 'curseforge' || curseforge.isCfId(req.projectId) || curseforge.isCfId(req.versionId) ? 'curseforge' : 'modrinth';
-
-/** CurseForge tags files with loader names; shaders and resource packs carry none. */
-function cfLoaders(type, holder) {
-  if (type !== 'mod') return [];
-  loadersFor(type, holder); // throws the friendly vanilla message
-  return holder.loader === 'quilt' ? ['quilt', 'fabric'] : [holder.loader];
-}
-
 function recordOnDisk(holder, rec) {
   if (!rec?.file || !FOLDERS[rec.type]) return false;
   const folder = path.join(holder.dir, FOLDERS[rec.type]);
@@ -242,7 +231,6 @@ function recordOnDisk(holder, rec) {
 async function projectTitle(provider, projectId) {
   if (!projectId) return null;
   try {
-    if (provider === 'curseforge') return (await curseforge.getMods([projectId]))[0]?.name || null;
     return (await modrinth.getProject(projectId))?.title || null;
   } catch {
     return null;
@@ -254,35 +242,6 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 /** One resolved, downloadable item in a provider-neutral shape. */
 async function resolveCandidate(holder, req) {
   const type = req.type;
-  if (providerOf(req) === 'curseforge') {
-    const loaders = cfLoaders(type, holder);
-    const v = req.versionId
-      ? await curseforge.getVersion(req.versionId, req.projectId ? curseforge.rawId(req.projectId) : undefined)
-      : await curseforge.pickVersion(req.projectId, { loaders, gameVersions: [holder.mcVersion], anyVersionFallback: type === 'shader' || type === 'resourcepack' });
-    if (!v) throw new Error(`No CurseForge file for Minecraft ${holder.mcVersion}${type === 'mod' ? ` with ${holder.loader === 'quilt' ? 'Quilt' : 'Fabric'}` : ''}`);
-    const file = v.files[0];
-    const allowed = v.project?.allowModDistribution !== false;
-    const url = allowed ? await curseforge.downloadUrl(v.modId, v.fileId, { url: file.url }) : null;
-    return {
-      provider: 'curseforge',
-      projectId: v.project_id,
-      versionId: v.id,
-      modId: v.modId,
-      fileId: v.fileId,
-      type,
-      title: v.project?.title || file.filename,
-      icon: v.project?.icon_url || null,
-      versionNumber: v.version_number,
-      filename: file.filename,
-      url,
-      size: file.size || 0,
-      sha1: file.hashes?.sha1 || null,
-      pageUrl: v.pageUrl,
-      blocked: !url,
-      // relationType 3 = RequiredDependency; optional, embedded and tool relations are not installed
-      deps: type === 'mod' ? v.dependencies.filter((d) => d.relationType === 3).map((d) => ({ provider: 'curseforge', projectId: d.project_id, type: 'mod' })) : [],
-    };
-  }
   const version = req.versionId ? await modrinth.getVersion(req.versionId) : await pickVersion(req.projectId, type, holder);
   const file = version.files.find((f) => f.primary) || version.files[0];
   const project = await modrinth.getProject(version.project_id).catch(() => null);
@@ -326,7 +285,7 @@ async function resolvePlan(holder, requests, meta, { rootsFatal = true } = {}) {
   const seenKey = (provider, id) => `${provider}:${id}`;
 
   const visit = async (req, parent) => {
-    const provider = providerOf(req);
+    const provider = 'modrinth';
     if (req.projectId) {
       if (seen.has(seenKey(provider, req.projectId))) return;
       seen.add(seenKey(provider, req.projectId));
@@ -359,8 +318,6 @@ async function resolvePlan(holder, requests, meta, { rootsFatal = true } = {}) {
       provider: c.provider,
       projectId: c.projectId,
       versionId: c.versionId,
-      modId: c.modId,
-      fileId: c.fileId,
       type: c.type,
       title: c.title,
       icon: c.icon,
@@ -372,8 +329,8 @@ async function resolvePlan(holder, requests, meta, { rootsFatal = true } = {}) {
       pageUrl: c.pageUrl,
       dependency: Boolean(parent),
       parent: parent?.title || null,
-      status: c.blocked ? 'blocked' : 'pending',
-      error: c.blocked ? 'Author requires download on CurseForge' : null,
+      status: 'pending',
+      error: null,
     };
     plan.push(item);
     for (const dep of c.deps) await visit(dep, item);
@@ -411,7 +368,6 @@ function recordFor(item) {
     icon: item.icon || null,
     sha1: item.sha1 || undefined,
   };
-  if (item.provider === 'curseforge') Object.assign(rec, { provider: 'curseforge', modId: item.modId, fileId: item.fileId });
   return rec;
 }
 
@@ -525,12 +481,15 @@ async function installMany(holder, requests, { onProgress, label, rootsFatal = t
 /**
  * Install a project (and its required dependencies) into a holder.
  * holder: { kind, dir, mcVersion, loader, load(): meta, save(meta) }
- * item: { projectId, type, versionId?, provider? ('modrinth' | 'curseforge') }
+ * item: { projectId, type, versionId?, provider? ('modrinth') }
  */
 async function install(holder, { projectId, type, versionId, provider }, onProgress, opts = {}) {
   checkTarget(type, holder);
   return installMany(holder, [{ projectId, type, versionId, provider }], { onProgress, ...opts });
 }
+
+// Records from the removed CurseForge source behave like local files now.
+const tracked = (rec) => Boolean(rec?.projectId) && rec.provider !== 'curseforge';
 
 /** List content on disk merged with what the launcher knows about it. */
 async function list(holder) {
@@ -552,7 +511,7 @@ async function list(holder) {
       const file = enabled ? name : name.slice(0, -'.disabled'.length);
       if (type !== 'shader' && type !== 'resourcepack' && !file.endsWith('.jar')) continue;
       const rec = records.find((r) => r.file === file && r.type === type);
-      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: rec?.projectId || null, provider: rec?.projectId ? rec.provider || 'modrinth' : null, versionNumber: rec?.versionNumber || null, pinned: Boolean(rec?.pinned) });
+      out.push({ type, file, enabled, title: rec?.title || file, icon: rec?.icon || null, projectId: tracked(rec) ? rec.projectId : null, provider: tracked(rec) ? 'modrinth' : null, versionNumber: rec?.versionNumber || null, pinned: Boolean(rec?.pinned) });
     }
   }
   return out.sort((a, b) => a.title.localeCompare(b.title));
@@ -582,7 +541,7 @@ async function setPinned(holder, { type, file, pinned }) {
   return withLock(holder.dir, async () => {
     const meta = await holder.load();
     const rec = (meta.content || []).find((c) => c.file === file && c.type === type);
-    if (!rec || !rec.projectId) throw new Error('Only mods installed from the library can be pinned.');
+    if (!tracked(rec)) throw new Error('Only mods installed from the library can be pinned.');
     rec.pinned = Boolean(pinned);
     await holder.save(meta);
     return rec.pinned;
@@ -592,10 +551,10 @@ async function setPinned(holder, { type, file, pinned }) {
 /** Find newer compatible versions of tracked mods/plugins. Pinned ones stay untouched on purpose. */
 async function checkUpdates(holder) {
   const meta = await holder.load();
-  const tracked = (meta.content || []).filter((c) => !c.pinned && (c.type === 'mod' || c.type === 'plugin'));
+  const candidates = (meta.content || []).filter((c) => !c.pinned && (c.type === 'mod' || c.type === 'plugin'));
   const updates = [];
-  // Modrinth records (no provider field, from before CurseForge existed) keep the hash lookup.
-  const items = tracked.filter((c) => c.sha1 && c.provider !== 'curseforge');
+  // Records left over from the removed CurseForge source are treated as local files.
+  const items = candidates.filter((c) => c.sha1 && c.provider !== 'curseforge');
   const byType = {};
   for (const c of items) (byType[c.type] = byType[c.type] || []).push(c);
   for (const [type, group] of Object.entries(byType)) {
@@ -606,16 +565,6 @@ async function checkUpdates(holder) {
     for (const c of group) {
       const v = latest[c.sha1];
       if (v && v.id !== c.versionId) updates.push({ ...c, newVersionId: v.id, newVersionNumber: v.version_number });
-    }
-  }
-  const cf = tracked.filter((c) => c.provider === 'curseforge' && c.type === 'mod' && c.modId && c.fileId);
-  if (cf.length && curseforge.status().configured) {
-    const latest = await curseforge.latestFor(cf, { mcVersion: holder.mcVersion, loaders: cfLoaders('mod', holder) });
-    for (const c of cf) {
-      const v = latest[c.modId];
-      if (v && v.fileId !== c.fileId && v.fileId > c.fileId) {
-        updates.push({ ...c, newVersionId: curseforge.cfId(v.fileId), newVersionNumber: String(v.filename || v.fileId).replace(/\.jar$/i, '') });
-      }
     }
   }
   return updates;
@@ -730,7 +679,8 @@ async function identifyLocal(holder) {
       const item = hashes[hash];
       const file = version.files.find((f) => f.hashes.sha1 === hash) || { filename: item.file, hashes: { sha1: hash } };
       const rec = toRecord(item.type, version, { ...file, filename: item.file }, projects.find((p) => p.id === version.project_id));
-      meta.content = meta.content.filter((c) => c.projectId !== rec.projectId);
+      // also replaces a stale record for the same file (e.g. one from the removed CurseForge source)
+      meta.content = meta.content.filter((c) => c.projectId !== rec.projectId && !(c.type === rec.type && c.file === rec.file));
       meta.content.push(rec);
     }
     await holder.save(meta);

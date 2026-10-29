@@ -156,22 +156,6 @@ export function render(page, params, navigate) {
     control.querySelector('input').setAttribute('aria-label', label);
     return control;
   };
-  const discordIdError = el('span', { class: 'appearance-error', role: 'status', id: 'discord-id-error' });
-  const discordId = el('input', {
-    class: 'input', value: s.discordAppId || '', placeholder: '17 to 20 digit application ID',
-    'aria-label': 'Discord application ID', 'aria-describedby': 'discord-id-error',
-    maxLength: 20, inputmode: 'numeric', style: { maxWidth: '240px' },
-    onchange: () => {
-      const id = discordId.value.trim();
-      if (id && !/^[0-9]{17,20}$/.test(id)) {
-        discordId.setAttribute('aria-invalid', 'true');
-        discordIdError.textContent = 'Use the numeric application ID, not a token or client secret.';
-        return;
-      }
-      discordId.removeAttribute('aria-invalid'); discordIdError.textContent = '';
-      save({ discordAppId: id || null }, id ? 'Discord application ID saved' : 'Discord application ID cleared');
-    },
-  });
   const exportAppearance = el('button', { class: 'btn sm', 'aria-label': 'Export appearance preset', onclick: async () => {
     try { const result = await api.call('settings:exportAppearance'); if (!result.canceled) toast('Appearance preset exported'); } catch (e) { errorToast(e); }
   } }, icon('download'), 'Export');
@@ -216,6 +200,9 @@ export function render(page, params, navigate) {
       resetKeys: Object.keys(state.settings).filter(k => /^mc[A-Z]/.test(k)),
     }));
     minecraftGroup.hidden = false;
+    // The optional module may arrive (or redraw) after a search was entered.
+    // Recompute the entire result, including section links and the empty state.
+    filter(search.value);
     if (typeof focus === 'string') mcList.querySelector(focus)?.focus();
   }).catch(() => minecraftGroup.remove());
   void drawMinecraft();
@@ -248,29 +235,11 @@ export function render(page, params, navigate) {
   // ----- Discord (kept together as one block; presence code owns these rows) -----
   const discordGroup = group('Discord',
     row('Discord Rich Presence', 'Shows what you are playing in your Discord status automatically while a game runs. Needs the Discord desktop app.', discordSwitch('discordRich', 'Discord Rich Presence')),
-    row('Own application ID', 'Optional. Leave empty to use Pimpin Launcher. Paste your own application ID only to show a different app name. Never a token or secret.', el('div', { class: 'custom-accent' }, discordId, discordIdError)),
     row('Discord status', null, el('div', { class: 'row' }, presenceStatus, el('button', { class: 'btn sm', onclick: () => refreshPresence(true) }, 'Refresh'))),
     row('Show instance name', 'Turn off to show only Playing Minecraft. Server addresses and account names are never sent.', discordSwitch('discordShowInstance', 'Show instance name')),
     row('Show game version', 'Include the Minecraft version and loader in your status.', discordSwitch('discordShowVersion', 'Show game version')),
     row('Show elapsed time', 'Include the time since you launched the game.', discordSwitch('discordShowElapsed', 'Show elapsed time')));
   // ----- end Discord -----
-
-  // CurseForge needs an API key. Builds can ship one; a key here overrides it.
-  const cfStatus = el('span', { role: 'status', 'aria-live': 'polite' }, 'Checking...');
-  const drawCfStatus = () => api.call('curseforge:status').then((st) => {
-    cfStatus.textContent = st.configured ? (st.source === 'settings' ? 'Using your key.' : 'Ready.') : 'No key yet. Mods from Modrinth still work.';
-  }).catch(() => { cfStatus.textContent = 'Status unavailable.'; });
-  void drawCfStatus();
-  const cfKey = el('input', {
-    class: 'input', type: 'password', value: s.curseforgeApiKey || '', placeholder: 'Leave empty to use the built-in key',
-    'aria-label': 'CurseForge API key', autocomplete: 'off', spellcheck: 'false', maxLength: 200, style: { maxWidth: '260px' },
-    onchange: () => updateSettings({ curseforgeApiKey: cfKey.value.trim() || null })
-      .then(() => { toast(cfKey.value.trim() ? 'CurseForge key saved' : 'CurseForge key cleared'); return drawCfStatus(); })
-      .catch(errorToast),
-  });
-  const curseforgeGroup = group('CurseForge',
-    row('CurseForge status', 'Search and install mods, resource packs, shaders and modpacks from CurseForge in the Library.', cfStatus),
-    row('CurseForge API key', 'Optional. Only needed if this build has no key. Get one from the CurseForge for Studios console.', cfKey));
 
   const sections = [
     section('Appearance', ...appearanceGroups),
@@ -294,8 +263,7 @@ export function render(page, params, navigate) {
         row('First-run setup', null, el('button', { class: 'btn sm', onclick: async () => { await save({ onboarded: false }); onboarding(navigate); } }, 'Run again')),
         row('Data folder', s.root, el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open')),
         row('Editable settings file', 'Reveal settings.json. Quit the launcher before editing it by hand; never share accounts.json.', el('button', { class: 'btn sm', onclick: () => api.call('settings:showFile') }, icon('folder'), 'Show file'))),
-      discordGroup,
-      curseforgeGroup),
+      discordGroup),
     section('Notifications', group(null,
       row('Launcher updates', 'A notice when a new Pimpin version is available or ready to install.', switchEl(s.notifyLauncherUpdates !== false, (v) => save({ notifyLauncherUpdates: v }))),
       row('Mod updates', 'Checks your instances every few hours and lists mods with newer versions. Nothing is updated without you.', switchEl(s.notifyModUpdates !== false, (v) => save({ notifyModUpdates: v }))),
@@ -314,12 +282,22 @@ export function render(page, params, navigate) {
 
   // Section list with search. Links scroll inside the page; the active one
   // follows scrolling.
-  const navLinks = sections.map((sec) => el('a', { href: `#${sec.id}`, 'data-target': sec.id, onclick: (e) => { e.preventDefault(); sec.scrollIntoView({ block: 'start' }); setActive(sec.id); } }, sec.querySelector('h2').textContent));
+  const navLinks = sections.map((sec) => el('a', { href: `#${sec.id}`, 'data-target': sec.id, onclick: (e) => { e.preventDefault(); revealSection(sec); } }, sec.querySelector('h2').textContent));
   const empty = el('div', { class: 'set-empty muted', hidden: true, role: 'status' }, 'No settings match your search.');
   const search = el('input', { class: 'input', type: 'search', placeholder: 'Search settings', 'aria-label': 'Search settings', spellcheck: 'false' });
   search.addEventListener('input', () => filter(search.value));
   search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.preventDefault(); search.value = ''; filter(''); } });
   const nav = el('nav', { class: 'set-nav', 'aria-label': 'Settings sections' }, el('div', { class: 'search' }, icon('search'), search), el('div', { class: 'set-nav-links' }, navLinks));
+  function revealSection(sec) {
+    sec.scrollIntoView({ block: 'start' });
+    // In narrow windows navigation sits above the content, not beside it.
+    // Use its actual themed/scaled height rather than a fixed pixel offset.
+    if (getComputedStyle(nav).flexDirection === 'row') {
+      const overlap = nav.getBoundingClientRect().bottom + 8 - sec.getBoundingClientRect().top;
+      if (overlap > 0) page.scrollTop -= overlap;
+    }
+    setActive(sec.id);
+  }
   function setActive(id) { for (const a of navLinks) a.classList.toggle('on', a.dataset.target === id); }
   function filter(text) {
     const q = text.trim().toLowerCase();
@@ -342,6 +320,7 @@ export function render(page, params, navigate) {
       any ||= secHit;
     }
     empty.hidden = any;
+    syncActive();
   }
 
   const content = el('div', { class: 'set-content' },
@@ -349,13 +328,31 @@ export function render(page, params, navigate) {
     empty, sections);
   page.append(el('div', { class: 'settings' }, nav, content));
 
-  const observer = new IntersectionObserver((entries) => {
-    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (visible) setActive(visible.target.id);
-  }, { root: page, rootMargin: '0px 0px -70% 0px', threshold: 0 });
-  sections.forEach(sec => observer.observe(sec));
-  page.__settingsCleanup = () => { observer.disconnect(); page.__settingsCleanup = null; };
+  // Observe all headings together: IntersectionObserver entries are only the
+  // changed subset and could select the previous section hidden behind the nav.
+  function syncActive() {
+    const top = getComputedStyle(nav).flexDirection === 'row'
+      ? nav.getBoundingClientRect().bottom + 16
+      : page.getBoundingClientRect().top + 16;
+    const shown = sections.filter(sec => !sec.hidden);
+    const current = shown.filter(sec => sec.getBoundingClientRect().top <= top).at(-1) || shown[0];
+    setActive(current?.id);
+  }
+  let scrollFrame = null;
+  const onScroll = () => {
+    if (scrollFrame !== null) return;
+    scrollFrame = requestAnimationFrame(() => { scrollFrame = null; syncActive(); });
+  };
+  page.addEventListener('scroll', onScroll, { passive: true });
+  page.__settingsCleanup = () => {
+    page.removeEventListener('scroll', onScroll);
+    if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+    page.__settingsCleanup = null;
+  };
   setActive(params?.section && page.querySelector(`#set-${params.section}`) ? `set-${params.section}` : sections[0].id);
-  if (params?.section) requestAnimationFrame(() => page.querySelector(`#set-${params.section}`)?.scrollIntoView({ block: 'start' }));
+  if (params?.section) requestAnimationFrame(() => {
+    const target = page.querySelector(`#set-${params.section}`);
+    if (target) revealSection(target);
+  });
   return () => page.__settingsCleanup?.();
 }

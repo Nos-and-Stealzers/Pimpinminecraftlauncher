@@ -18,6 +18,8 @@ const EVENTS = [
   'toast',
   'update:state',
   'notifications:changed',
+  'remote:log', // Remote servers
+  'remote:status',
 ];
 
 contextBridge.exposeInMainWorld('pimpin', {

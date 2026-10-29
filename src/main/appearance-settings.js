@@ -13,12 +13,14 @@ const APPEARANCE_DEFAULTS = Object.freeze({
   mcStyle: false, mcPreset: 'overworld', mcBackground: 'panorama', mcButtons: 'stone',
   mcCorners: 'blocky', mcFont: 'headings', mcBlockIcons: true, mcTilt: false,
   mcSkinPose: 'idle', mcSkinTurn: 'sway', mcSkinPedestal: 'grass',
+  mcScene: 'island', mcMobs: true, mcMobCount: 2, mcSceneSpeed: 1,
 });
 const enums = {
   uiStyle: ['modern', 'midnight', 'light', 'system'],
   accent: ['violet', 'blue', 'green', 'orange', 'red', 'pink', 'custom'],
   font: ['default', 'pixel'], density: ['comfortable', 'compact'], sidebarMode: ['auto', 'expanded', 'compact'],
   mcPreset: ['overworld', 'nether', 'end'],
+  mcScene: ['island', 'oneblock'],
   mcBackground: ['panorama', 'tiles', 'plain'],
   mcButtons: ['stone', 'wood'],
   mcCorners: ['blocky', 'rounded'],
@@ -27,7 +29,7 @@ const enums = {
   mcSkinTurn: ['still', 'sway', 'spin'],
   mcSkinPedestal: ['none', 'grass'],
 };
-const booleans = ['gradient', 'animations', 'mcStyle', 'mcBlockIcons', 'mcTilt'];
+const booleans = ['gradient', 'animations', 'mcStyle', 'mcBlockIcons', 'mcTilt', 'mcMobs'];
 // Keys owned by the removable Minecraft style. Sending null for each one
 // (with mcStyle false) resets them through this normalizer.
 const MINECRAFT_KEYS = Object.freeze(Object.keys(APPEARANCE_DEFAULTS).filter(key => /^mc[A-Z]/.test(key)));
@@ -46,6 +48,8 @@ function normalizeAppearance(source) {
   for (const [key, min, max] of [['uiScale', 80, 130], ['textSize', 90, 120], ['sidebarWidth', 190, 300]]) {
     if (typeof s[key] === 'number' && Number.isFinite(s[key])) result[key] = Math.round(Math.min(max, Math.max(min, s[key])));
   }
+  if (typeof s.mcMobCount === 'number' && Number.isFinite(s.mcMobCount)) result.mcMobCount = Math.round(Math.min(3, Math.max(1, s.mcMobCount)));
+  if (typeof s.mcSceneSpeed === 'number' && Number.isFinite(s.mcSceneSpeed)) result.mcSceneSpeed = Math.round(Math.min(1.5, Math.max(0.5, s.mcSceneSpeed)) * 100) / 100;
   return result;
 }
 module.exports = { APPEARANCE_DEFAULTS, MINECRAFT_KEYS, normalizeAppearance };

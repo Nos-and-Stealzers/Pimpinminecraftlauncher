@@ -22,6 +22,12 @@ Pimpinminecraftlauncher/
 │   │   ├── presence.js       Optional Discord IPC lifecycle and recovery
 │   │   ├── presence-preferences.js  Typed privacy and application-ID validation
 │   │   ├── client-settings.js     Per-instance Pimpin Client config editor
+│   │   ├── remote/           Remote servers (optional, see below)
+│   │   │   ├── ping.js       Server List Ping: status, players, MOTD, favicon, SRV
+│   │   │   ├── rcon.js       Source RCON client (auth, multi-packet replies)
+│   │   │   ├── pterodactyl.js  Pterodactyl/Pelican client API + live console
+│   │   │   ├── host-agent.js   "Share this PC" HTTP API and its client
+│   │   │   └── remote-servers.js  Saved connections, encrypted secrets, one API
 │   │   └── pack-art/         Original resource-pack texture painters
 │   └── renderer/
 │       ├── index.html        Actual launcher page loaded by the Electron window
@@ -38,7 +44,7 @@ Pimpinminecraftlauncher/
 ├── resources/                Bundled runtime content, including built mod jars
 ├── scripts/                  Node/Python checks, test fixtures and generators
 ├── docs/                     Guides and screenshots
-├── build/                    Installer/build artwork, not game data
+├── build/                    Installer hooks, payload manifest generator and artwork
 └── .github/workflows/        CI builds and release automation
 ```
 
@@ -57,13 +63,19 @@ For appearance work, the small path is: shared defaults/validation in
 The optional Minecraft style is self-contained in `renderer/themes/minecraft/`:
 `index.js` (apply/disable and its Settings rows), `textures.js` (original
 procedural 16×16 textures and isometric block icons), `panorama.js` (2D canvas
-voxel island), `blocks.js` (sidebar/instance block icons, card tilt), `skin.js`
+floating-island/one-block scene), `mobs.js` (world-specific walking visitors), `scene.js` (scene layout and
+background details), `blocks.js` (sidebar/instance block icons, card tilt), `skin.js`
 (poses, turning and stand via the `onSkinMount` hook in `js/skin3d.js`) and
 `theme.css` (every rule scoped to `body[data-mc]`). Only `js/appearance.js`
 refers to the folder, through a dynamic `import()` with a `.catch`, so deleting
 the folder leaves the launcher working. Its `mc*` keys are validated in
 `appearance-settings.js` like every other appearance key. Test it with
 `npm run test:electron-minecraft`.
+Window placement is validated by `store.launcherBounds(settings, workAreas)` and
+applied after Electron readiness using the current display work areas. The
+actual-main regression fixture `scripts/window-recovery-electron.js` uses a
+throwaway data root to test disconnected-monitor recovery and hidden startup
+without a tray icon.
 Preset parsing belongs in `appearance-presets.js`; native dialogs and persistence
 do not. The **Import appearance preset**, **Export appearance preset** and
 **Show file** actions are described in the customization guide.
@@ -72,6 +84,15 @@ Generated/local folders such as `node_modules/`, `dist/`, Gradle `build/` folder
 and test screenshots are not the place to make permanent source changes. Change
 the generator/source and rebuild instead. `resources/mods/` contains packaged mod
 outputs; edit Java under `mod/src/`, not a jar.
+
+## Installer and uninstaller
+
+See [INSTALLATION.md](INSTALLATION.md) for installed versus portable behavior,
+retained data paths, and verification limits. Windows packaging uses
+`build/installer.nsh` with `build/installer-manifest.js` to enumerate exact
+packaged files rather than recursively removing unknown application-folder
+contents. Only `build/icon.png` ships at runtime; installer helpers stay outside
+the ASAR. Source checks are in `scripts/installer.test.js`.
 
 ## User-data tree
 
@@ -84,6 +105,9 @@ ROOT/
 ├── settings.json             Launcher settings; appearance keys are top-level
 ├── accounts.json             Private account storage; never share or theme-edit
 ├── notifications.json        Launcher notification history/state
+├── remote-servers.json       Saved remote server connections (no secrets)
+├── remote-secrets.json       Keys/passwords, encrypted with the OS keychain
+├── remote-host.json          Share this PC: on/off, port, pairing token
 ├── instances/<id>/           One Minecraft game directory per instance
 │   ├── pimpin-instance.json  Launcher-managed instance metadata
 │   ├── config/               Mod preferences, including pimpin-client.json
@@ -142,6 +166,30 @@ npm run check
 
 The preset tests need only Node's built-in test runner: no Electron launch,
 network, extra dependency, browser or sign-in. Full launcher tests are under
-`scripts/`; `npm test` runs the suite configured in `package.json`. UI/native-dialog
+`scripts/`; `npm test` runs the suite configured in `package.json`.
+`npm run test:electron-integrations` exercises the real settings/library renderer
+with fixture-only IPC: no developer setup controls, privacy persistence that keeps
+the Discord override but drops the removed CurseForge key, and a Modrinth-only
+Library. Set `TMPDIR` to disposable scratch; the fixture
+creates an isolated `PIMPIN_ROOT` and captures actual Electron screenshots there.
+UI/native-dialog
 integration needs its own isolated Electron check; pure parser tests do not prove
 that the buttons or OS dialogs are wired correctly.
+
+## Remote servers
+
+Backend: `src/main/remote/` (one file per protocol, all plain Node, no extra
+dependencies). `remote-servers.js` is the only module `main.js` talks to for
+connections; `host-agent.js` is the opt-in Share this PC API. IPC lives in the
+`// ----- Remote servers` block of `main.js`; events `remote:log` and
+`remote:status` are whitelisted in `preload.js`. UI: `renderer/js/pages/remote-servers.js`,
+mounted from `pages/servers.js` (This PC / Remote switch); styles are the
+`/* ----- Remote servers */` block at the end of `css/app.css`.
+
+```bash
+TMPDIR=<scratch> node --test scripts/remote-servers.test.js
+TMPDIR=<scratch> node_modules/.bin/electron scripts/remote-servers-electron.js
+```
+
+Both run against local fakes (status server, RCON server, panel, a real agent
+over fixture servers) with a throwaway `PIMPIN_ROOT`.

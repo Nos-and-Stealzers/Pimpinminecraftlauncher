@@ -124,6 +124,21 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('#set-group-minecraft-style').scrollIntoView({block:'start'})`);
     await shot('settings-mc-on'); report.screenshots.push('settings-mc-on');
     check('master switch turns the style on and shows its choices');
+    // Exercise the real controls, not just direct settings writes.
+    await run(`{for (const [label,value] of [['Sky scene','oneblock'],['Mob count','3'],['Scene speed','0.5']]) {
+      const control=document.querySelector('[aria-label="'+label+'"]');
+      if(!control) throw new Error('Missing control: '+label);
+      control.value=value;control.dispatchEvent(new Event('change'));
+    }}`);
+    await wait(`import('./js/state.js').then(m=>m.state.settings.mcScene === 'oneblock' && m.state.settings.mcMobCount === 3 && m.state.settings.mcSceneSpeed === 0.5)`);
+    assert.equal(store.getSettings().mcScene, 'oneblock');
+    assert.equal(store.getSettings().mcMobCount, 3);
+    assert.equal(store.getSettings().mcSceneSpeed, 0.5);
+    await run(`document.querySelector('[aria-label="Wandering mobs"]').click()`);
+    await wait(`import('./js/state.js').then(m=>m.state.settings.mcMobs === false)`);
+    assert.equal(store.getSettings().mcMobs, false);
+    await set({ mcScene: 'island', mcMobs: true, mcMobCount: 2, mcSceneSpeed: 1 });
+    check('sky scene, wandering mobs, count and speed controls persist typed settings');
 
     // Every preset renders a distinct, non-empty panorama on Home.
     const hashes = {};
@@ -145,6 +160,34 @@ app.whenReady().then(async () => {
     const cost = (await theme()).drawMs;
     report.panoramaDrawMs = cost;
     check(`overworld, nether and end panoramas render and animate on Home (${cost} ms per frame, software rendering)`);
+
+    // Real Home integration: every scene/species combination, small window too.
+    report.scenes = [];
+    for (const size of [[1280, 800], [1024, 640]]) {
+      win.setSize(...size); await pause(150);
+      for (const preset of ['overworld', 'nether', 'end']) for (const scene of ['island', 'oneblock']) {
+        await set({ mcPreset: preset, mcScene: scene, mcMobs: true, mcMobCount: 3 });
+        await wait(`import('./themes/minecraft/index.js').then(m=>m.status().scene?.scene === ${JSON.stringify(scene)} && m.status().scene?.preset === ${JSON.stringify(preset)})`);
+        const d = (await theme()).scene;
+        assert.equal(d.mobs.length, 3);
+        for (const mob of d.mobs) {
+          assert.equal(mob.type, {overworld:'sheep',nether:'pigman',end:'enderman'}[preset]);
+          assert.ok(mob.bounds.left >= 0 && mob.bounds.right <= d.width);
+          assert.ok(mob.bounds.top >= 0 && mob.bounds.bottom <= d.band);
+        }
+        assert.equal(await run('document.documentElement.scrollWidth <= innerWidth'), true);
+        report.scenes.push({preset,scene,size,drawMs:(await theme()).drawMs});
+        await shot(`home-${preset}-${scene}-${size[0]}`);
+      }
+    }
+    const beforeMove = (await theme()).scene.elapsed;
+    await pause(200);
+    assert.ok((await theme()).scene.elapsed > beforeMove);
+    await set({ mcMobs: false });
+    assert.equal((await theme()).scene.mobs.length, 0);
+    await set({ mcMobs: true, mcMobCount: 2, mcScene: 'island' });
+    win.setSize(1280, 800);
+    check('all six scene/world combinations at normal and small sizes; correct species, safe bounds, animation and mob off');
 
     // Not on Home: paused, tiles shown.
     await nav('instances');
