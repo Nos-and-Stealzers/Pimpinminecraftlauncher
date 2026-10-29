@@ -3,6 +3,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createPresence } = require('../src/main/presence');
+test('unconfigured presence has honest consumer copy without setup instructions', async () => {
+  const presence = createPresence({ getSettings: () => ({ discordRich: true }), effectiveAppId: () => null });
+  await presence.refresh();
+  assert.deepEqual(presence.getStatus(), { state: 'unconfigured', message: 'Discord presence is unavailable in this version of Pimpin Launcher.' });
+  await presence.quit();
+});
 const ID = '123456789012345678';
 const game = (name = 'Survival', started = 1700000000000) => ({ name, started, mcVersion: '1.21.4', loader: 'fabric' });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };

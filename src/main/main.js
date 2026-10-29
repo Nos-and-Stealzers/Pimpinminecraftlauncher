@@ -14,7 +14,6 @@ const servers = require('./servers');
 const presence = require('./presence');
 const content = require('./content');
 const modrinth = require('./modrinth');
-const curseforge = require('./curseforge');
 const files = require('./files');
 const packs = require('./packs');
 const shaders = require('./shaders');
@@ -25,6 +24,10 @@ const worldBackups = require('./world-backups');
 const clientSettings = require('./client-settings');
 const noticeLib = require('./notifications');
 const { getJson, request } = require('./net');
+// ----- Remote servers: hosting panels, RCON, other PCs (src/main/remote/)
+const remoteServers = require('./remote/remote-servers').createRemoteServers({ root: store.dirs.root, store, safeStorage: require('electron').safeStorage, emit: (channel, payload) => send(channel, payload) });
+const remoteHost = require('./remote/host-agent').createHostAgent({ servers, store, root: store.dirs.root, version: app.getVersion(), lanAddresses: () => servers.lanAddresses() });
+// ----- end Remote servers
 
 let win;
 let updateState = { state: 'idle' };
@@ -153,6 +156,7 @@ function applySystemSettings(s) {
 
 function emit(channel, payload) {
   send(channel, payload);
+  remoteHost.observe(channel, payload); // Remote servers: log cursors for Share this PC
   if (channel === 'game:state' && payload.state === 'running') syncInGameNotices([payload.id]);
   if (channel === 'game:state' && payload.state === 'stopped') refreshJumpList();
   if (channel === 'game:state' && store.getSettings().closeOnLaunch && win) {
@@ -423,11 +427,6 @@ const handlers = {
   'library:versions': (id, opts) => modrinth.getVersions(id, opts),
   'library:categories': () => modrinth.getCategories(),
   'content:cancel': (taskId) => content.cancel(String(taskId)),
-  'curseforge:status': () => curseforge.status(),
-  'curseforge:search': (opts) => curseforge.search(opts || {}),
-  'curseforge:project': (id) => curseforge.getProject(id),
-  'curseforge:versions': (id, opts) => curseforge.getVersions(id, opts || {}),
-  'curseforge:installModpack': (opts) => importer.installCurseforgeModpack(opts || {}, progressFor({ id: 'modpack' })),
   'modpack:install': (opts) => instances.installModpack(opts),
 
   'skin:get': (name) => getSkin(name),
@@ -582,6 +581,22 @@ const handlers = {
   'servers:command': (id, cmd) => servers.command(id, cmd),
   'servers:logs': (id) => servers.getLogs(id),
   'servers:open': (id) => shell.openPath(servers.dirOf(id)),
+
+  // ----- Remote servers
+  'remote:list': () => remoteServers.list(),
+  'remote:save': (draft, secret) => remoteServers.save(draft || {}, secret),
+  'remote:remove': (id) => remoteServers.remove(String(id)),
+  'remote:status': (id) => remoteServers.status(String(id)),
+  'remote:power': (id, action) => remoteServers.power(String(id), String(action)),
+  'remote:command': (id, cmd) => remoteServers.command(String(id), String(cmd ?? '')),
+  'remote:players': (id) => remoteServers.players(String(id)),
+  'remote:console': (id, on) => remoteServers.console(String(id), on !== false),
+  'remote:discover': (draft, secret) => remoteServers.discover(draft || {}, secret),
+  'remote:secure': () => ({ available: remoteServers.secureAvailable() }),
+  'remote-host:status': () => remoteHost.status(),
+  'remote-host:update': (patch) => remoteHost.update(patch || {}),
+  'remote-host:regenerate': () => remoteHost.regenerate(),
+  // ----- end Remote servers
 
   'news:get': async () => {
     const data = await getJson('https://launchercontent.mojang.com/v2/news.json');
@@ -870,10 +885,13 @@ app.whenReady().then(() => {
   setupNotices();
   setupUpdater();
   applySystemSettings(store.getSettings());
+  remoteHost.startIfEnabled().catch(() => {}); // Remote servers: Share this PC, only when turned on
 });
 app.on('before-quit', () => {
   quitting = true;
   servers.stopAll();
+  remoteHost.close().catch(() => {}); // Remote servers
+  remoteServers.shutdown(); // Remote servers
   presence.quit().catch(() => {});
 });
 app.on('window-all-closed', () => app.quit());

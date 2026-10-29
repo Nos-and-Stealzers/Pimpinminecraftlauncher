@@ -50,19 +50,6 @@ jobs:
           echo "Building version $v"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           npm version "$v" --no-git-tag-version --allow-same-version
-      # Bundles the CurseForge API key only when the CURSEFORGE_API_KEY secret
-      # exists (forks and unset repos build without CurseForge). Never printed.
-      - name: Write CurseForge API key
-        shell: bash
-        env:
-          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
-        run: |
-          if [ -n "$CURSEFORGE_API_KEY" ]; then
-            node -e "const fs=require('fs');fs.mkdirSync('src/main/generated',{recursive:true});fs.writeFileSync('src/main/generated/curseforge-key.json',JSON.stringify({key:process.env.CURSEFORGE_API_KEY.trim()}))"
-            echo "CurseForge key bundled"
-          else
-            echo "No CURSEFORGE_API_KEY secret; building without a bundled CurseForge key"
-          fi
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: npx electron-builder --win --publish never

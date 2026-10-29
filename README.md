@@ -17,7 +17,6 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
   - **Resource packs.**
   - **Modpacks.** Install `.mrpack` modpacks (Fabric/Quilt) as a new ready-to-play instance.
   - **Plugins.** Install them onto a local Paper server.
-- **CurseForge as a second source** (official API, needs a CurseForge API key in Settings or one bundled at build time): switch the library between Modrinth and CurseForge for mods, shaders, resource packs and Fabric/Quilt modpacks (CurseForge pack `.zip` files can also be dropped onto the window). Files are checked against CurseForge's SHA-1 hashes, and mods whose author only allows downloads on CurseForge get an **Open on CurseForge** button instead of a download.
 - **Install review popup.** Every install, client feature and shader (with Iris) first works out the full list of required dependencies, then installs it right away while a small card lists each item with its version, size, progress and result. Failures are shown there, and Cancel stops the remaining downloads without leaving partial files.
 - **Content manager.** Turn installed mods, shaders and packs on or off, remove them, or check for updates and update them all. Mods you drop into the folder by hand are identified automatically.
 - **Local servers.** Create a [Paper](https://papermc.io), [Purpur](https://purpurmc.org) or Vanilla server, install plugins from the library, start/stop/restart it, type console commands, and **Join** with one click (it launches a matching instance and connects to `localhost`).
@@ -54,7 +53,7 @@ A custom Minecraft: Java Edition launcher in the style of Feather and Lunar, wit
 - **Made easy.** A first-run setup (sign in, pick a look, get a ready-to-play Max FPS or Max Pretty game), a **command palette** (Ctrl+K) to find any instance, server, page or action, keyboard shortcuts (F1), desktop notifications, a tray icon with quick Play, start with your PC, export/import instances as `.zip`, and "Update all" for the mods in every instance.
 - **3D skin preview.** Drag your player on Home to turn it or click to wave. The wardrobe adds six original characters plus your imported skins, with explicit preview-only selection.
 - **Make it yours.** Dark, Midnight, Light or System theme; custom accents and optional two-colour gradients; heading font, density, sidebar, interface/text size and reduced motion. Import/export small appearance-only JSON presets. No UI sound effects.
-- **Optional Discord Rich Presence.** Configure your own public application ID and choose whether to share the instance name, game version/loader and elapsed time. No Discord tokens required. The launcher reconnects if desktop Discord restarts; no presence connection without a running game and configured ID.
+- **Optional Discord Rich Presence.** Choose whether to share the instance name, game version/loader and elapsed time. Requires the Discord desktop app and a build with presence available; Settings shows its actual status. No developer setup or Discord tokens required. The launcher reconnects if desktop Discord restarts while playing.
 - **Custom UI.** Frameless window, five accent themes, live game console with readable logs, Minecraft news, play-time tracking, and you can duplicate instances.
 
 ## Download
@@ -93,7 +92,7 @@ Inside that folder, `instances/` and `servers/` hold your game folders, `shared/
 
 ## Customizing and editing files
 
-- [Customization guide](docs/CUSTOMIZATION.md): appearance presets, Discord setup, settings keys and safe manual edits.
+- [Customization guide](docs/CUSTOMIZATION.md): appearance presets, Discord privacy, maintainer-only integration setup, settings keys and safe manual edits.
 - [Project structure](docs/PROJECT-STRUCTURE.md): source modules, generated packs, tests and the separate player-data folder.
 
 Settings → Launcher → **Show file** reveals `settings.json`. Quit the launcher before editing it. Share appearance presets, never your account files.
@@ -106,7 +105,6 @@ src/main/        Electron main process (Node)
   java.js        Java runtimes (Mojang's official runtimes, Adoptium fallback)
   auth.js        Microsoft (msmc) + offline accounts
   modrinth.js    Modrinth API client
-  curseforge.js  CurseForge API client (key from settings or src/main/generated/curseforge-key.json)
   content.js     install/remove/update mods, shaders, packs & plugins, dependency resolution, client features
   instances.js   instances, game process, modpacks
   servers.js     Paper/Purpur/Vanilla servers, properties, players, backups, console

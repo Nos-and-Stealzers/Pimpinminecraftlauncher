@@ -22,6 +22,12 @@ Pimpinminecraftlauncher/
 │   │   ├── presence.js       Optional Discord IPC lifecycle and recovery
 │   │   ├── presence-preferences.js  Typed privacy and application-ID validation
 │   │   ├── client-settings.js     Per-instance Pimpin Client config editor
+│   │   ├── remote/           Remote servers (optional, see below)
+│   │   │   ├── ping.js       Server List Ping: status, players, MOTD, favicon, SRV
+│   │   │   ├── rcon.js       Source RCON client (auth, multi-packet replies)
+│   │   │   ├── pterodactyl.js  Pterodactyl/Pelican client API + live console
+│   │   │   ├── host-agent.js   "Share this PC" HTTP API and its client
+│   │   │   └── remote-servers.js  Saved connections, encrypted secrets, one API
 │   │   └── pack-art/         Original resource-pack texture painters
 │   └── renderer/
 │       ├── index.html        Actual launcher page loaded by the Electron window
@@ -99,6 +105,9 @@ ROOT/
 ├── settings.json             Launcher settings; appearance keys are top-level
 ├── accounts.json             Private account storage; never share or theme-edit
 ├── notifications.json        Launcher notification history/state
+├── remote-servers.json       Saved remote server connections (no secrets)
+├── remote-secrets.json       Keys/passwords, encrypted with the OS keychain
+├── remote-host.json          Share this PC: on/off, port, pairing token
 ├── instances/<id>/           One Minecraft game directory per instance
 │   ├── pimpin-instance.json  Launcher-managed instance metadata
 │   ├── config/               Mod preferences, including pimpin-client.json
@@ -157,6 +166,30 @@ npm run check
 
 The preset tests need only Node's built-in test runner: no Electron launch,
 network, extra dependency, browser or sign-in. Full launcher tests are under
-`scripts/`; `npm test` runs the suite configured in `package.json`. UI/native-dialog
+`scripts/`; `npm test` runs the suite configured in `package.json`.
+`npm run test:electron-integrations` exercises the real settings/library renderer
+with fixture-only IPC: no developer setup controls, privacy persistence that keeps
+the Discord override but drops the removed CurseForge key, and a Modrinth-only
+Library. Set `TMPDIR` to disposable scratch; the fixture
+creates an isolated `PIMPIN_ROOT` and captures actual Electron screenshots there.
+UI/native-dialog
 integration needs its own isolated Electron check; pure parser tests do not prove
 that the buttons or OS dialogs are wired correctly.
+
+## Remote servers
+
+Backend: `src/main/remote/` (one file per protocol, all plain Node, no extra
+dependencies). `remote-servers.js` is the only module `main.js` talks to for
+connections; `host-agent.js` is the opt-in Share this PC API. IPC lives in the
+`// ----- Remote servers` block of `main.js`; events `remote:log` and
+`remote:status` are whitelisted in `preload.js`. UI: `renderer/js/pages/remote-servers.js`,
+mounted from `pages/servers.js` (This PC / Remote switch); styles are the
+`/* ----- Remote servers */` block at the end of `css/app.css`.
+
+```bash
+TMPDIR=<scratch> node --test scripts/remote-servers.test.js
+TMPDIR=<scratch> node_modules/.bin/electron scripts/remote-servers-electron.js
+```
+
+Both run against local fakes (status server, RCON server, panel, a real agent
+over fixture servers) with a throwaway `PIMPIN_ROOT`.

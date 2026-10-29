@@ -136,25 +136,20 @@ file and retry; do not paste your entire settings file into the preset.
 
 ## Optional Discord Rich Presence
 
-Presence works automatically: keep **Discord Rich Presence** on (Settings →
-Launcher), open the Discord desktop app and launch a game. The launcher uses its
-own public application ID from `src/main/discord-app.json`, so there is nothing
-to paste. To show a different app name, create an application at
-`discord.com/developers/applications` and paste its public 17–20 digit
-**Application ID** into **Own application ID**; it overrides the built-in one.
-Delete or empty `discord-app.json` to ship a build with no built-in ID.
+Keep **Discord Rich Presence** on (Settings → Launcher), open the Discord
+desktop app and launch a game. There is nothing to paste or register. If presence
+is unavailable in your build, the status row says so; turning on the switch does
+not configure the integration.
 
-Never paste a bot token, account token, client secret or password. The launcher
-uses local Discord IPC, not a Discord account login. Without a valid ID and a
-running game, it makes no presence connection. Browser-only Discord is not a
-local IPC peer. Discord's activity-sharing controls can also hide your status.
+The launcher uses local Discord IPC, not a Discord account login. Without an
+available integration and a running game, it makes no presence connection.
+Browser-only Discord is not a local IPC peer. Discord's activity-sharing controls can also hide your status.
 
 Three independent toggles control what is shared:
 
 | Settings key | Meaning | Default |
 | --- | --- | --- |
 | `discordRich` | Enable presence when configured and playing | `true` |
-| `discordAppId` | Optional own public application ID; empty uses the built-in one | `null` |
 | `discordShowInstance` | Include the instance name; off uses Playing Minecraft | `true` |
 | `discordShowVersion` | Include Minecraft version and loader | `true` |
 | `discordShowElapsed` | Include session elapsed time | `true` |
@@ -178,6 +173,41 @@ OS placement instead of forcing the desktop's top-left corner.
 A stale `--hidden` startup argument only hides the launcher if a tray icon
 actually exists to reopen it. With tray behavior disabled, the window appears
 normally so the launcher cannot become an invisible background process.
+
+## Remote servers
+
+**Servers → Remote** watches and controls servers that do not run in this
+launcher. Everything is optional; with no connections nothing runs in the
+background. Pick a type with **Connect**:
+
+| Type | What you need | What works |
+| --- | --- | --- |
+| Hosting panel | Panel address and a *client* API key (Account → API credentials). Pterodactyl and Pelican panels. | Status, CPU/memory/disk/uptime, start/stop/restart/kill, commands, live console |
+| Another PC with Pimpin | That PC's address, port and pairing token from **Share this PC** | Status, start/stop/restart, commands, log, players and ops |
+| RCON | `enable-rcon=true`, `rcon.port` and `rcon.password` in `server.properties` | Commands with their replies, players via `list`, stop |
+| Address only | Just the address | Online, players, version, MOTD, icon and latency |
+
+Every type also pings the game address (like the multiplayer screen) and
+**Join** starts a matching instance straight into the server. Passwords, API
+keys and tokens are encrypted with your system keychain (Electron
+`safeStorage`) in `remote-secrets.json` and never shown again; if secure
+storage is unavailable the launcher refuses to save them instead of storing
+plain text. Panel addresses must use `https://` unless they are on your own
+network.
+
+**Share this PC** (Servers → This PC) is off by default. Turning it on starts a
+small HTTP API on port 25590 that lets another Pimpin Launcher start, stop and
+restart this PC's servers, send console commands and read logs and players. It
+cannot delete servers, touch files, change properties or restore backups.
+Requests need the pairing token; five wrong tokens lock that address out for a
+while, and **Regenerate** revokes the old token. The connection is plain HTTP:
+use it on a network you trust, or reach the PC over a VPN such as Tailscale
+rather than forwarding the port to the internet. Windows may ask to allow the
+launcher through the firewall the first time.
+
+Limits: RCON has no live log (Minecraft only sends command replies), the panel
+console needs the panel's websocket to accept the launcher (it sends the panel
+address as `Origin`), and only Java Edition servers answer the status ping.
 
 ## Editing your own files
 
@@ -210,6 +240,21 @@ manual config edits. Back up worlds before any save changes. Never hand-edit
 change a theme.
 
 See [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md) for the file map.
+
+## Integration setup (maintainers only)
+
+Players are not asked to create developer applications, obtain API keys or open
+service consoles. The Library uses Modrinth only. CurseForge support was removed:
+a `curseforgeApiKey` saved by an older version is dropped from `settings.json` on
+the next save, CurseForge modpack `.zip` files are refused with a pointer to the
+`.mrpack` version, and mods an older version installed from CurseForge stay
+installed as local files (no update checks).
+
+Discord uses the public application ID in `src/main/discord-app.json`. Maintainers
+must supply a valid registered application ID for presence to work. Empty or
+missing IDs leave presence honestly unavailable. The legacy `discordAppId` setting
+still overrides the build ID for compatibility, but has no consumer-facing control.
+No bot token, account token, client secret or Discord login is needed.
 
 ## Developer wiring
 

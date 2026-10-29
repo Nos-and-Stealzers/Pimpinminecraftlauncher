@@ -48,7 +48,6 @@ app.whenReady().then(async () => {
         case 'update:get': data = { status: 'idle' }; break;
         case 'notifications:list': data = { items: [], unread: 0 }; break;
         case 'presence:status': data = { message: 'Fixture: Discord not connected' }; break;
-        case 'curseforge:status': data = { configured: false, source: null }; break;
         default: throw new Error('Unexpected fixture IPC ' + channel);
       }
       return { ok: true, data };

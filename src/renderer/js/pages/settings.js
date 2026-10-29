@@ -156,22 +156,6 @@ export function render(page, params, navigate) {
     control.querySelector('input').setAttribute('aria-label', label);
     return control;
   };
-  const discordIdError = el('span', { class: 'appearance-error', role: 'status', id: 'discord-id-error' });
-  const discordId = el('input', {
-    class: 'input', value: s.discordAppId || '', placeholder: '17 to 20 digit application ID',
-    'aria-label': 'Discord application ID', 'aria-describedby': 'discord-id-error',
-    maxLength: 20, inputmode: 'numeric', style: { maxWidth: '240px' },
-    onchange: () => {
-      const id = discordId.value.trim();
-      if (id && !/^[0-9]{17,20}$/.test(id)) {
-        discordId.setAttribute('aria-invalid', 'true');
-        discordIdError.textContent = 'Use the numeric application ID, not a token or client secret.';
-        return;
-      }
-      discordId.removeAttribute('aria-invalid'); discordIdError.textContent = '';
-      save({ discordAppId: id || null }, id ? 'Discord application ID saved' : 'Discord application ID cleared');
-    },
-  });
   const exportAppearance = el('button', { class: 'btn sm', 'aria-label': 'Export appearance preset', onclick: async () => {
     try { const result = await api.call('settings:exportAppearance'); if (!result.canceled) toast('Appearance preset exported'); } catch (e) { errorToast(e); }
   } }, icon('download'), 'Export');
@@ -251,29 +235,11 @@ export function render(page, params, navigate) {
   // ----- Discord (kept together as one block; presence code owns these rows) -----
   const discordGroup = group('Discord',
     row('Discord Rich Presence', 'Shows what you are playing in your Discord status automatically while a game runs. Needs the Discord desktop app.', discordSwitch('discordRich', 'Discord Rich Presence')),
-    row('Own application ID', 'Optional. Leave empty to use Pimpin Launcher. Paste your own application ID only to show a different app name. Never a token or secret.', el('div', { class: 'custom-accent' }, discordId, discordIdError)),
     row('Discord status', null, el('div', { class: 'row' }, presenceStatus, el('button', { class: 'btn sm', onclick: () => refreshPresence(true) }, 'Refresh'))),
     row('Show instance name', 'Turn off to show only Playing Minecraft. Server addresses and account names are never sent.', discordSwitch('discordShowInstance', 'Show instance name')),
     row('Show game version', 'Include the Minecraft version and loader in your status.', discordSwitch('discordShowVersion', 'Show game version')),
     row('Show elapsed time', 'Include the time since you launched the game.', discordSwitch('discordShowElapsed', 'Show elapsed time')));
   // ----- end Discord -----
-
-  // CurseForge needs an API key. Builds can ship one; a key here overrides it.
-  const cfStatus = el('span', { role: 'status', 'aria-live': 'polite' }, 'Checking...');
-  const drawCfStatus = () => api.call('curseforge:status').then((st) => {
-    cfStatus.textContent = st.configured ? (st.source === 'settings' ? 'Using your key.' : 'Ready.') : 'No key yet. Mods from Modrinth still work.';
-  }).catch(() => { cfStatus.textContent = 'Status unavailable.'; });
-  void drawCfStatus();
-  const cfKey = el('input', {
-    class: 'input', type: 'password', value: s.curseforgeApiKey || '', placeholder: 'Leave empty to use the built-in key',
-    'aria-label': 'CurseForge API key', autocomplete: 'off', spellcheck: 'false', maxLength: 200, style: { maxWidth: '260px' },
-    onchange: () => updateSettings({ curseforgeApiKey: cfKey.value.trim() || null })
-      .then(() => { toast(cfKey.value.trim() ? 'CurseForge key saved' : 'CurseForge key cleared'); return drawCfStatus(); })
-      .catch(errorToast),
-  });
-  const curseforgeGroup = group('CurseForge',
-    row('CurseForge status', 'Search and install mods, resource packs, shaders and modpacks from CurseForge in the Library.', cfStatus),
-    row('CurseForge API key', 'Optional. Only needed if this build has no key. Get one from the CurseForge for Studios console.', cfKey));
 
   const sections = [
     section('Appearance', ...appearanceGroups),
@@ -297,8 +263,7 @@ export function render(page, params, navigate) {
         row('First-run setup', null, el('button', { class: 'btn sm', onclick: async () => { await save({ onboarded: false }); onboarding(navigate); } }, 'Run again')),
         row('Data folder', s.root, el('button', { class: 'btn sm', onclick: () => api.call('shell:openRoot') }, icon('folder'), 'Open')),
         row('Editable settings file', 'Reveal settings.json. Quit the launcher before editing it by hand; never share accounts.json.', el('button', { class: 'btn sm', onclick: () => api.call('settings:showFile') }, icon('folder'), 'Show file'))),
-      discordGroup,
-      curseforgeGroup),
+      discordGroup),
     section('Notifications', group(null,
       row('Launcher updates', 'A notice when a new Pimpin version is available or ready to install.', switchEl(s.notifyLauncherUpdates !== false, (v) => save({ notifyLauncherUpdates: v }))),
       row('Mod updates', 'Checks your instances every few hours and lists mods with newer versions. Nothing is updated without you.', switchEl(s.notifyModUpdates !== false, (v) => save({ notifyModUpdates: v }))),

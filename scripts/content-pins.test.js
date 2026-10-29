@@ -56,11 +56,14 @@ test('pinned mods are skipped by update checks until unpinned', async (t) => {
   await fs.writeFile(path.join(dir, 'mods', 'A.jar'), 'a');
   await fs.writeFile(path.join(dir, 'mods', 'B.jar'), 'b');
   await fs.writeFile(path.join(dir, 'mods', 'Local.jar'), 'local');
+  await fs.writeFile(path.join(dir, 'mods', 'Old-CF.jar'), 'cf');
 
   let meta = { content: [
     { file: 'A.jar', type: 'mod', projectId: 'mod-a', versionId: 'aaa-old', versionNumber: '1.0', sha1: 'hash-a', title: 'Mod A' },
     { file: 'B.jar', type: 'mod', projectId: 'mod-b', versionId: 'bbb-old', versionNumber: '2.0', sha1: 'hash-b', title: 'Mod B' },
     { file: 'Local.jar', type: 'mod', title: 'Local jar' },
+    // installed by an older version from the removed CurseForge source
+    { file: 'Old-CF.jar', type: 'mod', provider: 'curseforge', projectId: 'cf:100', modId: 100, fileId: 1001, versionId: 'cf:1001', sha1: 'hash-cf', title: 'Old CF mod' },
   ] };
   const holder = {
     dir,
@@ -75,6 +78,12 @@ test('pinned mods are skipped by update checks until unpinned', async (t) => {
 
   let rows = await content.list(holder);
   assert.equal(rows.find((r) => r.file === 'A.jar').pinned, false);
+  // Legacy CurseForge records behave like local files: no project link, no pin, no update check.
+  const legacy = rows.find((r) => r.file === 'Old-CF.jar');
+  assert.equal(legacy.projectId, null);
+  assert.equal(legacy.provider, null);
+  assert.equal(legacy.title, 'Old CF mod');
+  await assert.rejects(content.setPinned(holder, { type: 'mod', file: 'Old-CF.jar', pinned: true }), /installed from the library/);
 
   let updates = await content.checkUpdates(holder);
   assert.deepEqual(updates.map((u) => u.projectId).sort(), ['mod-a', 'mod-b']);
@@ -104,4 +113,18 @@ test('pinned mods are skipped by update checks until unpinned', async (t) => {
   assert.equal(rows.find((r) => r.file === 'B2.jar').pinned, true);
   updates = await content.checkUpdates(holder);
   assert.deepEqual(updates.map((u) => u.projectId).sort(), ['mod-a']);
+});
+
+test('CurseForge modpack zips are refused with a pointer to .mrpack', async (t) => {
+  const AdmZip = require('adm-zip');
+  const scratchRoot = path.join(os.homedir(), 'AppData', 'Local', 'hermes', 'cache', 'scratch');
+  const dir = await fs.mkdtemp(path.join(scratchRoot, 'cf-zip-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  process.env.PIMPIN_ROOT = process.env.PIMPIN_ROOT || dir;
+  const zip = new AdmZip();
+  zip.addFile('manifest.json', Buffer.from(JSON.stringify({ manifestType: 'minecraftModpack', minecraft: { version: '1.21.4', modLoaders: [] }, files: [] })));
+  const file = path.join(dir, 'pack.zip');
+  zip.writeZip(file);
+  const importer = require('../src/main/importer');
+  await assert.rejects(importer.importFile(file), /CurseForge modpacks are not supported.*\.mrpack/);
 });

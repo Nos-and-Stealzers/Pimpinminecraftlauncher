@@ -29,7 +29,7 @@ function createPresence({
   const cleanups = new Set();
   const messages = {
     disabled: 'Discord presence is disabled.',
-    unconfigured: 'No Discord application ID is available in this build.',
+    unconfigured: 'Discord presence is unavailable in this version of Pimpin Launcher.',
     idle: 'No game is running.',
     connecting: 'Connecting to Discord.',
     connected: 'Discord presence is connected.',

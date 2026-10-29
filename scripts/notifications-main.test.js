@@ -30,6 +30,8 @@ async function fixture() {
     './screenshots': { createScreenshots: () => ({}) },
     './content': { checkUpdates: async h => { checkCount++; if (scans[h.id] instanceof Error) throw scans[h.id]; return scans[h.id] || []; } },
     './net': { getJson: async () => [] },
+    './remote/remote-servers': { createRemoteServers: () => ({ shutdown: () => {} }) },
+    './remote/host-agent': { createHostAgent: () => ({ observe: () => {}, startIfEnabled: async () => {}, close: async () => {} }) },
   };
   const context = vm.createContext({
     console: { log: () => {}, warn: () => {} }, Buffer, URL, AbortSignal,

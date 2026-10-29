@@ -60,7 +60,6 @@ app.whenReady().then(async () => {
         case 'skin:get': data = skinUrl; break;
         case 'update:get': data = { status: 'idle' }; break;
         case 'presence:status': data = { message: 'Off' }; break;
-        case 'curseforge:status': data = { configured: false, source: null }; break;
         case 'notifications:list': data = { items: [], unread: 0 }; break;
         default: unknown.add(channel);
       }

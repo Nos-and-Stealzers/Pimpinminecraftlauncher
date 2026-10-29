@@ -5,6 +5,7 @@ import { api, state, subscribe, refreshServers, selectInstance, activeAccount, S
 import { playInstance, newInstanceModal } from '../components.js';
 import { consoleView } from './instances.js';
 import { fileBrowser } from '../files.js';
+import { remoteList, renderRemoteDetail, connectionModal, shareThisPcCard } from './remote-servers.js'; // Remote servers
 
 const PLUGIN_SOFTWARE = new Set(['paper', 'purpur']);
 const STARTERS = [
@@ -16,8 +17,10 @@ const STARTERS = [
   { slug: 'geyser', name: 'Geyser', desc: 'Bedrock players can join', extra: ['floodgate'] },
 ];
 const tabMem = {};
+let listView = 'local'; // 'local' (This PC) or 'remote', remembered while the app runs
 
 export function render(page, params, navigate) {
+  if (params.remote) return renderRemoteDetail(page, params.remote, navigate);
   if (params.id) return renderDetail(page, params.id, navigate);
   return renderList(page, params, navigate);
 }
@@ -36,6 +39,17 @@ function serverIcon(s, size = '') {
 }
 
 function renderList(page, params, navigate) {
+  if (params.view === 'remote' || params.view === 'local') listView = params.view;
+  const switcher = seg([{ value: 'local', label: 'This PC', icon: 'monitor' }, { value: 'remote', label: 'Remote', icon: 'globe' }], listView, (v) => navigate('servers', { view: v }));
+  switcher.classList.add('rs-switch');
+  if (listView === 'remote') {
+    page.append(
+      el('div', { class: 'page-head' },
+        el('div', {}, el('h1', { class: 'page-title' }, 'Servers'), el('p', { class: 'page-sub' }, 'Servers on a hosting panel, another PC or anywhere else you can reach.')),
+        el('div', { class: 'row' }, switcher, el('button', { class: 'btn primary', onclick: () => connectionModal(navigate) }, icon('plus'), 'Connect'))),
+    );
+    return remoteList(page, navigate);
+  }
   const grid = el('div', { class: 'inst-grid' });
   const lan = el('span');
   api.call('servers:network').then((n) => n.lan[0] && clear(lan, el('span', { class: 'chip' }, icon('wifi'), `Your LAN address: ${n.lan[0]}`))).catch(() => {});
@@ -61,8 +75,9 @@ function renderList(page, params, navigate) {
   page.append(
     el('div', { class: 'page-head' },
       el('div', {}, el('h1', { class: 'page-title' }, 'Servers'), el('p', { class: 'page-sub' }, 'Local Paper, Purpur and Vanilla servers with plugins, backups and player management.')),
-      el('div', { class: 'row' }, lan, el('button', { class: 'btn primary', onclick: () => newServerModal(navigate) }, icon('plus'), 'New server'))),
+      el('div', { class: 'row' }, lan, switcher, el('button', { class: 'btn primary', onclick: () => newServerModal(navigate) }, icon('plus'), 'New server'))),
     grid,
+    shareThisPcCard(),
   );
   draw();
   if (params.create) newServerModal(navigate);

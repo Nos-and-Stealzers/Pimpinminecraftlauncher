@@ -1,21 +1,12 @@
 // Library: browse and install mods, shaders, resource packs, modpacks and
-// server plugins from Modrinth, or (with an API key) from CurseForge.
+// server plugins from Modrinth.
 import { el, icon, clear, modal, errorToast, toast, fmtNum, seg, safeUrl, markdown, switchEl } from '../dom.js';
 import { api, state, refreshInstances, selectedInstance, LOADER_LABEL, SERVER_LABEL } from '../state.js';
 import { installReview } from '../install-review.js';
 
 installReview();
 
-const SOURCES = [
-  { value: 'modrinth', label: 'Modrinth' },
-  { value: 'curseforge', label: 'CurseForge' },
-];
-const SOURCE_NAME = { modrinth: 'Modrinth', curseforge: 'CurseForge' };
-// IPC per source; both return the same Modrinth-shaped data.
-const CALLS = {
-  modrinth: { search: 'library:search', project: 'library:project', versions: 'library:versions' },
-  curseforge: { search: 'curseforge:search', project: 'curseforge:project', versions: 'curseforge:versions' },
-};
+const CALLS = { search: 'library:search', project: 'library:project', versions: 'library:versions' };
 
 const TYPES = [
   { value: 'mod', label: 'Mods', icon: 'puzzle' },
@@ -41,29 +32,25 @@ const CATEGORIES = {
 };
 
 // Remember the browsing state between visits.
-const mem = { source: 'modrinth', type: 'mod', query: '', sort: 'relevance', offset: 0, compatible: true, instanceId: null, serverId: null, category: null };
+const mem = { type: 'mod', query: '', sort: 'relevance', offset: 0, compatible: true, instanceId: null, serverId: null, category: null };
 
 export function render(page, params, navigate) {
   if (params.type) mem.type = params.type;
   if (params.instanceId) mem.instanceId = params.instanceId;
   if (params.serverId) mem.serverId = params.serverId;
-  if (params.source === 'modrinth' || params.source === 'curseforge') mem.source = params.source;
   if (params.type || params.instanceId || params.serverId) mem.offset = 0;
 
   const results = el('div');
   const targetBar = el('div');
   const catRow = el('div', { class: 'cat-row' });
-  const cf = () => mem.source === 'curseforge';
-  let cfStatus = null;
-  // CurseForge categories are numeric ids, so the quick filters stay Modrinth-only.
   const drawCats = () =>
-    cf() ? clear(catRow) : clear(
+    clear(
       catRow,
       el('button', { class: mem.category ? '' : 'on', onclick: () => { mem.category = null; mem.offset = 0; drawCats(); runSearch(); } }, 'All'),
       (CATEGORIES[mem.type] || []).map((c) =>
         el('button', { class: mem.category === c ? 'on' : '', onclick: () => { mem.category = mem.category === c ? null : c; mem.offset = 0; drawCats(); runSearch(); } }, c.replace(/-/g, ' '))),
     );
-  const search = el('input', { class: 'input', placeholder: `Search ${SOURCE_NAME[mem.source]}`, value: mem.query });
+  const search = el('input', { class: 'input', placeholder: 'Search Modrinth', value: mem.query });
   const sortSel = el('select', { class: 'select', style: { width: '190px' } }, SORTS.map(([v, l]) => el('option', { value: v }, l)));
   sortSel.value = mem.sort;
   let installed = new Set();
@@ -95,9 +82,7 @@ export function render(page, params, navigate) {
   const drawTarget = () => {
     const t = target();
     if (mem.type === 'modpack') {
-      clear(targetBar, el('div', { class: 'target-bar' }, icon('info'), el('span', { class: 'grow' }, cf()
-        ? 'A modpack installs as a new instance. Fabric and Quilt packs are supported. You can also drop a CurseForge pack .zip onto the window.'
-        : 'A modpack installs as a new instance. Fabric and Quilt packs are supported. You can also drop a .mrpack file onto the window.')));
+      clear(targetBar, el('div', { class: 'target-bar' }, icon('info'), el('span', { class: 'grow' }, 'A modpack installs as a new instance. Fabric and Quilt packs are supported. You can also drop a .mrpack file onto the window.')));
       return;
     }
     const isPlugin = mem.type === 'plugin';
@@ -142,47 +127,23 @@ export function render(page, params, navigate) {
     );
   };
 
-  const keyState = () =>
-    clear(results, el('div', { class: 'card empty cf-key-state' }, icon('info'),
-      el('h3', {}, 'CurseForge needs an API key'),
-      el('div', {}, 'Add a CurseForge API key in Settings to browse and install from CurseForge. Modrinth works without one.'),
-      el('div', { class: 'row' },
-        el('button', { class: 'btn sm', onclick: () => api.call('shell:openExternal', cfStatus?.applyUrl || 'https://docs.curseforge.com/rest-api/').catch(errorToast) }, icon('external'), 'Get an API key'),
-        el('button', { class: 'btn sm', onclick: () => navigate('settings', { section: 'launcher' }) }, icon('settings'), 'Open settings'),
-        el('button', { class: 'btn sm primary', onclick: () => setSource('modrinth') }, 'Use Modrinth'))));
-
   const runSearch = async () => {
     const my = ++seq;
     drawTarget();
     clear(results, el('div', { class: 'lib-grid' }, Array.from({ length: 9 }, () => el('div', { class: 'sk-card skeleton' }))));
-    if (cf()) {
-      try {
-        cfStatus = await api.call('curseforge:status');
-      } catch {
-        cfStatus = { configured: false };
-      }
-      if (my !== seq) return;
-      if (!cfStatus.configured) return keyState();
-      if (mem.type === 'plugin') {
-        clear(results, el('div', { class: 'card empty' }, icon('server'), el('h3', {}, 'Plugins come from Modrinth'), el('div', {}, 'CurseForge has no Paper or Purpur plugin library here.'),
-          el('button', { class: 'btn sm primary', onclick: () => setSource('modrinth') }, 'Use Modrinth')));
-        return;
-      }
-    }
     const t = target();
-    const opts = { type: mem.type, query: mem.query, sort: mem.sort, offset: mem.offset, limit: PAGE, category: cf() ? undefined : mem.category || undefined };
+    const opts = { type: mem.type, query: mem.query, sort: mem.sort, offset: mem.offset, limit: PAGE, category: mem.category || undefined };
     if (mem.compatible && t) {
       opts.mcVersion = t.mcVersion;
       if (mem.type === 'mod') opts.loader = t.loader === 'vanilla' ? 'fabric' : t.loader;
     }
     try {
-      const [res] = await Promise.all([api.call(CALLS[mem.source].search, opts), loadInstalled()]);
+      const [res] = await Promise.all([api.call(CALLS.search, opts), loadInstalled()]);
       if (my !== seq) return;
       drawResults(res);
     } catch (err) {
       if (my !== seq) return;
-      if (/needs an API key/.test(err.message)) return keyState();
-      clear(results, el('div', { class: 'card empty' }, icon('alert'), el('h3', {}, `${SOURCE_NAME[mem.source]} unavailable`), el('div', {}, err.message)));
+      clear(results, el('div', { class: 'card empty' }, icon('alert'), el('h3', {}, 'Modrinth unavailable'), el('div', {}, err.message)));
     }
   };
 
@@ -204,24 +165,13 @@ export function render(page, params, navigate) {
     );
   };
 
-  const openOnCurseForge = (url) => api.call('shell:openExternal', url).catch(errorToast);
-  const blockedBtn = (url, size = 'sm') => {
-    const b = el('button', { class: `btn ${size}`, title: 'Author requires download on CurseForge' }, icon('external'), 'Open on CurseForge');
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openOnCurseForge(url);
-    });
-    return b;
-  };
-
   const install = async (projectId, btn, versionId) => {
     btn.disabled = true;
     const label = btn.textContent;
     btn.replaceChildren(el('span', { class: 'spin xs' }), 'Installing');
     try {
       if (mem.type === 'modpack') {
-        const inst = await api.call(cf() ? 'curseforge:installModpack' : 'modpack:install', { projectId, versionId });
-        if (inst?.blocked?.length) toast(`${inst.name} is installed. ${inst.blocked.length} mod${inst.blocked.length === 1 ? '' : 's'} must be downloaded on CurseForge: ${inst.blocked.map((b) => b.title).join(', ')}`, 'info', 9000);
+        const inst = await api.call('modpack:install', { projectId, versionId });
         await refreshInstances();
         toast(`${inst.name} is installed`);
         btn.replaceChildren(icon('check'), 'Installed');
@@ -230,13 +180,7 @@ export function render(page, params, navigate) {
       }
       const ref = targetRef();
       if (!ref) throw new Error(mem.type === 'plugin' ? 'Create a server first.' : 'Create an instance first.');
-      const res = await api.call('content:install', ref, { projectId, type: mem.type, versionId, provider: mem.source });
-      const mainBlocked = res.blocked?.find((b) => !b.dependency);
-      if (mainBlocked) {
-        btn.replaceWith(blockedBtn(mainBlocked.pageUrl, btn.classList.contains('sm') ? 'sm' : ''));
-        toast('Author requires download on CurseForge', 'info');
-        return false;
-      }
+      const res = await api.call('content:install', ref, { projectId, type: mem.type, versionId });
       installed.add(projectId);
       btn.replaceChildren(icon('check'), 'Installed');
       btn.classList.add('ok');
@@ -252,8 +196,7 @@ export function render(page, params, navigate) {
     }
   };
 
-  const installBtn = (projectId, size = 'sm', hit = null) => {
-    if (hit && hit.allowModDistribution === false && mem.type !== 'modpack') return blockedBtn(hit.url, size);
+  const installBtn = (projectId, size = 'sm') => {
     const done = installed.has(projectId);
     const b = el('button', { class: `btn ${size} ${done ? 'ok' : 'primary'}`, disabled: done }, icon(done ? 'check' : 'download'), done ? 'Installed' : mem.type === 'modpack' ? 'Install pack' : 'Install');
     b.addEventListener('click', (e) => {
@@ -274,7 +217,7 @@ export function render(page, params, navigate) {
         el('div', { class: 'title' }, h.title),
         el('div', { class: 'author' }, `by ${h.author}`),
         el('div', { class: 'desc' }, h.description),
-        el('div', { class: 'foot' }, el('span', {}, icon('download'), fmtNum(h.downloads)), el('span', { title: cf() ? 'Thumbs up' : 'Followers' }, icon('heart'), fmtNum(h.follows)), installBtn(h.project_id, 'sm', h)),
+        el('div', { class: 'foot' }, el('span', {}, icon('download'), fmtNum(h.downloads)), el('span', { title: 'Followers' }, icon('heart'), fmtNum(h.follows)), installBtn(h.project_id, 'sm')),
       ),
     );
 
@@ -282,7 +225,7 @@ export function render(page, params, navigate) {
     const body = el('div', { class: 'row muted', style: { padding: '40px', justifyContent: 'center' } }, el('span', { class: 'spin' }), 'Loading');
     const m = modal({ wide: true, title: '', body, header: el('div') });
     try {
-      const calls = CALLS[mem.source];
+      const calls = CALLS;
       const p = await api.call(calls.project, id);
       const t = target();
       const verSel = el('select', { class: 'select', style: { width: '260px' } }, el('option', { value: '' }, 'Best match (recommended)'));
@@ -296,11 +239,10 @@ export function render(page, params, navigate) {
         for (const v of vs.slice(0, 50)) verSel.append(el('option', { value: v.id }, `${v.version_number} · ${v.game_versions.slice(-2).join(', ')}${v.version_type !== 'release' ? ` (${v.version_type})` : ''}`));
       }).catch(() => {});
       const done = installed.has(p.id);
-      let ib = el('button', { class: `btn ${done ? 'ok' : 'primary'}`, disabled: done }, icon(done ? 'check' : 'download'), done ? 'Installed' : 'Install');
+      const ib = el('button', { class: `btn ${done ? 'ok' : 'primary'}`, disabled: done }, icon(done ? 'check' : 'download'), done ? 'Installed' : 'Install');
       ib.addEventListener('click', async () => {
         if (await install(p.id, ib, verSel.value || undefined)) runSearch();
       });
-      if (p.allowModDistribution === false && mem.type !== 'modpack') ib = el('span', { class: 'row' }, el('span', { class: 'muted' }, 'Author requires download on CurseForge'), blockedBtn(p.url, ''));
       const header = el(
         'div',
         { class: 'proj-detail-head' },
@@ -314,9 +256,7 @@ export function render(page, params, navigate) {
             el('span', { class: 'chip' }, icon('download'), fmtNum(p.downloads)),
             el('span', { class: 'chip' }, icon('heart'), fmtNum(p.followers)),
             (p.categories || []).slice(0, 4).map((c) => el('span', { class: 'chip' }, c)),
-            cf()
-              ? el('span', { class: 'chip', style: { cursor: 'pointer' }, onclick: () => api.call('shell:openExternal', p.url) }, icon('external'), 'CurseForge')
-              : el('span', { class: 'chip', style: { cursor: 'pointer' }, onclick: () => api.call('shell:openExternal', `https://modrinth.com/${p.project_type}/${p.slug}`) }, icon('external'), 'Modrinth'),
+            el('span', { class: 'chip', style: { cursor: 'pointer' }, onclick: () => api.call('shell:openExternal', `https://modrinth.com/${p.project_type}/${p.slug}`) }, icon('external'), 'Modrinth'),
           ),
         ),
         el('button', { class: 'btn ghost icon sm', onclick: () => m.close() }, icon('x')),
@@ -353,27 +293,10 @@ export function render(page, params, navigate) {
     runSearch();
   });
 
-  const sub = el('p', { class: 'page-sub' });
-  const drawSub = () => {
-    sub.textContent = cf() ? 'Mods, shaders, resource packs and modpacks from CurseForge.' : 'Mods, shaders, resource packs, modpacks and server plugins from Modrinth.';
-    search.placeholder = `Search ${SOURCE_NAME[mem.source]}`;
-  };
-  const sourceSlot = el('div', { class: 'lib-source' });
-  function setSource(v) {
-    if (mem.source === v) return;
-    mem.source = v;
-    mem.offset = 0;
-    mem.category = null;
-    clear(sourceSlot, seg(SOURCES, mem.source, setSource));
-    drawSub();
-    drawCats();
-    runSearch();
-  }
-  clear(sourceSlot, seg(SOURCES, mem.source, setSource));
-  drawSub();
+  const sub = el('p', { class: 'page-sub' }, 'Mods, shaders, resource packs, modpacks and server plugins from Modrinth.');
 
   page.append(
-    el('div', { class: 'page-head' }, el('div', { class: 'grow' }, el('h1', { class: 'page-title' }, 'Library'), sub), sourceSlot),
+    el('div', { class: 'page-head' }, el('div', { class: 'grow' }, el('h1', { class: 'page-title' }, 'Library'), sub)),
     el('div', { class: 'lib-toolbar' },
       seg(TYPES, mem.type, (v) => { mem.type = v; mem.offset = 0; mem.category = null; drawCats(); runSearch(); }),
       el('div', { class: 'lib-search-row' }, el('div', { class: 'search' }, icon('search'), search), sortSel),

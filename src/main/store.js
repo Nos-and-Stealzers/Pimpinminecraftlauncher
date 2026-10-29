@@ -125,29 +125,20 @@ const DEFAULT_SETTINGS = {
   launchOnStartup: false,
   lastInstance: null,
   activeAccount: null,
-  // personal CurseForge API key (null = use the build's key, if any)
-  curseforgeApiKey: null,
   ...APPEARANCE_DEFAULTS,
 };
 
 const savedSettings = readJsonSync(SETTINGS_FILE, {});
 const settings = { ...DEFAULT_SETTINGS, ...savedSettings, ...normalizeAppearance(savedSettings), ...normalizePresence(savedSettings) };
+// CurseForge support was removed; a key saved by an older version is dropped on the next save.
+delete settings.curseforgeApiKey;
 
 function getSettings() {
   return { ...settings, root: ROOT, totalMemory: totalMb() };
 }
 
-/** null/'' clears it; otherwise a single printable token, no spaces. */
-function normalizeCurseforgeKey(v) {
-  if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) return null;
-  const k = typeof v === 'string' ? v.trim() : '';
-  if (!k || k.length > 200 || !/^[!-~]+$/.test(k)) throw new Error('That does not look like a CurseForge API key.');
-  return k;
-}
-
 async function updateSettings(patch) {
   validatePresencePatch(patch);
-  if (patch && Object.hasOwn(patch, 'curseforgeApiKey')) patch = { ...patch, curseforgeApiKey: normalizeCurseforgeKey(patch.curseforgeApiKey) };
   // only known keys, anything else from the renderer is dropped
   for (const [k, v] of Object.entries(patch || {})) {
     if (Object.hasOwn(DEFAULT_SETTINGS, k)) settings[k] = v;
@@ -217,5 +208,4 @@ module.exports = {
   slugify,
   uniqueDir,
   safeJoin,
-  normalizeCurseforgeKey,
 };
